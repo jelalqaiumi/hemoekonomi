@@ -12,6 +12,7 @@ import {
   INTERVAL_LABELS,
   INTERVALS,
   NAME_MAX_LENGTH,
+  canonicalAmountSek,
   createEntry,
   isEntry,
   isValidEntryId,
@@ -304,6 +305,24 @@ test('namnlängden mäts i tecken, även för tecken utanför BMP', () => {
   assert.equal(validateEntryDraft(validDraft({ name: emoji.repeat(31) })).ok, true);
 });
 
+test('namnlängden avvisas billigt utan att hela indatan materialiseras', () => {
+  // Lärdomen 2026-08-23: [...trimmed].length byggde en array med ett element per
+  // tecken i hela strängen fast svaret var avgjort efter 61 tecken. Snabbvägen
+  // trimmed.length > 2 * NAME_MAX_LENGTH svarar utan det. Ingen assertion på
+  // körtid här - teststrategin förbjuder det, tiden redovisas som mätning.
+  assert.deepEqual(
+    messagesFor(validateEntryDraft(validDraft({ name: 'a'.repeat(1000000) })), 'name'),
+    ['Namnet får vara högst 60 tecken.']
+  );
+
+  // 60 emoji är exakt 120 kodenheter, alltså inte fler än 2 * NAME_MAX_LENGTH.
+  // Namnet måste därför nå teckenräkningen och godkännas där. Detta är den enda
+  // indata som skiljer snabbvägens > från ett felaktigt >=.
+  const emoji = '🎵';
+  assert.equal(emoji.repeat(60).length, 2 * NAME_MAX_LENGTH);
+  assert.equal(validateEntryDraft(validDraft({ name: emoji.repeat(60) })).ok, true);
+});
+
 test('belopp som inte är ett tal avvisas', () => {
   const notNumbers = [
     // Strängar som inte matchar AMOUNT_PATTERN.
@@ -536,10 +555,90 @@ test('isEntry avvisar poster med okända fält', () => {
   assert.equal(isEntry({ ...entry, nextDueDate: '2026-02-28' }), false);
   assert.equal(isEntry({ ...entry, accountId: 'abc' }), false);
   assert.equal(isEntry({ ...entry, currency: 'SEK' }), false);
-  // Ett saknat fält är också fel antal fält.
+  // Ett saknat fält avvisas också. Vilket villkor som fäller det påstås inte här
+  // - lärdomen 2026-08-23 gällde just en kommentar som namngav fel kodväg.
   for (const field of ['id', 'name', 'amountSek', 'interval', 'startDate', 'category']) {
     const incomplete = { ...entry };
     delete incomplete[field];
     assert.equal(isEntry(incomplete), false, `utan ${field}`);
+  }
+});
+
+test('isEntry avvisar belopp som inte redan är sin kanoniska lagringsform', () => {
+  // Lärdomen 2026-08-23: regel 3 är en toleransjämförelse, så 199.999999999
+  // passerade regelkedjan medan skrivvägen för samma värde lagrar 200. En
+  // datafil kunde alltså innehålla ett belopp som appen därefter räknar med som
+  // ett annat tal. Kedjan frågar "är detta godtagbart som indata", isEntry
+  // frågar "är detta den form skrivvägen producerar".
+  const entry = {
+    id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
+    name: 'Spotify Family',
+    amountSek: 199,
+    interval: 'monthly',
+    startDate: '2026-01-31',
+    category: 'subscription'
+  };
+  for (const amountSek of [199.999999999, 199.000000001]) {
+    assert.equal(isEntry({ ...entry, amountSek }), false, `amountSek: ${amountSek}`);
+  }
+  for (const amountSek of [0.01, 199.5, 9999999.99]) {
+    assert.equal(isEntry({ ...entry, amountSek }), true, `amountSek: ${amountSek}`);
+  }
+});
+
+test('canonicalAmountSek är en fixpunkt på sin egen utdata', () => {
+  // Invarianten "allt som createEntry returnerar med ok: true godkänns av
+  // isEntry" vilar på detta: skrivvägen returnerar canonicalAmountSek(v) och
+  // isEntry frågar om värdet är lika med canonicalAmountSek av sig självt.
+  // Håller likheten inte för något lagringsbart belopp faller invarianten.
+  const avvikande = [];
+  for (let ore = 1; ore <= 200000; ore += 1) {
+    const kronor = ore / 100;
+    if (canonicalAmountSek(kronor) !== kronor) {
+      avvikande.push(ore);
+    }
+  }
+  assert.deepEqual(avvikande, [], 'ore-värden där fixpunkten inte håller');
+
+  // Facittabellens giltiga värden, inklusive maxbeloppet.
+  for (const ore of [19900, 19950, 100, 1, 999999999]) {
+    const kronor = ore / 100;
+    assert.equal(canonicalAmountSek(kronor), kronor, `ore: ${ore}`);
+  }
+});
+
+test('allt som createEntry godkänner godkänns av isEntry, även vid gränserna', () => {
+  // Invarianttestet körs med värden från gränserna, inte bara typiska belopp.
+  const makeId = () => '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234';
+  for (const amountSek of ['0,01', '9999999,99', '199,999999999', 199.999999999, '1,005', 0.01]) {
+    const result = createEntry({
+      name: 'Spotify Family',
+      amountSek,
+      interval: 'monthly',
+      startDate: '2026-01-31',
+      category: 'subscription'
+    }, makeId);
+    if (result.ok) {
+      assert.equal(isEntry(result.value), true, `amountSek: ${amountSek}`);
+    }
+  }
+});
+
+test('isEntry avvisar amountSek av en typ som kanoniseringen inte kan räkna på', () => {
+  // Mutationsprövning av delvillkoret `typeof value.amountSek !== 'number'`:
+  // utan det anropas canonicalAmountSek med värdet, och för BigInt och Symbol
+  // kastar Math.round(v * 100) TypeError i stället för att isEntry svarar false.
+  // Likhetskontrollen ensam räcker alltså inte - den kraschar först. Detta är
+  // det enda testfall som bara det delvillkoret kan få att fälla avgörandet.
+  const entry = {
+    id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
+    name: 'Spotify Family',
+    amountSek: 199,
+    interval: 'monthly',
+    startDate: '2026-01-31',
+    category: 'subscription'
+  };
+  for (const amountSek of [199n, 0n, Symbol('199')]) {
+    assert.equal(isEntry({ ...entry, amountSek }), false, `amountSek: ${String(amountSek)}`);
   }
 });

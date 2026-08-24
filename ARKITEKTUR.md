@@ -298,6 +298,69 @@ isär utan att något test märker det.
 och är klar innan öresaritmetiken börjar. Paket 2 har därför inget behov av
 `money.js`, som byggs i paket 3.
 
+### `name` — längdgränsen och den billiga avvisningen (bindande)
+
+Gränsen är **60 tecken**, mätt i kodpunkter med `[...trimmed].length`, aldrig
+med `trimmed.length` — den senare räknar UTF-16-kodenheter och gör varje emoji
+till två (`LARDOMAR.md`, 2026-08-18, namnlängd i kodenheter).
+
+`checkName` kontrollerar i exakt den här ordningen:
+
+| # | Villkor | Utfall |
+|---|---------|--------|
+| 1 | `typeof raw !== 'string'` | `Namnet får inte vara tomt.` |
+| 2 | `raw.trim() === ''` | `Namnet får inte vara tomt.` |
+| 3 | `trimmed.length > 2 * NAME_MAX_LENGTH` | `Namnet får vara högst 60 tecken.` |
+| 4 | `[...trimmed].length > NAME_MAX_LENGTH` | `Namnet får vara högst 60 tecken.` |
+| – | inget av ovanstående | giltigt, `value.name` blir `trimmed` |
+
+**Steg 3 är en snabbväg, inte en ny regel.** En kodpunkt är i UTF-16 antingen en
+eller två kodenheter. Fler än `2 * NAME_MAX_LENGTH` kodenheter betyder därför
+alltid fler än `NAME_MAX_LENGTH` kodpunkter, så steg 3 kan bara vara sant för
+strängar som steg 4 ändå hade avvisat — med exakt samma meddelande. Snabbvägen
+ändrar alltså inte vilken rad i felmeddelandetabellen som vinner för något
+värde, och den får därför **ingen egen rad** i den tabellen: tabellen förblir
+det enda facit för `name`. Argumentet följer av UTF-16-kodningen och är exakt,
+till skillnad från toleransresonemangen i `amountSek`-kedjan. Faktorn skrivs
+`2 * NAME_MAX_LENGTH` och aldrig `120`, så att gränsen behåller en enda ägare.
+
+**Varför snabbvägen finns.** Steg 4 bygger en array med ett element per tecken i
+hela strängen, fast svaret är avgjort efter 61 tecken: ett namn på 50 000 000
+tecken kostade 2,8 sekunder och 1,7 GB heap för att svara `Namnet får vara
+högst 60 tecken.` (`LARDOMAR.md`, 2026-08-23, namnlängden räknas genom att hela
+strängen materialiseras). Steg 3 gör kostnaden oberoende av indatans storlek.
+
+**Generell regel för `src/core/`, bindande.** Ingen validering får utföra arbete
+som växer med hela indatans storlek när svaret är avgjort av ett prefix. Är
+frågan bara "överskrider detta en gräns" ska den först avgöras med en billig och
+exakt övre uppskattning; den dyra exakta mätningen körs först därefter.
+
+**Detta är projektets enda gräns för indatastorlek.** Inget fält, ingen
+API-body och ingen datafil får någon storleksgräns i byte: fälten tar emot
+godtyckligt stor indata och avvisar den billigt. En gräns i `api.js` eller
+`storage.js` löser inget problem som står i `PLAN.md` och införs inte.
+
+**Obligatoriska testfall i paket 2** (`tests/entry.test.js`):
+
+| `name` in | Förväntat | Avgörs av |
+|-----------|-----------|-----------|
+| `'a'.repeat(60)` | giltigt | – |
+| `'a'.repeat(61)` | `Namnet får vara högst 60 tecken.` | steg 4 |
+| `'🎵'.repeat(60)` | giltigt | – (120 kodenheter, exakt på steg 3:s gräns) |
+| `'🎵'.repeat(61)` | `Namnet får vara högst 60 tecken.` | steg 3 |
+| `'a'.repeat(1000000)` | `Namnet får vara högst 60 tecken.` | steg 3 |
+
+Raden `'🎵'.repeat(60)` är obligatorisk därför att den ligger exakt på steg 3:s
+gräns: 120 kodenheter är inte fler än 120, så namnet måste nå steg 4 och
+godkännas där. Skrivs snabbvägen som `>=` i stället för `>` avvisas ett giltigt
+namn, och det är den enda indata som visar det.
+
+Testet får **inte** innehålla någon assertion på körtid — se "Teststrategi".
+Att snabbvägen verkligen är billig visas i stället med en mätning: byggaren kör
+`validateEntryDraft` med ett `name` på 50 000 000 tecken och klistrar in den
+uppmätta tiden i paketets redovisning, så att den går att ställa mot de 2,8
+sekunder lärdomen mätte.
+
 ### `amountSek` — normalisering och regelkedja (bindande)
 
 Formulär skickar strängar, tester och API-anrop skickar tal. **Det får inte
@@ -433,6 +496,88 @@ Raderna `'0,00000001'` (`1e-8`) och `'0,0000000099'` (`9.9e-9`) är paret på va
 sin sida om regel 3:s tolerans och är obligatoriska av just det skälet: en
 toleransjämförelse ska ha testfall på båda sidor om sin gräns. `'0,01'` är den
 nedre giltiga gränsen — ett öre — och visar var kedjan slutar avvisa.
+
+### Kanonisk lagringsform — det enda `isEntry` kräver utöver regelkedjan
+
+`validateEntryDraft` gör två saker: den **avvisar** ogiltiga värden, och den
+**normaliserar** de godkända. Normaliseringen berör två av de sex fälten:
+
+| Fält | Kanonisk form (det som lagras) | Ägare av uttrycket |
+|------|--------------------------------|--------------------|
+| `name` | `raw.trim()` | `String.prototype.trim` |
+| `amountSek` | `Math.round(v * 100) / 100` | `canonicalAmountSek` i `entry.js` |
+
+`id`, `interval`, `startDate` och `category` lagras exakt som de kom in och har
+ingen kanonisk form utöver sig själva.
+
+**Varför kedjan inte räcker vid inläsning.** Regelkedjan svarar på frågan *är
+det här värdet godtagbart som indata*. `isEntry` ställer en annan fråga: *är det
+här värdet den form skrivvägen producerar*. De två frågorna kan inte ha ett
+gemensamt facit, och skillnaden är mätbar: regel 3 är en toleransjämförelse, så
+`199.999999999` passerar kedjan medan `validateEntryDraft` för samma värde
+lagrar `200`. En datafil kunde alltså innehålla ett belopp som `isEntry` släpper
+in men som appen därefter visar och räknar med som ett annat tal
+(`LARDOMAR.md`, 2026-08-23, `isEntry` godkänner belopp som appen räknar om till
+ett annat tal).
+
+**Bindande.** För varje normaliserat fält kräver `isEntry` att värdet redan
+**är** sin kanoniska form:
+
+```js
+value.name === value.name.trim()
+value.amountSek === canonicalAmountSek(value.amountSek)
+```
+
+Detta är samma krav som `isEntry` sedan tidigare ställer på `name`, nu skrivet
+som en regel i stället för som ett enskilt undantag. Det är också det **enda**
+krav `isEntry` ställer utöver regelkedjan; varje annan skillnad mellan `isEntry`
+och `validateEntryDraft` är ett fel.
+
+**Ingen regel skrivs av för hand.** Uttrycket `Math.round(amountSek * 100) / 100`
+har exakt en ägare, `canonicalAmountSek`, som anropas både av `checkAmountSek`
+när det godkända beloppet ska returneras och av `isEntry`. Skrivvägen och
+läsvägen kan därmed inte glida isär: byter avrundningen form på ett ställe byter
+den form på båda. Samma ägarregel som för `isValidEntryId` och
+`ISO_DATE_PATTERN` (se "Mappstruktur").
+
+**Invarianten står fast.** *"Allt som `createEntry` returnerar med `ok: true`
+godkänns av `isEntry`"* gäller fortfarande, och gör det just därför att kravet
+är formulerat som likhet med skrivvägens egen utdata i stället för som ännu en
+tolerans: skrivvägen returnerar `canonicalAmountSek(v)`, och `isEntry` frågar om
+värdet är lika med `canonicalAmountSek` av sig självt.
+
+**Det gör invarianten beroende av att `canonicalAmountSek` är en fixpunkt på sin
+egen utdata.** Om det för något lagringsbart belopp gäller att
+`canonicalAmountSek(canonicalAmountSek(v)) !== canonicalAmountSek(v)` faller
+invarianten. Det är ett påstående om flyttalsaritmetik och skrivs därför
+**inte** ned här som ett faktum (`LARDOMAR.md`, 2026-08-23,
+gränsvärdespåstående om flyttal skrevs ned utan att köras). I stället är det ett
+krav på byggaren att köra det och redovisa utdatan:
+
+- För varje heltal `ore` i `[1, 200000]`, uttömmande, ska
+  `canonicalAmountSek(ore / 100) === ore / 100` gälla.
+- Detsamma ska gälla för `ore`-värdet i varje giltig rad i facittabellen ovan
+  (`19900`, `19950`, `100`, `1`, `999999999`).
+- Körningen lämnas kvar som testfall i `tests/entry.test.js`, och den faktiska
+  utdatan klistras in i paketets redovisning.
+- Visar körningen ett `ore` där likheten inte håller är det en lucka i den här
+  filen och ska lämnas tillbaka till arkitekten. Den får **inte** lappas med en
+  tolerans i `isEntry` — då är vi tillbaka i felet som det här avsnittet finns
+  för att stänga.
+
+**Obligatoriska testfall i paket 2** (hämtade ur lärdomen, som körde dem):
+
+| `amountSek` i posten | `isEntry` |
+|----------------------|-----------|
+| `199.999999999` | `false` |
+| `199.000000001` | `false` |
+| `0.01` | `true` |
+| `199.5` | `true` |
+| `9999999.99` | `true` |
+
+Vilket av `isEntry`-stegen som fäller vart och ett av de två `false`-fallen ska
+inte påstås i en testkommentar förrän mutationskravet i "Teststrategi" har visat
+det.
 
 ### Interna fel i `createEntry` — separat från formulärfelen
 
@@ -772,6 +917,39 @@ för en tyst feltolkning; det är inte en förberedelse för framtida funktioner
   är oförändrad. Samma mönster för `INTERVALS`, `CATEGORIES`,
   `INTERVAL_LABELS` och `CATEGORY_LABELS` i paket 2 och för
   `PAYMENTS_PER_YEAR` respektive `MONTHS_PER_PERIOD` i paket 3 och 7.
+- **Varje spärr i `src/core/` verifieras med mutation innan paketet lämnas
+  vidare.** En spärr är ett villkor som kan få en funktion att returnera `false`
+  eller ett fel. Metod: ta bort villkoret, kör `npm test`, kräv minst ett
+  fallerande test och exit 1, återställ. Kravet gäller varje **delvillkor** för
+  sig och inte bara hela `if`-satsen — det var ett delvillkor som överlevde i
+  `isEntry`. Överlever ett villkor mutationen ska antingen ett test skrivas som
+  bara det villkoret kan få att fälla avgörandet, eller villkoret tas bort.
+  Utdatan från körningarna klistras in i paketets redovisning. Ett paket
+  mutationstestar de spärrar det självt lägger till eller ändrar, inte hela
+  projektet på nytt. Följer av `LARDOMAR.md` (2026-08-23, kontrollen av antalet
+  fält i `isEntry` skyddas inte av något test).
+- **En testkommentar får inte namnge vilken kontroll som fångar ett fall förrän
+  mutationen har visat att det stämmer.** Kommentaren "ett saknat fält är också
+  fel antal fält" var osann: fallet passerade via en annan kodväg än den som
+  namngavs, och kommentaren fick raden att se skyddad ut.
+- **Undantag: rena snabbvägar mutationstestas inte — de mäts.** Ett villkor som
+  bara påverkar arbetsmängden och aldrig svaret, som steg 3 i `checkName`, kan
+  per definition inte fällas av ett funktionellt test. Ett sådant villkor ska
+  vara märkt som snabbväg i koden, ha ett testfall med minst 1 000 000 tecken
+  indata som ger rätt felmeddelande, och en uppmätt körtid i paketets
+  redovisning. Det får inte tas bort med hänvisning till mutationskravet, och
+  inget annat villkor får kallas snabbväg utan att det står i den här filen att
+  det är en.
+- **Inget test asserterar på körtid.** Determinismkravet ovan gäller även
+  maskinens hastighet: ett test som kräver "under N millisekunder" går sönder på
+  en långsam maskin, och ett trasigt test är inget fynd. Prestandakrav visas med
+  en redovisad mätning, inte med en assertion.
+- **Kanonisk lagringsform testas separat från regelkedjan.** `isEntry` ska
+  underkänna `amountSek: 199.999999999` och `199.000000001` och godkänna `0.01`,
+  `199.5` och `9999999.99`. Fixpunktskörningen för `canonicalAmountSek` som
+  krävs under "Kanonisk lagringsform" lämnas kvar som testfall. Följer av
+  `LARDOMAR.md` (2026-08-23, `isEntry` godkänner belopp som appen räknar om till
+  ett annat tal).
 - **Kontrollera alltid utgångskoden, inte bara utskriften.** `node --test` kan
   skriva ut rader som ser ut som testresultat och ändå avsluta med `EXIT=1`.
   Ett paket är inte klart förrän `npm test` ger `fail 0` och exit 0.
@@ -858,6 +1036,7 @@ export const MAX_YEAR;           // 2099
 export function validateEntryDraft(draft: unknown): ValidationResult;   // value saknar id
 export function createEntry(draft: unknown, makeId = () => crypto.randomUUID()): ValidationResult;  // value har id
 export function isValidEntryId(value: unknown): boolean;                // enda definitionen av id-villkoret
+export function canonicalAmountSek(amountSek: number): number;          // Math.round(v * 100) / 100 — enda definitionen
 export function isEntry(value: unknown): boolean;                       // används av storage vid inläsning
 ```
 
@@ -874,22 +1053,63 @@ gräns för hela processen.
 enligt avsnittet "Interna fel i `createEntry`", och lägger till `id`. `makeId`
 är injicerbar enbart för att tester ska kunna ge förutsägbara id:n.
 
-`isEntry` kontrollerar, i den ordningen: att värdet är ett vanligt objekt (inte
-`null`, inte en array), att `Object.keys(value).sort()` är exakt `ENTRY_FIELDS`
-(okända fält avvisas), att `id` godkänns av **`isValidEntryId`**, att `name`
-redan är trimmad och `amountSek` redan är ett `number`, samt att de fem övriga
-fälten godkänns av **`validateEntryDraft`** — alltså av exakt samma regelkedja
-som `createEntry` kör, inklusive `amountSek`-regel 4. Kravet på `id` är alltså
-inte en egen formulering utan samma anrop som `createEntry` gör — det är det som
-garanterar invarianten "allt som `createEntry` returnerar med `ok: true`
-godkänns av `isEntry`".
+`isEntry` kontrollerar, i den ordningen:
 
-Att `isEntry` ärver hela kedjan i stället för att räkna upp reglerna på nytt är
-bindande, och det är regel 4 som gör skillnaden synlig: en datafil med
-`amountSek: 1e-15` avvisas därför att `Math.round(v * 100)` är `0`, och
-`storage.js` svarar med `Datafilen innehåller en ogiltig post: <sökväg>` i
-stället för att läsa in en post som bryter mot "> 0". Skrevs reglerna av för
-hand här skulle den spärren tyst kunna glida isär från `validateEntryDraft`.
+1. att värdet är ett vanligt objekt (inte `null`, inte en array),
+2. att fältuppsättningen är exakt `ENTRY_FIELDS` — ett enda odelbart villkor,
+   se "Fältkontrollen i `isEntry`" nedan,
+3. att `id` godkänns av **`isValidEntryId`**,
+4. att `name` är en sträng och redan är sin kanoniska form
+   (`value.name === value.name.trim()`),
+5. att `amountSek` är ett `number` och redan är sin kanoniska form
+   (`value.amountSek === canonicalAmountSek(value.amountSek)`),
+6. att de fem fälten utom `id` godkänns av **`validateEntryDraft`** — alltså av
+   exakt samma regelkedja som `createEntry` kör, inklusive `amountSek`-regel 4.
+
+Steg 3 och 6 är anrop, inte egna formuleringar. `isEntry` frågar samma
+funktioner som `createEntry` frågar, och det är det som garanterar invarianten
+"allt som `createEntry` returnerar med `ok: true` godkänns av `isEntry`". Att
+kedjan ärvs i stället för att räknas upp på nytt är bindande, och det är regel 4
+som gör skillnaden synlig: en datafil med `amountSek: 1e-15` avvisas därför att
+`Math.round(v * 100)` är `0`, och `storage.js` svarar med
+`Datafilen innehåller en ogiltig post: <sökväg>` i stället för att läsa in en
+post som bryter mot "> 0". Skrevs reglerna av för hand här skulle den spärren
+tyst kunna glida isär från `validateEntryDraft`.
+
+Steg 4 och 5 är **inte** ett undantag från den regeln utan svaret på en fråga
+kedjan inte ställer: kedjan avgör om ett värde är godtagbart som indata, steg
+4–5 avgör om det redan är den form skrivvägen producerar. Motiveringen, ägaren
+till uttrycken, fixpunktskravet och de obligatoriska testfallen står under
+"Kanonisk lagringsform" och upprepas inte här. Utöver steg 4–5 ställer `isEntry`
+inga andra krav än kedjan.
+
+#### Fältkontrollen i `isEntry`
+
+Fältuppsättningen prövas med **ett** villkor, inte med två:
+
+```js
+JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(ENTRY_FIELDS)
+```
+
+Villkoret fångar saknade fält, extra fält och felstavade fält i ett svep.
+`JSON.stringify` används i stället för `join` därför att `join` gör jämförelsen
+beroende av att inget fältnamn innehåller avgränsartecknet: en post med det enda
+fältet `amountSek,category` ger samma sträng som två riktiga fält, medan
+`JSON.stringify` escapar citattecknen och håller isär fallen.
+
+Skälet till att det ska vara **ett** villkor och inte två är mutationskravet i
+"Teststrategi". Ett separat `keys.length !== ENTRY_FIELDS.length` går inte att
+skydda med något test: den enda postform som bara den raden fångar är en post
+vars sorterade fältlista är ett äkta prefix av `ENTRY_FIELDS`, och en sådan post
+saknar minst ett fält och avvisas ändå av `isValidEntryId` eller
+`validateEntryDraft`. En rad som inget test kan få att fälla avgörandet är död
+kod, och död kod i en spärr är värre än ingen kod alls: den ser ut att skydda
+något den inte skyddar (`LARDOMAR.md`, 2026-08-23, kontrollen av antalet fält i
+`isEntry` skyddas inte av något test).
+
+Villkoret ovan är däremot mutationsbart: tas hela `if`-satsen bort ska minst ett
+test falla och `npm test` avsluta med exit 1. Det testet finns redan i form av
+posten med ett extra fält.
 
 ### `src/core/cost.js` [paket 3]
 
@@ -1171,3 +1391,74 @@ visas för användaren.
 - **Atomär skrivning via temporärfil och `rename`** — ett avbrutet sparande får
   inte lämna kvar den trasiga fil som paket 4 samtidigt ska hantera. (påverkat
   av lärdom: nej)
+- **`isEntry` kräver kanonisk lagringsform utöver regelkedjan, och uttrycket får
+  en ägare: `canonicalAmountSek`** — den här filen slog tidigare fast att
+  `isEntry` ärver exakt `validateEntryDraft`-kedjan och ingenting mer. Den
+  formuleringen gick inte att förena med kravet att en datafil med
+  `amountSek: 199.999999999` ska avvisas, och den var i grunden ett svar på fel
+  fråga: kedjan avgör om ett värde är godtagbart som **indata**, medan
+  inläsningen frågar om värdet är den form skrivvägen **producerar**. Två frågor
+  kan inte ha ett gemensamt facit. I stället för att göra ett undantag för
+  `amountSek` generaliserades den kontroll `isEntry` redan hade för `name`
+  (`value.name === value.name.trim()`) till en regel: varje fält som skrivvägen
+  normaliserar prövas mot sin kanoniska form, och de fälten är uppräknade i en
+  tabell. Alternativet — att göra regel 3 exakt i stället för att lägga till
+  kontrollen — förkastades, eftersom det skulle ändra vilket felmeddelande
+  användaren får för värden som `1.005` och därmed röra ett facit som fungerar.
+  Invarianten "allt som `createEntry` returnerar med `ok: true` godkänns av
+  `isEntry`" bevaras genom att kravet uttrycks som likhet med skrivvägens egen
+  utdata via en gemensam ägarfunktion, inte som ännu en tolerans. Att den
+  likheten håller för varje lagringsbart belopp är ett flyttalspåstående och
+  skrivs därför inte ned som faktum — det är ett körkrav på byggaren.
+  **Byggaren ska:** lägga till `canonicalAmountSek` i `entry.js`, låta
+  `checkAmountSek` returnera dess resultat i stället för att skriva
+  `Math.round(v * 100) / 100` en gång till, och lägga till kontrollen av
+  `amountSek` mot kanonisk form i `isEntry`. (påverkat av lärdom: **ja**,
+  `2026-08-23 — datamodell: isEntry godkänner belopp som appen räknar om till
+  ett annat tal`)
+- **`canonicalAmountSek` exporteras trots att bara `entry.js` använder den** —
+  teststrategin kräver att ett villkor med en ägare testas på ägaren, och
+  fixpunktskörningen behöver nå funktionen direkt i stället för att gå via
+  `createEntry` för varje öre. Samma skäl som gjorde `isValidEntryId` till en
+  export. (påverkat av lärdom: **ja**, samma post som ovan)
+- **`isEntry` prövar fältuppsättningen med ett enda odelbart villkor** — ett
+  separat `keys.length !== ENTRY_FIELDS.length` går inte att skydda med något
+  test, eftersom varje postform som bara den raden fångar saknar minst ett fält
+  och avvisas ändå av `isValidEntryId` eller `validateEntryDraft`. Enligt
+  mutationsregeln ska ett villkor som överlever mutationen antingen få ett eget
+  test eller tas bort; här finns inget möjligt test, så villkoret tas bort och
+  ersätts av en jämförelse som är självständigt korrekt.
+  `JSON.stringify` valdes framför `join(',')` därför att `join` gör resultatet
+  beroende av att inget fältnamn innehåller avgränsartecknet. **Byggaren ska:**
+  ersätta de två `if`-satserna som prövar nycklarna i `isEntry` med en enda, och
+  visa med mutation att den nya satsen fäller testet med en post som har ett
+  extra fält. (påverkat av lärdom: **ja**, `2026-08-23 — test: kontrollen av
+  antalet fält i isEntry skyddas inte av något test`)
+- **Namnlängden avvisas först på kodenheter, sedan på tecken — och projektet får
+  ingen gräns i byte för indata** — mätningen i lärdomen visade att bara `name`
+  har det här problemet, eftersom det är den enda kontroll som materialiserar
+  hela indatan för att svara på en fråga som är avgjord efter 61 tecken. Två
+  alternativ förkastades: en global storleksgräns på API-anropet (löser inget
+  problem i `PLAN.md`, och gränsen skulle behöva ett eget svenskt felmeddelande
+  och en egen plats i facittabellen) och att byta tillbaka till
+  `trimmed.length`, vilket vore ett återfall i lärdomen om emoji. Snabbvägen får
+  ingen rad i felmeddelandetabellen därför att den ger samma meddelande för en
+  äkta delmängd av samma värden — den kan alltså inte flytta vilket facit som
+  gäller, till skillnad från `amountSek`-regel 4. Faktorn skrivs
+  `2 * NAME_MAX_LENGTH` så att gränsen behåller en enda ägare. **Byggaren ska:**
+  lägga till kontrollen `trimmed.length > 2 * NAME_MAX_LENGTH` i `checkName`
+  före teckenräkningen, märka den som snabbväg i en kommentar, och lägga till de
+  fem testfallen i tabellen under "`name` — längdgränsen och den billiga
+  avvisningen". (påverkat av lärdom: **ja**, `2026-08-23 — validering:
+  namnlängden räknas genom att hela strängen materialiseras`)
+- **Mutationsverifiering är ett bindande teststrategikrav, med ett uttalat
+  undantag för snabbvägar** — kravet stod bara i `LARDOMAR.md` och var därför
+  inte bindande för någon byggare. Det gäller varje delvillkor och inte bara
+  hela `if`-satsen, eftersom det var ett delvillkor som överlevde. Undantaget
+  för snabbvägar skrevs in samtidigt: utan det skulle mutationsregeln kräva att
+  den nya kontrollen i `checkName` tas bort, och de två avsnitten hade blivit
+  två facit som ger motsatta svar. Ett tidsbaserat test förkastades som lösning
+  på samma fråga — det skulle göra testsviten beroende av maskinens hastighet
+  och bryta mot determinismkravet. (påverkat av lärdom: **ja**,
+  `2026-08-23 — test: kontrollen av antalet fält i isEntry skyddas inte av något
+  test`)

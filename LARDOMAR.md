@@ -282,3 +282,30 @@ körning eller ett test kan fånga den.
 göras. Krävs den ändå för att texten ska bli begriplig: redovisa den som en egen
 rad i paketets redovisning tillsammans med den språkregel som motiverar den, så
 att den går att granska.
+
+### 2026-08-24 — test: mutationskravet tillämpades bara på den spärr lärdomen nämnde
+**Vad gick fel:** Paketet skrev in mutationsverifiering av *varje delvillkor* som
+bindande krav i `ARKITEKTUR.md` (teststrategin) och körde sedan mutation bara på
+fältkontrollen i `isEntry`; delvillkoret `typeof value.amountSek !== 'number'` i
+samma funktion överlevde mutation med `tests 52, pass 52, fail 0` och exit 0,
+eftersom inget test använde ett `amountSek` av typen `BigInt` eller `Symbol` —
+just de värden där `canonicalAmountSek` kastar
+`TypeError: Cannot mix BigInt and other types` i stället för att `isEntry`
+returnerar `false`.
+**Varför:** Mutationskörningen riktades mot det exempel lärdomen 2026-08-23
+råkade namnge (fältantalskontrollen) i stället för mot varje villkor paketet
+självt lade till. Att villkoret var nytt gjorde det inte prövat: den nya
+likhetskontrollen mot kanonisk form ser ut att ensam avvisa allt som inte är ett
+tal, och det gör den också — för varje typ där `Math.round(v * 100)` går att
+beräkna. `BigInt` och `Symbol` är de två typer där uttrycket kastar i stället,
+och de saknades i testdatan, som bara innehöll strängar, `null` och objekt. Detta
+är andra gången ett delvillkor i `isEntry` visar sig oskyddat av något test
+(första gången: 2026-08-23, kontrollen av antalet fält).
+**Regel framåt:** Mutationsprövningen ska omfatta varje delvillkor paketet
+självt lägger till eller ändrar, inte bara det villkor en lärdom råkar nämna.
+Räkna upp de nya delvillkoren skriftligt i redovisningen och visa en
+mutationskörning per villkor med exit 1. Överlever ett villkor: leta först efter
+den indatatyp där det skyddar mot ett *kast* och inte mot ett `false` — för
+aritmetik på ovaliderade värden är det `BigInt` och `Symbol`, som kastar
+`TypeError` där varje annan typ tvingas till `NaN`. Varje typvakt som räknar på
+ett fält ska ha testfall med `BigInt` och `Symbol` för det fältet.

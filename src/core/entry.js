@@ -161,17 +161,23 @@ export function isValidEntryId(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+// Den kanoniska lagringsformen för ett belopp — enda definitionen. Både
+// skrivvägen (checkAmountSek) och läsvägen (isEntry) anropar den, så de kan
+// inte glida isär om avrundningen någon gång byter form.
+export function canonicalAmountSek(amountSek) {
+  return Math.round(amountSek * 100) / 100;
+}
+
 export function isEntry(value) {
   if (!isPlainObject(value)) {
     return false;
   }
-  // Exakt de sex fälten, varken fler eller färre. isEntry är enda spärren när
-  // storage.js läser filen från disk, så okända fält måste avvisas här.
-  const keys = Object.keys(value).sort();
-  if (keys.length !== ENTRY_FIELDS.length) {
-    return false;
-  }
-  if (keys.some((key, index) => key !== ENTRY_FIELDS[index])) {
+  // Exakt de sex fälten, varken fler eller färre, i ett enda odelbart villkor.
+  // isEntry är enda spärren när storage.js läser filen från disk, så saknade,
+  // extra och felstavade fält måste alla avvisas här. JSON.stringify i stället
+  // för join: join skulle göra jämförelsen beroende av att inget fältnamn
+  // innehåller avgränsartecknet.
+  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(ENTRY_FIELDS)) {
     return false;
   }
   // Id:t lagras exakt som makeId() gav det, utan trimning. Till skillnad från
@@ -179,10 +185,15 @@ export function isEntry(value) {
   if (!isValidEntryId(value.id)) {
     return false;
   }
+  // Steg 4 och 5: fälten som skrivvägen normaliserar måste redan vara sin
+  // kanoniska form. Regelkedjan avgör om ett värde är godtagbart som indata —
+  // det här avgör om det är den form skrivvägen producerar. Utan steg 5 släpps
+  // 199.999999999 in i datafilen och räknas därefter som 200.
   if (typeof value.name !== 'string' || value.name !== value.name.trim()) {
     return false;
   }
-  if (typeof value.amountSek !== 'number') {
+  if (typeof value.amountSek !== 'number'
+    || value.amountSek !== canonicalAmountSek(value.amountSek)) {
     return false;
   }
   return validateEntryDraft(value).ok;
@@ -195,6 +206,15 @@ function checkName(raw) {
   const trimmed = raw.trim();
   if (trimmed === '') {
     return { message: MESSAGES.nameEmpty };
+  }
+  // Snabbväg, inte en egen regel: en kodpunkt är i UTF-16 antingen en eller två
+  // kodenheter, så fler än 2 * NAME_MAX_LENGTH kodenheter betyder alltid fler än
+  // NAME_MAX_LENGTH tecken. Villkoret kan därför bara vara sant för strängar som
+  // raden nedan ändå hade avvisat, med samma meddelande — men det svarar utan
+  // att materialisera hela indatan. Utan den kostade ett namn på 50 000 000
+  // tecken 2,8 sekunder och 1,7 GB heap.
+  if (trimmed.length > 2 * NAME_MAX_LENGTH) {
+    return { message: MESSAGES.nameTooLong };
   }
   // [...text].length räknar tecken, text.length räknar UTF-16-kodenheter och
   // gör varje emoji till två.
@@ -240,7 +260,8 @@ function checkAmountSek(raw) {
   }
 
   // Lagrat värde har alltid högst två decimaler och är fritt från flyttalsskräp.
-  return { value: ore / 100 };
+  // Uttrycket har en ägare — samma funktion som isEntry prövar mot.
+  return { value: canonicalAmountSek(v) };
 }
 
 // Returnerar ett finit tal, eller null när råvärdet inte är ett tal alls.
