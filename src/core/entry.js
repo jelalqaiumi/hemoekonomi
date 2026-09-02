@@ -3,6 +3,13 @@
 // Sex fält, alla obligatoriska: id, name, amountSek, interval, startDate, category.
 
 import { ISO_DATE_PATTERN, isValidIsoDate, parseIsoDate } from './dates.js';
+// Konstanten och normalizeZero, inget annat: de funktioner i money.js som kan
+// kasta importeras inte, eftersom canonicalAmountSek måste kunna anropas med
+// vilket number som helst och svara med ett tal, medan sekToOre kastar för ett
+// tal som inte är finit. canonicalAmountSek(NaN) ska ge NaN så att isEntry kan
+// svara false i stället för att kasta. normalizeZero är undantaget som gör det
+// möjligt: den har medvetet ingen ingångsspärr och kastar för ingen indata.
+import { ORE_PER_SEK, normalizeZero } from './money.js';
 
 // De sammansatta konstanterna fryses. En ägare till en regel är verkningslös om
 // vilken importör som helst kan skriva om ägarens värde — ENTRY_FIELDS.push(...)
@@ -165,7 +172,9 @@ export function isValidEntryId(value) {
 // skrivvägen (checkAmountSek) och läsvägen (isEntry) anropar den, så de kan
 // inte glida isär om avrundningen någon gång byter form.
 export function canonicalAmountSek(amountSek) {
-  return Math.round(amountSek * 100) / 100;
+  // normalizeZero äger villkoret "detta är -0": Math.round(-0.001 * ORE_PER_SEK)
+  // ger -0, och -0 / ORE_PER_SEK ger -0. Den lagrade formen ska vara 0.
+  return normalizeZero(Math.round(amountSek * ORE_PER_SEK) / ORE_PER_SEK);
 }
 
 export function isEntry(value) {
@@ -237,24 +246,26 @@ function checkAmountSek(raw) {
 
   // Steg 2, i tabellordning. Maxgränsen står före decimalregeln med flit:
   // decimalregeln är en toleransjämförelse där 1e-6 bara håller så länge
-  // v * 100 ligger under ungefär 1e9. Kastas ordningen om blir regel 3 oexakt.
+  // v * ORE_PER_SEK ligger under ungefär 1e9. Kastas ordningen om blir regel 3
+  // oexakt.
   if (v <= 0) {
     return { message: MESSAGES.amountNotPositive };
   }
   if (v > AMOUNT_MAX_SEK) {
     return { message: MESSAGES.amountTooLarge };
   }
-  if (Math.abs(v * 100 - Math.round(v * 100)) >= 1e-6) {
+  if (Math.abs(v * ORE_PER_SEK - Math.round(v * ORE_PER_SEK)) >= 1e-6) {
     return { message: MESSAGES.amountTooManyDecimals };
   }
 
   // Regel 1 prövas om på det värde som faktiskt lagras. Kedjan ovan prövar det
-  // inkommande talet, men posten får `Math.round(v * 100) / 100`, och varje v
-  // vars v * 100 avrundas till noll ryms under decimalregelns tolerans 1e-6
-  // (t.ex. 1e-9). Utan den här raden lagras ett belopp som bryter mot "> 0" och
-  // som isEntry därefter underkänner. Den står sist för att inte ta över fel
-  // som hör hemma på regel 3: 0,001 ger fortfarande decimalfelet.
-  const ore = Math.round(v * 100);
+  // inkommande talet, men posten får `Math.round(v * ORE_PER_SEK) / ORE_PER_SEK`,
+  // och varje v vars v * ORE_PER_SEK avrundas till noll ryms under
+  // decimalregelns tolerans 1e-6 (t.ex. 1e-9). Utan den här raden lagras ett
+  // belopp som bryter mot "> 0" och som isEntry därefter underkänner. Den står
+  // sist för att inte ta över fel som hör hemma på regel 3: 0,001 ger
+  // fortfarande decimalfelet.
+  const ore = Math.round(v * ORE_PER_SEK);
   if (ore < 1) {
     return { message: MESSAGES.amountNotPositive };
   }
@@ -307,6 +318,10 @@ function checkCategory(raw) {
   return { value: raw };
 }
 
-function isPlainObject(value) {
+// Enda definitionen av "vanligt objekt" i projektet: inte null, inte en array.
+// Exporteras därför att cost.js prövar samma sak i yearlyOre och inte får ha en
+// egen, svagare kopia. Beroendet är riktat och cykelfritt: cost.js importerar
+// entry.js, medan entry.js importerar bara dates.js och money.js.
+export function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

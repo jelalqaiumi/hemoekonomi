@@ -15,6 +15,7 @@ import {
   canonicalAmountSek,
   createEntry,
   isEntry,
+  isPlainObject,
   isValidEntryId,
   validateEntryDraft
 } from '../src/core/entry.js';
@@ -374,6 +375,7 @@ const AMOUNT_REJECTED_CASES = [
   ['0', 0, 'Beloppet måste vara större än 0 kr.'],
   ['0,000', 0, 'Beloppet måste vara större än 0 kr.'],
   ['-0', -0, 'Beloppet måste vara större än 0 kr.'],
+  ['-0,00', -0, 'Beloppet måste vara större än 0 kr.'],
   ['-50', -50, 'Beloppet måste vara större än 0 kr.'],
   ['10000000', 10000000, 'Beloppet får vara högst 9 999 999,99 kr.'],
   ['9999999,995', 9999999.995, 'Beloppet får vara högst 9 999 999,99 kr.'],
@@ -641,4 +643,84 @@ test('isEntry avvisar amountSek av en typ som kanoniseringen inte kan räkna på
   for (const amountSek of [199n, 0n, Symbol('199')]) {
     assert.equal(isEntry({ ...entry, amountSek }), false, `amountSek: ${String(amountSek)}`);
   }
+});
+
+// isPlainObject äger villkoret "är det här ett vanligt objekt" och anropas av
+// både isEntry här och yearlyOre i cost.js. Ett Date är ett vanligt objekt; en
+// array är det inte, och det är just arrayen den tidigare kopian i cost.js
+// släppte igenom.
+test('isPlainObject godkänner vanliga objekt och avvisar arrayer och primitiver', () => {
+  for (const value of [{}, new Date()]) {
+    assert.equal(isPlainObject(value), true, String(value));
+  }
+  const notObjects = [[], [1], null, undefined, 'abc', 42, true, Symbol('x'), 100n, () => {}];
+  for (const value of notObjects) {
+    assert.equal(isPlainObject(value), false, String(value));
+  }
+});
+
+// entry.js importerar konstanten ORE_PER_SEK från money.js men aldrig sekToOre:
+// sekToOre kastar RangeError för ett tal som inte är finit, medan
+// canonicalAmountSek måste svara med ett tal så att isEntry kan returnera false
+// för en datafil med amountSek: NaN i stället för att krascha inläsningen.
+test('canonicalAmountSek(NaN) ger NaN och isEntry svarar false utan att kasta', () => {
+  assert.equal(Number.isNaN(canonicalAmountSek(NaN)), true);
+  assert.equal(Number.isNaN(canonicalAmountSek(Infinity)), false);
+  const entry = {
+    id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
+    name: 'Spotify Family',
+    amountSek: NaN,
+    interval: 'monthly',
+    startDate: '2026-01-31',
+    category: 'subscription'
+  };
+  assert.doesNotThrow(() => isEntry(entry));
+  assert.equal(isEntry(entry), false);
+});
+
+// --- -0 i entry.js
+// Beslutet "-0 normaliseras till 0" ändrar inte valideringen: -0 är noll skrivet
+// med tecken, och regel 1 (v <= 0) är sann för det. Ingen ny felsträng infördes.
+
+test('-0 avvisas av regel 1 i alla tre skrivsätten', () => {
+  for (const amountSek of [-0, '-0', '-0,00']) {
+    assert.deepEqual(
+      messagesFor(validateEntryDraft(validDraft({ amountSek })), 'amountSek'),
+      ['Beloppet måste vara större än 0 kr.'],
+      String(amountSek)
+    );
+  }
+});
+
+// canonicalAmountSek anropar normalizeZero, som äger villkoret "detta är -0".
+// Utan anropet lagras -0 och formatSek visar minustecknet U+2212 för användaren.
+// Object.is, inte ===: -0 === 0 är true och kan aldrig falla.
+test('canonicalAmountSek ger 0 och aldrig -0', () => {
+  assert.equal(Object.is(canonicalAmountSek(-0), 0), true);
+  assert.equal(Object.is(canonicalAmountSek(-1e-9), 0), true);
+  assert.equal(Object.is(canonicalAmountSek(-0.001), 0), true);
+  assert.equal(Object.is(canonicalAmountSek(-0.004), 0), true);
+  // Ett verkligt negativt belopp normaliseras inte bort.
+  assert.equal(canonicalAmountSek(-0.01), -0.01);
+});
+
+// isEntry avvisar -0 i steg 6, genom regelkedjans regel 1 — inte i steg 5:
+// canonicalAmountSek(-0) är 0 och -0 === 0 är true, så likhetsjämförelsen
+// passerar. isEntry får aldrig kasta för värdet.
+test('isEntry svarar false för amountSek: -0 utan att kasta', () => {
+  const entry = {
+    id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
+    name: 'Spotify Family',
+    amountSek: -0,
+    interval: 'monthly',
+    startDate: '2026-01-31',
+    category: 'subscription'
+  };
+  assert.doesNotThrow(() => isEntry(entry));
+  assert.equal(isEntry(entry), false);
+  assert.equal(entry.amountSek === canonicalAmountSek(entry.amountSek), true);
+  assert.deepEqual(
+    messagesFor(validateEntryDraft(entry), 'amountSek'),
+    ['Beloppet måste vara större än 0 kr.']
+  );
 });

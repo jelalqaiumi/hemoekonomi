@@ -309,3 +309,288 @@ den indatatyp där det skyddar mot ett *kast* och inte mot ett `false` — för
 aritmetik på ovaliderade värden är det `BigInt` och `Symbol`, som kastar
 `TypeError` där varje annan typ tvingas till `NaN`. Varje typvakt som räknar på
 ett fält ska ha testfall med `BigInt` och `Symbol` för det fältet.
+
+### 2026-09-02 — dokumentation: "exakt heltalsaritmetik utan flyttal" skrevs in i koden utan att köras
+**Vad gick fel:** `src/core/money.js` rad 24 lovar "Heltalsdivision med 'halva
+öret uppåt', utan flyttal i mellanledet" och `src/core/cost.js` rad 3 lovar
+"Årssumman är exakt", men båda påståendena är falska på den här maskinen:
+`divideRoundHalfUp(9007199254740989, 12)` ger `750599937895083` där det exakta
+svaret är `750599937895082`, och `totalYearlyOre` av 10 000 000 årsposter à
+9 999 999,99 kr ger `9999999990992800` i stället för `9999999990000000` — ett
+tyst fel på 992 800 öre utan undantag och utan `Number.isSafeInteger`-kontroll.
+**Varför:** `2 * numerator + denominator` och `sum += yearlyOre(entry)` är
+flyttalsoperationer på `Number`, inte heltalsaritmetik; över 2^53 avrundas både
+`2n + d` och den ackumulerade summan till närmaste representerbara dubbel.
+Formuleringen "Exakt, i heltalsaritmetik, utan flyttal" hämtades ur
+`ARKITEKTUR.md` rad 672 och skrevs av in i koden som ett allmängiltigt påstående
+utan att något värde nära 2^53 kördes; testerna går som högst till `999999999`.
+Detta är tredje gången ett påstående skrivits in i ett bindande dokument eller i
+koden utan att ha körts (2026-08-18 testkommandot, 2026-08-23 flyttalsgränsen).
+**Regel framåt:** Ett påstående om exakthet ("exakt", "utan flyttal", "heltal")
+får skrivas i `ARKITEKTUR.md` eller i en kodkommentar först efter att funktionen
+körts mot en `BigInt`-beräkning av samma uttryck för `Number.MAX_SAFE_INTEGER`,
+`2**53`, `2**53 - 3` och `2**54`, med utdatan inklistrad i redovisningen. Håller
+exaktheten bara inom ett intervall ska intervallet skrivas ut i påståendet och
+funktionen ska kasta `RangeError` utanför det: `divideRoundHalfUp` ska kräva
+`Number.isSafeInteger(2 * numerator + denominator)` och `totalYearlyOre` ska
+kräva `Number.isSafeInteger(sum)` efter varje addition.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-02 — dokumentation: ARKITEKTUR.md:s exempelsträng för formatSek är inte den koden ger
+**Vad gick fel:** `ARKITEKTUR.md` rad 976 anger `formatSek`-utdatan som
+`"1 234,50 kr"` med vanliga mellanslag (U+0020, verifierat med `od -c`), medan
+`formatSek(123450)` på den här maskinen ger kodpunkterna
+`U+0031 U+00A0 U+0032 U+0033 U+0034 U+002C U+0035 U+0030 U+00A0 U+006B U+0072`,
+alltså hårt blanksteg på båda platserna — `formatSek(123450) === '1 234,50 kr'`
+är `false`.
+**Varför:** Byggaren upptäckte skillnaden, skrev testerna mot den verkliga
+utdatan och dokumenterade den i `tests/money.test.js` rad 143–144, men lämnade
+det bindande dokumentet oförändrat, trots regeln i `CLAUDE.md` att
+`ARKITEKTUR.md` ska ändras först och byggas sedan. Paket 6 läser rad 976 för att
+bygga gränssnittet och jämför då mot en sträng som aldrig uppstår. Tredje gången
+`ARKITEKTUR.md` innehåller ett påstående om koden som koden inte uppfyller
+(2026-08-23 två facit i samma fil, 2026-08-23 beskriver kod som inte längre ser
+ut så).
+**Regel framåt:** Hittar byggaren en skillnad mellan `ARKITEKTUR.md` och det som
+koden faktiskt producerar ska paketet lämnas tillbaka till arkitekten innan det
+redovisas som klart — skillnaden får aldrig bara noteras i en testkommentar.
+Varje exempelsträng i `ARKITEKTUR.md` som en funktion ska producera skrivs med
+kodpunkterna utskrivna så snart den innehåller andra blanktecken än U+0020,
+`"1\u00a0234,50\u00a0kr"`, och verifieras med en körning av funktionen.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-02 — kostnad: ett interval utanför tabellen ger tyst NaN i stället för fel
+**Vad gick fel:** `yearlyOre({ …, interval: 'weekly' })` i `src/core/cost.js`
+rad 20 returnerar `NaN`, och `totalYearlyOre([giltigPost, weeklyPost])`
+returnerar `NaN` utan att kasta; `monthlyOre` och `totalMonthlyOre` för samma
+post kastar `RangeError: divideRoundHalfUp kräver ett heltal som täljare.`, ett
+meddelande som pekar ut fel orsak. Kedjan vidare är körd:
+`formatSek(totalYearlyOre(entries))` ger strängen `"NaN kr"`, alltså engelsk
+felutdata rakt in i gränssnittet som paket 6 bygger. Inget testfall i
+`tests/cost.test.js` skickar in ett interval utanför tabellen.
+**Varför:** `PAYMENTS_PER_YEAR[entry.interval]` är ett ovaliderat uppslag: en
+nyckel som saknas ger `undefined`, och `heltal * undefined` ger `NaN` i stället
+för att kasta. `sekToOre` i samma paket har uttryckligen en spärr med
+motiveringen "i stället för att föras vidare som ett skadat ören-tal"
+(`src/core/money.js` rad 9–14), men `cost.js` för sedan vidare precis ett sådant
+skadat tal. `cost.js` kontrollerar ingen indata alls: `yearlyOre({ amountSek:
+-100, interval: 'monthly' })` ger `-120000` och `totalYearlyOre('abc')` itererar
+över strängens tecken.
+**Regel framåt:** Ett uppslag i en tabell med ett ovaliderat värde som nyckel ska
+alltid ha en explicit spärr före multiplikationen: `yearlyOre` ska kasta
+`RangeError` när `Object.hasOwn(PAYMENTS_PER_YEAR, entry.interval)` är `false`,
+med ett meddelande som namnger `interval` och inte täljaren. Varje funktion i
+`src/core/` som tar emot ett `Entry` ska ha testfall med `interval` utanför
+tabellen, `interval: undefined` och negativt `amountSek`, och ingen exporterad
+funktion i `src/core/` får returnera `NaN` för någon indata — den ska kasta i
+stället.
+
+### 2026-09-02 — test: kopplingen mellan INTERVALS och PAYMENTS_PER_YEAR skyddas inte av något test
+**Vad gick fel:** `tests/cost.test.js` innehåller noll referenser till
+`INTERVALS` (`grep -c 'INTERVALS' tests/cost.test.js` ger `0`). Läggs `'weekly'`
+till i `INTERVALS` i `src/core/entry.js` rad 10 faller fyra tester, och alla fyra
+ligger i `tests/entry.test.js` (rad 39, 70, 441, 518) — inget test i paket 3
+faller. `validateEntryDraft` godkänner då posten (`ok: true`) medan `yearlyOre`
+för samma post ger `NaN`.
+**Varför:** De två konstanterna beskriver samma domän men bor i var sin modul,
+och `PAYMENTS_PER_YEAR` fick sin ägarkommentar utan att någon kontroll knyter
+nycklarna till `INTERVALS`. De fyra tester som faller är just de tester en
+byggare uppdaterar som en del av att lägga till ett intervall; när de är
+uppdaterade är hålet i `cost.js` helt otäckt.
+**Regel framåt:** När två konstanter i `src/core/` måste beskriva samma domän
+ska den beroende modulens testfil importera båda och asserta att de stämmer:
+`tests/cost.test.js` ska innehålla
+`assert.deepEqual(Object.keys(PAYMENTS_PER_YEAR).sort(), [...INTERVALS].sort())`,
+och samma mönster ska finnas för `MONTHS_PER_PERIOD` i `tests/schedule.test.js`
+i paket 7. Ett sådant test räknas inte som skrivet förrän mutationen "lägg till
+ett värde i den ena listan" har fällt just det testet.
+
+### 2026-09-02 — money: formatSek har ingen ingångsspärr och visar NaN och ∞ för användaren
+**Vad gick fel:** `formatSek(NaN)` ger `"NaN kr"`, `formatSek('abc')` ger
+`"NaN kr"`, `formatSek(Infinity)` ger `"∞ kr"` och `formatSek(1e300)` ger en
+sträng på 313 tecken, medan `formatSek(1n)` och `formatSek(Symbol('x'))` kastar
+`TypeError` i stället för det `RangeError` modulens övriga exporter använder.
+Inget testfall i `tests/money.test.js` skickar in något annat än ett giltigt
+antal öre till `formatSek` eller `oreToSek`.
+**Varför:** `sekToOre` och `divideRoundHalfUp` fick var sin uttryckliga
+ingångsspärr i samma paket, men `formatSek` och `oreToSek` fick ingen — de
+räknades som "bara visning". Just visningsfunktionen är dock den sista som körs
+före användaren, så ett skadat tal som slinker igenom någon annanstans blir
+synlig engelsk text i ett gränssnitt där all text ska vara svensk.
+**Regel framåt:** Ge varje exporterad funktion i en modul samma ingångskontroll
+och samma feltyp — kastar en funktion i modulen `RangeError` för icke-finit
+indata ska alla göra det. `formatSek` och `oreToSek` ska kasta `RangeError` när
+`Number.isInteger(ore)` är `false`, och `tests/money.test.js` ska ha testfall med
+`NaN`, `Infinity`, `-Infinity`, en sträng, `null`, `1n` och `Symbol('x')` för
+varje exporterad funktion — inte bara för dem som råkade få en spärr först.
+
+### 2026-09-02 — test: summaspärren efter varje addition överlever mutation
+**Vad gick fel:** Flyttas `if (!Number.isSafeInteger(sum))` i `src/core/cost.js`
+rad 86–88 ut ur `for`-loopen så att bara slutsumman prövas ger `npm test`
+fortfarande `tests 118, pass 118, fail 0` och exit 0, trots att `ARKITEKTUR.md`
+rad 1245 skriver "efter **varje** addition" som bindande och rad 980–990 kräver
+mutationsprövning av varje delvillkor; placeringen ändrar ändå svaret:
+`totalYearlyOre([4e13 år, 4e13 år, 4e13 år, post med interval 'weekly'])` ger
+`totalYearlyOre kräver att summan är ett säkert heltal.` med villkoret i loopen
+och `yearlyOre kräver ett känt interval, fick "weekly".` med det utanför.
+**Varför:** Kodkommentaren på rad 84–85 motiverar placeringen med att "en summa
+som lämnar det säkra området avrundas tyst och kan inte upptäckas i efterhand",
+och den motiveringen är falsk. Alla årsbelopp är minst 0, så delsummorna växer
+monotont: överskrider en delsumma området gör slutsumman det också, och den
+utflyttade spärren fångar samma lista — testet "totalYearlyOre kastar RangeError
+när summan lämnar det säkra heltalsområdet" passerade i mutationskörningen. Den
+verkliga skillnaden är vilket felmeddelande som vinner när både en delsumma och
+en senare post är trasiga, och den skillnaden stod aldrig skriven, så inget test
+kunde härledas ur motiveringen. Tredje gången ett delvillkor lämnas oskyddat av
+något test (2026-08-23 fältantalskontrollen i `isEntry`, 2026-08-24
+`typeof value.amountSek !== 'number'`).
+**Regel framåt:** Skriv motiveringen till ett villkors *placering* som det
+indatafall där placeringen ändrar svaret, och gör det fallet till ett testfall i
+samma paket. För en spärr inuti en loop betyder det en lista där både
+loopvillkoret och ett senare element är trasiga, med det förväntade meddelandet
+utskrivet. Överlever villkoret ändå mutationen ska det flyttas ut eller tas bort
+— en kommentar som säger "annars kan det inte upptäckas i efterhand" räknas inte
+som skydd förrän en körning visat att det faktiskt inte upptäcks.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-02 — dokumentation: totalYearlyOre-tabellen numrerar spärrarna i en ordning koden inte följer
+**Vad gick fel:** `ARKITEKTUR.md` rad 1198 slår fast "Ingångsspärrar i `cost.js`
+— bindande, första träff vinner", och `totalYearlyOre`-tabellen på rad 1241–1245
+numrerar "varje post prövas av `yearlyOre`-kedjan" som 2 och
+`!Number.isSafeInteger(sum)` som 3, men koden varvar dem: för
+`totalYearlyOre([4e13 år, 4e13 år, 4e13 år, post med interval 'weekly'])` ger
+tabellens ordning `yearlyOre kräver ett känt interval, fick "weekly".` medan
+körningen ger `totalYearlyOre kräver att summan är ett säkert heltal.`
+**Varför:** Rad 3 i tabellen bär själv undantaget ("efter **varje** addition"),
+vilket upphäver den numrering raden står i — samma tabell har alltså två svar på
+frågan "vilken spärr vinner". `yearlyOre`-tabellen strax ovanför är en verklig
+sekventiell kedja i en funktion, där numreringen stämmer, och
+`totalYearlyOre`-tabellen skrevs i samma form utan att formen passade: där är
+postprövningen och summaprövningen inte två steg efter varandra utan varvade.
+**Regel framåt:** En numrerad "första träff vinner"-tabell får bara beskriva
+villkor som körs sekventiellt i en enda kedja. Prövas villkoren varvat i en loop
+ska tabellen ersättas av loopens ordning skriven som pseudokod, följd av ett
+utskrivet exempel på en indata där två villkor är sanna samtidigt och det
+vinnande meddelandet angivet. Kontrollera efter varje tabelltillägg genom att
+konstruera en indata som gör två rader sanna och köra den.
+
+### 2026-09-02 — dokumentation: "tom lista ger 0 för samtliga fyra funktioner" motsägs av koden
+**Vad gick fel:** `ARKITEKTUR.md` rad 672 påstår "Tom lista ger `0` för samtliga
+fyra funktioner, aldrig fel och aldrig `NaN`", men `yearlyOre([])` och
+`monthlyOre([])` kastar `RangeError: yearlyOre kräver ett känt interval, fick
+"undefined".`; bara `totalYearlyOre([])` och `totalMonthlyOre([])` ger `0`. Det
+nya avsnittet på rad 1252, skrivet i samma paket, säger rätt sak ("Tom lista ger
+fortfarande `0` från både `totalYearlyOre` och `totalMonthlyOre`"), så filen har
+två svar på samma fråga.
+**Varför:** Paketet skrev in det korrekta påståendet i `cost.js`-blocket men läste
+inte om normaliseringsavsnittet som säger emot det, trots att just det stycket
+ändrades i samma paket — kodblocket direkt ovanför rad 672 skrevs om i samma
+ändring. Regeln från 2026-08-23 ("kör varje värde i facittabellen mot båda
+tabellerna och kräv samma svar") tillämpades på beloppskedjan men inte på det nya
+avsnittet.
+**Regel framåt:** När ett påstående om en funktions beteende skrivs in på ett nytt
+ställe i `ARKITEKTUR.md` ska funktionsnamnet först sökas i hela filen, och varje
+träff antingen strykas eller skrivas om så att den ger samma svar. Ett påstående
+som räknar upp "samtliga N funktioner" ska namnge dem, och varje namngiven
+funktion ska köras med det påstådda argumentet innan meningen skrivs.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-02 — arkitektur: den utvidgade ägarregeln för tal bryts av kod som redan fanns
+**Vad gick fel:** `ARKITEKTUR.md` rad 121–131 utvidgades i det här paketet till
+"Ett tal som står på mer än ett ställe *i samma roll* ska ha en namngiven ägande
+konstant och läsas därifrån", men `100` i rollen "öre per krona" står handskrivet
+i `src/core/entry.js` på rad 168 (två gånger), rad 247 (två gånger) och rad 257,
+medan `ORE_PER_SEK` i `src/core/money.js` rad 9 är den namngivna ägaren — och
+samma dokument förbjuder på rad 1048 den import regeln kräver ("`entry.js`
+importerar den inte").
+**Varför:** Regeln utvidgades för att motivera `MONTHS_PER_YEAR` i `cost.js` och
+prövades bara mot det tal utvidgningen handlade om. Ingen sökning gjordes efter
+andra tal som redan står i samma roll på flera ställen, och kravet stämdes inte
+av mot filens egna importbeslut. En bindande regel som den befintliga koden
+bryter mot är verkningslös: nästa granskare kan inte avgöra om ett handskrivet
+tal är ett fel eller ett accepterat undantag.
+**Regel framåt:** När en regel i `ARKITEKTUR.md` utvidgas ska den köras mot hela
+`src/core/` innan paketet lämnas vidare: sök upp varje förekomst regeln nu
+träffar och skriv in var och en antingen som ett fel att laga i beslutsloggen
+eller som ett namngivet undantag i regeltexten med skälet utskrivet. Kontrollera
+i samma svep att ingen annan mening i filen förbjuder det regeln kräver — här att
+`ORE_PER_SEK` inte kan läsas från `entry.js` så länge rad 1048 står kvar.
+
+### 2026-09-02 — datamodell: cost.js har en egen, svagare kopia av "är detta ett objekt"
+**Vad gick fel:** `yearlyOre` i `src/core/cost.js` rad 42 prövar
+`entry === null || typeof entry !== 'object'`, vilket släpper igenom en array och
+ett `Date`: med `arr = []` och de sex fälten påsatta ger `yearlyOre(arr)` `120000`
+och `monthlyOre(arr)` `10000`, medan `isEntry(arr)` i `src/core/entry.js`
+returnerar `false` för exakt samma värde — `entry.js` rad 310–312 äger begreppet
+med `isPlainObject`, som också har `!Array.isArray(value)`.
+**Varför:** Villkoret skrevs för hand i `cost.js` och skrevs sedan av ordagrant in
+i facittabellen i `ARKITEKTUR.md` rad 1207, så den svagare kopian blev bindande.
+`isPlainObject` är inte exporterad från `entry.js`, så den var inte tillgänglig,
+och ingen kontrollerade om begreppet redan hade en ägare — det är precis den
+situation ägarregeln under "Mappstruktur" finns för. Testet "varje postfunktion
+kastar RangeError för något som inte är ett objekt" använder `null`, `undefined`,
+`'abc'`, `42`, `true`, `Symbol('x')` och `100n` men aldrig en array, så
+avvikelsen syns inte.
+**Regel framåt:** Innan ett typvillkor skrivs för hand i en ny modul: sök i
+`src/core/` efter en befintlig funktion som avgör samma sak, och exportera och
+importera den i stället för att skriva en andra kopia. Här ska `isPlainObject`
+exporteras från `entry.js` och anropas av `yearlyOre`. Varje test som prövar "är
+detta ett objekt" ska ha `[]`, `[1]` och `new Date()` bland sina fall, inte bara
+primitiver och `null`.
+
+### 2026-09-02 — dokumentation: ARKITEKTUR.md pekar ut en kvarvarande uppgift i paket 3 som redan är utförd
+**Vad gick fel:** `ARKITEKTUR.md` rad 1856–1859 säger "**Kvar i paket 3:** de
+kommentarer i checkAmountSek som citerar uttrycket med siffran (v * 100 och
+Math.round(v * 100) / 100) ska skrivas om till ORE_PER_SEK", men byggaren har
+redan skrivit om dem: `grep -n '\b100\b' src/core/entry.js` ger noll träffar, och
+kommentarerna på rad 245, 258 och 259 lyder numera `v * ORE_PER_SEK` respektive
+`Math.round(v * ORE_PER_SEK) / ORE_PER_SEK`. Samma fil säger på rad 160
+`**Åtgärdat i paket 3**` om de fem literalerna, så dokumentet ger två besked om
+läget i samma fil: en punkt är avklarad och en punkt är kvar, fast båda är gjorda.
+**Varför:** Beslutsloggen delar varje beslut i "Utfört i paket 3" och "Kvar i
+paket 3", och den uppdelningen skrevs när beslutet fattades, inte när byggaren
+lämnade tillbaka paketet. "Kvar"-raden är ett påstående om hur koden ser ut i dag
+och blir falsk i samma stund som byggaren utför den, men ingenting i arbetsgången
+tvingar fram en omläsning av just den raden — byggaren rättade koden och
+arkitekten uppdaterade bara de avsnitt som rörde nya beslut. Fjärde gången
+`ARKITEKTUR.md` innehåller ett påstående om koden som koden inte uppfyller
+(2026-08-23 två facit i samma fil, 2026-08-23 beskriver kod som inte längre ser ut
+så, 2026-09-02 exempelsträngen för `formatSek`).
+**Regel framåt:** En rad i beslutsloggen som börjar `**Kvar i paket N:**` är en
+öppen uppgift och får inte stå kvar när paket N lämnas vidare. Innan paketet
+redovisas som klart: kör `grep -n "Kvar i paket N" ARKITEKTUR.md`, och för varje
+träff antingen kör det kommando som visar att uppgiften kvarstår och klistra in
+utdatan, eller skriv om raden till `**Utfört i paket N:**` med det som faktiskt
+gjordes. En uppgift som flyttas till ett senare paket skrivs om till
+`**Kvar i paket M:**` med M > N.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-02 — money: -0 tar sig genom alla tre spärrarna och blir "−0,00 kr" för användaren
+**Vad gick fel:** `formatSek(-0)` ger kodpunkterna `U+2212 U+0030 U+002C U+0030
+U+0030 U+00A0 U+006B U+0072`, alltså minustecknet före noll kronor i ett svenskt
+gränssnitt, och `oreToSek(-0)` ger `-0`, `sekToOre(-0)`, `sekToOre(-0.001)`,
+`sekToOre(-0.004)` och `sekToOre(-1e-9)` ger alla `-0`, och
+`canonicalAmountSek(-0)` i `entry.js` ger `-0`. `cost.js` avvisar samma värde med
+`yearlyOre kräver ett belopp som inte är negativt.` — de två modulerna i samma
+kärna ger alltså olika svar för `-0`. Inget testfall i `tests/money.test.js`
+skickar in `-0` till någon exporterad funktion (`grep -n -- '-0\b' ` ger en enda
+träff, `oreToSek(-1) === -0.01`).
+**Varför:** Alla tre spärrarna i `money.js` är byggda på `Number`-predikat som
+säger `true` för `-0`: `Number.isFinite(-0)`, `Number.isInteger(-0)` och
+`Number.isSafeInteger(-0)` är alla sanna, och `Math.round(-0.001)` ger `-0` i
+stället för `0`. `cost.js` löste samma sak med `Object.is(amountOre, -0)`, och
+`ARKITEKTUR.md` skriver där uttryckligen att spärren finns för att `formatSek`
+annars visar `-0,00 kr` — men slutsatsen drogs bara för `yearlyOre`, inte för
+visningsmodulen som faktiskt producerar strängen. Rättningen 2026-09-02 (`money:
+formatSek har ingen ingångsspärr`) gav `formatSek` och `oreToSek` en spärr mot
+`NaN`, `Infinity` och fel typ, och listan över testvärden i den lärdomen räknade
+upp `NaN`, `Infinity`, `-Infinity`, sträng, `null`, `1n` och `Symbol('x')` — men
+inte `-0`, så hålet överlevde en spärr som skrevs just för att täppa till det.
+**Regel framåt:** `-0` ska stå i testlistan för varje exporterad funktion i
+`src/core/` som tar eller returnerar ett tal, tillsammans med `NaN`, `Infinity`,
+`-Infinity`, sträng, `null`, `1n` och `Symbol('x')`. Ett `Number.is*`-predikat
+räknas aldrig som en spärr mot `-0`: skriv `Object.is(v, -0)` explicit, precis som
+`yearlyOre` gör. Ingen exporterad funktion i `src/core/` får returnera `-0` —
+normalisera med `v === 0 ? 0 : v` eller kasta `RangeError`. Asserta `-0` med
+`assert.equal(Object.is(resultat, -0), false)`, aldrig med `assert.equal(resultat,
+0)`, som är sant för `-0`.
