@@ -594,3 +594,136 @@ räknas aldrig som en spärr mot `-0`: skriv `Object.is(v, -0)` explicit, precis
 normalisera med `v === 0 ? 0 : v` eller kasta `RangeError`. Asserta `-0` med
 `assert.equal(Object.is(resultat, -0), false)`, aldrig med `assert.equal(resultat,
 0)`, som är sant för `-0`.
+
+### 2026-09-02 — lagring: två överlappande saveEntries delar samma .tmp-namn och förstör datafilen
+**Vad gick fel:** Två `saveEntries`-anrop som överlappar i tid skriver båda till
+samma `entries.json.tmp` (`src/server/storage.js` rad 74, `filePath + TEMP_SUFFIX`),
+så innehållet blandas: `Promise.allSettled([saveEntries(3000 poster), saveEntries(1500 poster)])`
+körd 60 gånger gav 44 gånger en datafil som `loadEntries` därefter avvisar med
+`Datafilen är skadad och kunde inte läsas: <sökväg>` och 14 gånger ett
+ohanterat `ENOENT: … rename` från det andra anropet — bara 16 av 60 omgångar gav
+en läsbar fil, och i samtliga 16 hade det ena anropets poster tyst försvunnit.
+I den minimala körningen fanns två sparade poster på disk före omgången och
+noll läsbara efter, medan **båda** `saveEntries` returnerade `fulfilled` — appen
+rapporterade alltså lyckad sparning samtidigt som användarens fil blev obrukbar.
+**Varför:** Temporärfilens namn härleds ur måldatafilens namn och är därför
+detsamma för varje samtidigt anrop, och `saveEntries` har varken lås eller kö.
+`fs.writeFile` är inte atomär: två parallella `writeFile` mot samma sökväg
+varvar sina block, och `fs.rename` byter sedan ut den riktiga filen mot det
+blandade resultatet. Atomiciteten skrevs som "skriv till `.tmp`, byt med
+`rename`" i `ARKITEKTUR.md` under "Lagring", vilket skyddar mot ett avbrott i
+*en* skrivning men inte mot *två* skrivningar — det andra fallet stod aldrig
+skrivet och fick därför inget testfall. Paket 5 gör en `POST` per klick, så två
+snabba klick på Spara räcker för att nå det.
+**Regel framåt:** En temporärfil får aldrig ha ett namn som två samtidiga anrop
+kan välja likadant: bygg namnet med ett unikt inslag per anrop
+(`${filePath}.${process.pid}.${randomUUID()}.tmp`) och ta bort den i ett
+`finally` om `rename` inte hann köras. Serialisera dessutom skrivningarna i
+`storage.js` med en modullokal löfteskedja, så att anrop nummer två börjar först
+när anrop nummer ett är klart. Testfallet är obligatoriskt:
+`await Promise.allSettled([saveEntries(a), saveEntries(b)])` följt av
+`loadEntries()`, kört minst 20 omgångar, ska ge en läsbar fil som är exakt `a`
+eller exakt `b` — aldrig ett fel och aldrig en blandning.
+
+### 2026-09-02 — lagring: saveEntries kastar råa engelska OS-fel i stället för StorageError
+**Vad gick fel:** `saveEntries` (`src/server/storage.js` rad 72–86) har ingen
+`try`/`catch`, så varje fel från `fs.mkdir`, `fs.writeFile` och `fs.rename` går
+rakt ut till anroparen som ett vanligt `Error`. Körda fall:
+en datafil som någon annan har öppen för läsning ger
+`EPERM: operation not permitted, rename 'C:\…\entries.json.tmp' -> 'C:\…\entries.json'`
+med `instanceof StorageError === false`; en skrivskyddad datafil (`chmod 0o444`)
+ger samma `EPERM`; en katalog på `.tmp`-namnets plats ger
+`EISDIR: illegal operation on a directory, open 'C:\…\entries.json.tmp'`.
+`ARKITEKTUR.md` under "Lagring" säger `StorageError kastas — den fångas i api.js,
+som svarar 500 med { "error": "<meddelandet>" }`, och `storage.js` rad 10–11 säger
+själv `.message är alltid svensk text: den skickas rakt ut till användaren`.
+Meddelandet ovan är engelskt och innehåller användarens fulla hemkatalogsökväg,
+vilket bryter mot `CLAUDE.md`:s regel "All text mot användaren ska vara på
+svenska". Efter det misslyckade `rename` ligger dessutom `entries.json.tmp` kvar
+med användarens nya data (körd: `filer kvar: ["entries.json","entries.json.tmp"]`),
+utan att någon kod någonsin tar bort eller läser den.
+**Varför:** Feltabellen i `ARKITEKTUR.md` heter "Beteende vid **läsning**" och
+räknar bara upp läsvägens fall, så skrivvägens fel fick aldrig någon rad — och
+det som inte står i tabellen blev inte byggt. `loadEntries` fick sin `catch` från
+tabellens sista rad ("Läsfel från operativsystemet"), medan `saveEntries` inte
+hade någon motsvarande rad att bygga efter. Att `EPERM` vid `rename` är det
+normala Windows-utfallet när filen är öppen i en annan process (virusskydd,
+OneDrive, en editor, eller appens egen samtidiga `GET /api/entries`) syntes inte,
+eftersom inget testfall håller filen öppen under en skrivning.
+**Regel framåt:** Varje funktion som rör disken ska omsluta *alla* sina
+`node:fs`-anrop i `try`/`catch` och kasta `StorageError` med svensk text och
+`cause` satt till originalfelet — samma krav som redan gäller `loadEntries`.
+`ARKITEKTUR.md` ska få en tabell "Beteende vid skrivning" med en rad per
+felsituation (`mkdir` misslyckas, `writeFile` misslyckas, `rename` misslyckas)
+och den svenska strängen utskriven, innan koden skrivs. Ett kvarliggande `.tmp`
+ska tas bort i ett `finally`. Testfallen är obligatoriska och ska köras med
+filen öppen via `await fs.open(filePath, 'r')`, med `fs.chmod(filePath, 0o444)`
+och med en katalog på `.tmp`-namnets plats; varje fall ska asserta
+`error instanceof StorageError` och att `error.message` inte innehåller
+`operation not permitted`.
+
+### 2026-09-02 — lagring: saveEntries validerar ingenting och kan skriva en fil appen vägrar läsa
+**Vad gick fel:** `isEntry` sitter bara på läsvägen; `saveEntries` skriver vad
+som helst till disk. Körda fall, alla med `saveEntries: ok` och därefter ett
+kastande `loadEntries`: en post med ett okänt fält (`income`) och en post med
+`amountSek: '199'` ger båda
+`Datafilen innehåller en ogiltig post: <sökväg>`; `saveEntries({a: 1})`,
+`saveEntries('abc')` och `saveEntries(null)` skriver
+`{ "version": 1, "entries": { "a": 1 } }`, `… "entries": "abc" }` respektive
+`… "entries": null }` och ger sedan `Datafilen har fel innehåll: <sökväg>`;
+`saveEntries(undefined)` skriver `{ "version": 1 }` — nyckeln `entries`
+försvinner helt. I samtliga fall har den tidigare, giltiga filen redan bytts ut
+av `rename`, så användarens poster är oåtkomliga och appen ger samma fel vid
+varje start. `saveEntries([cirkulär post])` och `saveEntries([{…, amountSek: 1n}])`
+kastar dessutom `TypeError: Converting circular structure to JSON` respektive
+`TypeError: Do not know how to serialize a BigInt` i stället för `StorageError`.
+**Varför:** `ARKITEKTUR.md` skriver ut `isEntry` som domare på läsvägen ("Raden
+om 'en ogiltig post' avgörs av `isEntry`") men säger ingenting om skrivvägen, och
+signaturen `saveEntries(entries: Entry[])` lästes som en garanti i stället för
+som ett krav som måste kontrolleras. Det är samma grundorsak som lärdomen
+2026-08-18 om `createEntry` och det injicerade id:t: ett värde som kommer utifrån
+antas uppfylla modulens egen typvakt utan att någon frågar den. Invarianten
+"allt som `saveEntries` skriver kan `loadEntries` läsa tillbaka" fanns aldrig
+skriven, och testfilen skickar bara giltiga poster till `saveEntries`.
+**Regel framåt:** En funktion som skriver över användarens enda datafil ska
+kontrollera hela sin indata *innan* något rör disken och kasta `StorageError`
+med svensk text om något är fel — `saveEntries` ska avvisa allt som inte är en
+array och varje element som `isEntry` säger `false` om, före `fs.mkdir`. Den
+kontrollen ska ha ett invarianttest: för varje ogiltig indata gäller att
+`saveEntries` kastar `StorageError` **och** att filen på disk är byte-identisk
+med hur den såg ut före anropet. Testlistan ska innehålla `undefined`, `null`,
+`'abc'`, `{a: 1}`, `[giltigPost, undefined]`, en post med okänt fält, en post med
+fel typ, en cirkulär post och en post med `BigInt`.
+
+### 2026-09-02 — test: atomicitetstestet avbryter aldrig en skrivning och bevisar ingenting
+**Vad gick fel:** Testet `en avbruten skrivning lämnar den befintliga filen
+oförändrad` (`tests/storage.test.js` rad 395–412) anropar aldrig `saveEntries`
+under den påstådda avbrutna skrivningen — det skriver själv `entries.json.tmp`
+med `fs.writeFile` på rad 403 och kontrollerar sedan på rad 405–406 att
+`entries.json` är oförändrad, fast ingenting har rört `entries.json` mellan rad
+398 och 405. Byts hela atomiciteten ut mot `await fs.writeFile(filePath, text,
+'utf8')` (ingen `.tmp`, inget `rename`) passerar rad 405 och 406 ändå; det enda
+som faller är rad 410, `assert.equal(await exists(filePath + '.tmp'), false)`,
+och den faller bara för att testets egen handskrivna `.tmp` inte längre
+konsumeras: `AssertionError … true !== false at tests\storage.test.js:410:12`.
+`src/server/storage.js` rad 80–83 åberopar just detta test som bevis: "Körd
+kontroll i tests/storage.test.js: en halv .tmp-fil lämnar entries.json
+oförändrad och läsbar."
+**Varför:** Kravet i `ARKITEKTUR.md` under "Lagring" — "Ett avbrott mitt i
+skrivningen får inte kunna lämna en halv fil" — handlar om att processen dör
+mellan `writeFile` och `rename`, alltså om ett tillstånd som bara uppstår om
+`saveEntries` verkligen avbryts. Testet simulerade i stället *resultatet* av ett
+avbrott genom att skapa filen för hand, och då blev assertionen sann av sig
+själv oavsett hur `saveEntries` är skriven. Samma grundorsak som lärdomen
+2026-08-23 om fältantalskontrollen i `isEntry`: en testkommentar namnger vilken
+egenskap som fångas utan att mutationen har visat att just den assertionen
+fångar den.
+**Regel framåt:** Ett test som påstår sig pröva ett avbrott ska avbryta på
+riktigt: starta skrivningen i en barnprocess (`fork`), döda den med
+`child.kill('SIGKILL')` medan `.tmp` växer, och asserta därefter att
+`entries.json` är byte-identisk med före och att `loadEntries()` ger samma lista.
+Innan ett sådant test räknas som skrivet ska mutationen "ersätt `writeFile` till
+`.tmp` + `rename` med en direkt `writeFile` till datafilen" fällas av en
+assertion som ligger i just det testet och namnger avbrottet — inte av en
+sidoeffekt på en annan rad. En kodkommentar i `src/` får inte åberopa ett test
+som bevis förrän den mutationen har körts och visat exit 1 på rätt rad.

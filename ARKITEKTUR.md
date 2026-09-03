@@ -86,14 +86,21 @@ hemochekonomi/
 │       ├── style.css     All styling. Ingen inline-CSS (paket 5).
 │       └── app.js        UI-logik. Anropar API:t, importerar src/core via
 │                         /core/ (paket 5, byggs ut i 6 och 7).
-└── tests/                Alla tester. Namnmönster: <modul>.test.js.
+└── tests/                Alla tester. Testfiler heter <modul>.test.js, och bara
+                          de körs av npm test. Hjälpfiler till ett test ligger
+                          under helpers/ och körs aldrig av testköraren.
     ├── smoke.test.js     Paket 1.
     ├── dates.test.js     Paket 2, byggs ut i paket 7.
     ├── entry.test.js     Paket 2.
     ├── money.test.js     Paket 3.
     ├── cost.test.js      Paket 3.
     ├── storage.test.js   Paket 4.
-    └── schedule.test.js  Paket 7.
+    ├── schedule.test.js  Paket 7.
+    └── helpers/
+        └── interrupted-save.js  Barnprocess för atomicitetstestet: anropar
+                                 saveEntries och dödas med SIGKILL av
+                                 storage.test.js. Namnet slutar medvetet inte
+                                 på .test.js (paket 4).
 ```
 
 **Paketmärkningen är bindande.** Varje fil i trädet är märkt med det paket där
@@ -1003,14 +1010,24 @@ i förtid: de har inga användare före paket 7 och skulle då stå otestade.
   `path.join(process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'), 'hemochekonomi', 'entries.json')`.
   Datan ligger utanför git-repot med flit — den är användarens, inte projektets.
 - **Överstyrning för tester:** om miljövariabeln `HEMOCHEKONOMI_DATA_FILE` är
-  satt används den sökvägen i stället. Testerna i paket 4 sätter den till en fil
-  under `os.tmpdir()` och städar upp efter sig.
-- **Katalogen skapas vid behov** med `fs.mkdir(dir, { recursive: true })` före
-  skrivning.
-- **Skrivning är atomär:** skriv till `entries.json.tmp` och gör därefter
-  `fs.rename` till `entries.json`. Ett avbrott mitt i skrivningen får inte kunna
-  lämna en halv fil — det är precis det fel som annars uppfyller paket 4:s
-  "trasigt innehåll".
+  satt till ett värde som innehåller minst ett tecken som inte är blanktecken
+  används den sökvägen i stället. Osatt, tom sträng och en sträng med bara
+  blanktecken räknas alla som osatt. Villkoret är
+  `typeof override === 'string' && override.trim() !== ''`, och värdet används
+  därefter **ordagrant, utan `trim()`**: en riktig sökväg får innehålla
+  blanksteg, och `paths.js` ska inte ha någon egen åsikt om hur en sökväg ser
+  ut. Facit: `''` och `'   '` (tre blanksteg) ger båda standardsökvägen under
+  `%APPDATA%`, medan en sökväg med ett inledande blanksteg returneras med
+  blanksteget kvar. Testerna i paket 4 sätter variabeln till en fil under
+  `os.tmpdir()` och städar upp efter sig.
+- **Katalogen skapas vid behov** med
+  `fs.mkdir(path.dirname(filePath), { recursive: true })` före skrivning.
+- **Skrivning är atomär:** skriv till en temporärfil vars namn är unikt per
+  anrop och gör därefter `fs.rename` till `entries.json`. Ett avbrott mitt i
+  skrivningen får inte kunna lämna en halv fil — det är precis det fel som
+  annars uppfyller paket 4:s "trasigt innehåll". Temporärnamnet, kön, felen och
+  städningen står under "Skrivvägen" nedan, och den texten är facit — den här
+  punkten är en sammanfattning och avgör ingenting.
 
 Filens innehåll:
 
@@ -1030,26 +1047,158 @@ Filens innehåll:
 }
 ```
 
-Beteende vid läsning:
+Beteende vid läsning. **Tabellens ordning är körordningen i `loadEntries`, och
+första sanna raden vinner** — det är filens enda facit för ordningen mellan
+läsvägens fel:
 
-| Situation | Resultat |
-|-----------|----------|
-| Filen saknas (`ENOENT`) | `[]`. Inget fel, ingen fil skapas. |
-| Filen är tom eller bara blanktecken | `[]`. |
-| Ogiltig JSON | `StorageError`: `Datafilen är skadad och kunde inte läsas: <sökväg>` |
-| JSON men inte ett objekt, eller `entries` är inte en array | `StorageError`: `Datafilen har fel innehåll: <sökväg>` |
-| `version` saknas eller är inte `1` | `StorageError`: `Datafilen har en version som appen inte känner igen: <sökväg>` |
-| En post i `entries` saknar fält, har fel typ eller har ett okänt fält | `StorageError`: `Datafilen innehåller en ogiltig post: <sökväg>` |
-| Läsfel från operativsystemet | `StorageError` med svensk text och `cause` satt till originalfelet. |
+| # | Situation | Resultat |
+|---|-----------|----------|
+| 1 | Filen saknas (`ENOENT`) | `[]`. Inget fel, ingen fil skapas. |
+| 2 | Annat läsfel från operativsystemet | `StorageError`: `Datafilen kunde inte läsas: <sökväg>`, med `cause` satt till originalfelet. |
+| 3 | Filen är tom eller bara blanktecken | `[]`. |
+| 4 | Ogiltig JSON | `StorageError`: `Datafilen är skadad och kunde inte läsas: <sökväg>` |
+| 5 | JSON men inte ett vanligt objekt enligt `isPlainObject`, eller `entries` är inte en array | `StorageError`: `Datafilen har fel innehåll: <sökväg>` |
+| 6 | `version` saknas eller är inte `1` | `StorageError`: `Datafilen har en version som appen inte känner igen: <sökväg>` |
+| 7 | En post i `entries` saknar fält, har fel typ eller har ett okänt fält | `StorageError`: `Datafilen innehåller en ogiltig post: <sökväg>` |
+
+Rad 1 och rad 2 hör till samma `catch` runt `fs.readFile`, och `ENOENT` prövas
+först. Rad 2:s sträng är fastnaglad här och får inte formuleras om i koden:
+paket 5 och 8 citerar den, och "svensk text" räcker inte som specifikation när
+strängen är den text användaren ser.
+
+**Två rader kan vara sanna samtidigt, och då vinner den lägre siffran.**
+Obligatoriska testfall, som visar just det:
+
+| Filens innehåll | Meddelande | Vinnande rad |
+|-----------------|------------|--------------|
+| `{ "version": 2, "entries": 42 }` | `Datafilen har fel innehåll: <sökväg>` | 5 (rad 6 är också sann) |
+| `{ "version": 2, "entries": [<ogiltig post>] }` | `Datafilen har en version som appen inte känner igen: <sökväg>` | 6 (rad 7 är också sann) |
 
 Raden om "en ogiltig post" avgörs av `isEntry`, inte av en egen kontroll i
 `storage.js`. Det gäller även `id`: `storage.js` får inte ha någon egen åsikt om
-vad ett giltigt `id` är.
+vad ett giltigt `id` är. Samma ägarskap gäller skrivvägen, se nedan.
 
 `StorageError` kastas — den fångas i `api.js`, som svarar `500` med
 `{ "error": "<meddelandet>" }`. Servern får aldrig krascha på ett trasigt lager.
 `version: 1` finns för att kunna ge det tydliga felmeddelandet ovan i stället
 för en tyst feltolkning; det är inte en förberedelse för framtida funktioner.
+
+### Skrivvägen — namn, kö och ordning (bindande)
+
+- **Temporärfilens namn är unikt per anrop:**
+  `` `${filePath}.${process.pid}.${randomUUID()}.tmp` ``, där `randomUUID`
+  importeras från `node:crypto`. Namnet får aldrig härledas enbart ur
+  datafilens namn. Gjorde det det valde två överlappande `saveEntries` samma
+  fil och blandade sitt innehåll: granskarens 60 omgångar av
+  `Promise.allSettled([saveEntries(3000 poster), saveEntries(1500 poster)])`
+  gav 16 läsbara filer där det ena anropets poster hade försvunnit, 14
+  ohanterade `ENOENT ... rename` och 44 filer som `loadEntries` avvisade.
+- **Skrivningarna serialiseras i en modullokal löfteskedja.** `storage.js` har
+  en modullokal variabel `writeQueue`, initierad till `Promise.resolve()`.
+  `saveEntries` utökar kedjan **synkront, före funktionens första `await`** —
+  annars är kedjans ordning inte anropsordningen och facit nedan gäller inte.
+  Ett misslyckat anrop får inte blockera nästa: kedjan går vidare både efter
+  uppfyllelse och efter avvisning, och ett anrops fel får aldrig bli ett annat
+  anrops fel.
+- **Facit när två anrop överlappar: anropsordningen avgör, och sista anropet
+  vinner.** `saveEntries(a)` följt av `saveEntries(b)` utan `await` emellan ger:
+  båda löftena uppfylls, `a` skrivs först och `b` sist, och ett därpå följande
+  `loadEntries()` returnerar exakt `b`. Det andra anropet kastar aldrig på grund
+  av det första, inget anrop hoppas över, och filen på disk är aldrig en
+  blandning. Det här är ett beslut, inte en följd av implementationen: kod som
+  ger något annat svar är fel.
+- **`loadEntries` köas inte.** `rename` byter filen i ett enda steg, så en
+  läsning ser antingen hela den gamla eller hela den nya filen.
+- Kön ligger i modulminnet och skyddar därför bara anrop i samma modulinstans.
+  Två processer som skriver samtidigt skyddas av det unika temporärnamnet plus
+  `rename`: en av dem vinner hela filen, och ingen fil blir en blandning. Något
+  fillås införs inte — det löser inget problem i `PLAN.md` och skulle kräva ett
+  eget felmeddelande och en egen upplåsning efter en krasch.
+- **Validering och strängifiering sker före kön**, alltså utan att ta plats i
+  den. Ett avvisat anrop varken fördröjer eller fördröjs av en pågående
+  skrivning.
+
+Ordningen i `saveEntries`, som pseudokod. Stegen körs sekventiellt i en enda
+kedja, och det första fel som inträffar avgör meddelandet:
+
+```
+filePath = getDataFilePath()          // en gång per anrop, som i loadEntries
+kontrollera att entries är en array   // tabellrad 1
+kontrollera varje element med isEntry // tabellrad 2, lägsta index vinner
+text = JSON.stringify(...)            // tabellrad 3
+ställ arbetet sist i writeQueue:
+    fs.mkdir(path.dirname(filePath))  // tabellrad 4
+    fs.writeFile(tempPath, text)      // tabellrad 5
+    fs.rename(tempPath, filePath)     // tabellrad 6
+    finally: ta bort tempPath om den finns kvar
+```
+
+Beteende vid skrivning. Samma form som lästabellen: körordningen är tabellens
+ordning, och första sanna raden vinner.
+
+| # | Situation | Resultat |
+|---|-----------|----------|
+| 1 | `Array.isArray(entries)` är `false` (`undefined`, `null`, `'abc'`, `{ a: 1 }`, `42`) | `StorageError`: `Posterna kunde inte sparas: listan över poster är ogiltig.` |
+| 2 | `isEntry(entries[i])` är `false` för något element; lägsta `i` vinner | `StorageError`: `Posterna kunde inte sparas: post nummer <i + 1> är ogiltig.` |
+| 3 | `JSON.stringify` kastar | `StorageError`: `Posterna kunde inte sparas: de gick inte att omvandla till JSON.`, `cause` satt till originalfelet |
+| 4 | `fs.mkdir` kastar | `StorageError`: `Datafilen kunde inte sparas: katalogen gick inte att skapa: <sökväg>`, `cause` satt till originalfelet |
+| 5 | `fs.writeFile` till temporärfilen kastar | `StorageError`: `Datafilen kunde inte sparas: skrivningen misslyckades: <sökväg>`, `cause` satt till originalfelet |
+| 6 | `fs.rename` kastar | `StorageError`: `Datafilen kunde inte sparas: den nya filen gick inte att byta in: <sökväg>`, `cause` satt till originalfelet |
+| 7 | Något annat kastar i `saveEntries` | `StorageError`: `Posterna kunde inte sparas: ett oväntat fel inträffade.`, `cause` satt till originalfelet |
+| – | Inget kastar | `undefined`. Datafilen innehåller de nya posterna, och ingen temporärfil från anropet finns kvar. |
+
+`<i + 1>` är elementets plats räknad från 1: är första elementet ogiltigt lyder
+meddelandet `Posterna kunde inte sparas: post nummer 1 är ogiltig.`
+
+`<sökväg>` är alltid **datafilens** sökväg, aldrig temporärfilens. Temporärnamnet
+innehåller ett pid och ett UUID som inte betyder något för användaren och som
+skiljer sig mellan två anrop; ett meddelande som citerade det gick inte att
+känna igen mellan två körningar. Rad 7 får ingen sökväg alls: den fångar också
+fel som inträffar innan sökvägen har använts, och meddelandet får inte påstå att
+felet rörde filen.
+
+**Ingen annan feltyp lämnar `saveEntries`.** Varje `node:fs`-anrop och
+`JSON.stringify` ligger innanför `try`. En `StorageError` som redan har kastats
+inne i blocket kastas om oförändrad — annars skulle rad 7 skriva över rad 1–6:s
+meddelanden. Allt annat lindas enligt den rad det inträffade på. Invarianten är
+bindande: `saveEntries` avvisar alltid med `StorageError`, aldrig med `Error`,
+`TypeError` eller ett rått OS-fel, och `.message` innehåller aldrig engelsk
+OS-text som `operation not permitted` eller `illegal operation on a directory`.
+Skälet står redan i `storage.js` egen kommentar: meddelandet går rakt ut till
+användaren som `500 { error }`, och all text mot användaren är svensk.
+
+**Temporärfilen städas i ett `finally`.** Kördes inte `rename` klart tas
+temporärfilen bort med `fs.rm(tempPath, { force: true })`. Städningen ligger i
+en egen `try`/`catch` och sväljer sitt eget fel: en misslyckad städning får
+varken göra en lyckad skrivning till ett fel eller ersätta det verkliga felet.
+Facit efter varje rad i tabellen ovan: det anropets temporärfil finns inte kvar,
+och `fs.readdir(path.dirname(filePath))` ger exakt de filer som fanns före
+anropet, plus `entries.json` när skrivningen lyckades.
+
+**Ett undantag står skrivet i stället för att gissas:** en process som dödas
+(`SIGKILL`) hinner inte köra sitt `finally` och lämnar sin temporärfil kvar.
+Ingen sveprutin som städar katalogen införs — den skulle behöva gissa vilka
+temporärfiler som tillhör en levande process, och den löser inget problem i
+`PLAN.md`. En kvarliggande temporärfil är ofarlig för appen: `loadEntries` läser
+bara `entries.json`.
+
+**Två bindande invarianter för skrivvägen:**
+
+1. **Allt som `saveEntries` accepterar kan `loadEntries` läsa tillbaka.** För
+   varje `entries` där `saveEntries` inte kastar gäller att ett därpå följande
+   `loadEntries()` mot samma sökväg returnerar en lista som är `deepEqual` med
+   `entries`. Det är därför skrivvägens domare måste vara `isEntry` och inte en
+   egen kontroll: läsvägen frågar samma funktion, och två kopior av begreppet
+   "giltig post" glider isär vid första ändringen. En datafil som appen själv
+   har skrivit och sedan vägrar läsa är den värsta möjliga följden — användarens
+   poster blir oåtkomliga, och felet upprepas vid varje start.
+2. **Ett avvisat anrop rör inte disken.** Kastar `saveEntries` på rad 1–3 är
+   datafilen byte-identisk med före anropet, och ingen katalog och ingen
+   temporärfil har skapats. Kastar den på rad 4–6 är datafilen byte-identisk med
+   före anropet — `rename` byter antingen hela filen eller ingen — och
+   temporärfilen är borttagen. Invarianten gäller raderna i tabellen och prövas
+   rad för rad; vad som händer vid ett strömavbrott mitt i `rename` kan
+   projektets kod inte påstå något om, och påstås inte här.
 
 ---
 
@@ -1088,6 +1237,113 @@ för en tyst feltolkning; det är inte en förberedelse för framtida funktioner
   `saveEntries`, därefter importerar modulen på nytt med en cache-brytande
   query (`await import('../src/server/storage.js?fresh=' + Date.now())`) och
   läser tillbaka. Filen på disk är sanningen, inget cachas i modulminne.
+  Den nya importen ger en **ny modulinstans med en egen `writeQueue`**: två
+  instanser delar inte kö. Ett test får därför aldrig ha skrivningar i luften
+  från båda instanserna samtidigt — invänta den ena innan den andra startas.
+- **Paket 4: två överlappande skrivningar.** Bygg `a` med 3 000 giltiga poster
+  och `b` med 1 500 giltiga poster, med olika `id` och `name` så att en
+  blandning syns. Kör minst 20 omgångar av
+  `await Promise.allSettled([saveEntries(a), saveEntries(b)])`. Krav per
+  omgång: båda resultaten har `status: 'fulfilled'`; `await loadEntries()`
+  kastar inte och är `deepEqual` med `b`; `await fs.readdir(dirname)` ger exakt
+  `['entries.json']`. Storlekarna är valda så att det stora anropet blir klart
+  sist utan kö — utan kön vinner `a` på disk, och det är den skillnaden testet
+  mäter. Mutation som ska köras: ta bort löfteskedjan så att `saveEntries` går
+  direkt på disken, kör `npm test` och kräv exit 1. Följer av `LARDOMAR.md`
+  (2026-09-02, två överlappande saveEntries delar samma .tmp-namn).
+- **Paket 4: atomicitetstestet ska avbryta en riktig skrivning.** Ett test som
+  själv skapar en temporärfil bevisar ingenting — det gamla testet passerade två
+  av tre assertioner med atomiciteten helt borttagen. Kraven är bokstavliga:
+  1. Testet skapar utgångsläget genom att anropa `saveEntries` och läser
+     därefter filens byte med `fs.readFile(filePath)` (en `Buffer`).
+  2. Skrivningen som avbryts sker i en barnprocess:
+     `fork('tests/helpers/interrupted-save.js', [], { env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: filePath } })`.
+     Barnet skickar `process.send('startar')` omedelbart före sitt
+     `saveEntries`-anrop, som skriver minst 20 000 poster.
+  3. Föräldern väntar på meddelandet, väntar därefter `i` millisekunder i
+     omgång `i` (`i = 0 … 19`), kör `child.kill('SIGKILL')` och inväntar
+     `exit`.
+  4. **Assertionen som ska fälla mutationen ligger i det här testet och namnger
+     avbrottet:** `await loadEntries()` kastar inte, och listan är antingen
+     `deepEqual` med utgångslistan eller `deepEqual` med barnets lista. Ingen
+     tredje utgång godtas.
+  5. Testet skapar aldrig en temporärfil själv och asserterar aldrig på en
+     temporärfil som det självt har skrivit. Det asserterar inte heller att
+     temporärfilen är borta efter ett `SIGKILL` — ett dödat `finally` körs inte,
+     se "Skrivvägen" under "Lagring".
+  6. Mutation som ska köras: ersätt `writeFile` till temporärfilen plus `rename`
+     med `await fs.writeFile(filePath, text, 'utf8')`. Körningen ska ge exit 1,
+     och det fallerande anropet ska vara punkt 4 i det här testet. Byggaren
+     klistrar in raden med filnamn och radnummer.
+  7. Redovisningskrav, inte assertion: hur många av de 20 omgångarna som gav
+     utgångslistan respektive barnets lista. Gav alla omgångar barnets lista
+     avbröts ingen skrivning och testet bevisar ingenting — byggaren ökar
+     antalet poster tills båda utfallen förekommer och redovisar den nya
+     fördelningen. Ingen assertion får röra tid eller fördelning
+     (determinismkravet ovan).
+  Följer av `LARDOMAR.md` (2026-09-02, atomicitetstestet avbryter aldrig en
+  skrivning).
+- **Paket 4: skrivvägens validering har egna tester.** Rad 1–3 i "Beteende vid
+  skrivning" ska ha testfall, och listan ska minst innehålla `undefined`,
+  `null`, `'abc'`, `{ a: 1 }`, `42`, `[giltigPost, undefined]`, en post med ett
+  okänt fält (`income`), en post med fel typ (`amountSek: '199'`), en post med
+  `amountSek: 1n`, en post med `amountSek: Symbol('x')` och en cirkulär post.
+  `[]` är giltig indata och ska skrivas: `loadEntries()` ger `[]` efteråt. Per
+  ogiltigt fall asserteras `error instanceof StorageError`, exakt
+  `error.message` enligt tabellen, att datafilen är byte-identisk med före
+  anropet (`fs.readFile` som `Buffer`, jämförd med `assert.deepEqual`) och att
+  `fs.readdir(dirname)` är oförändrad. Invarianten *"allt som `saveEntries`
+  accepterar kan `loadEntries` läsa tillbaka"* ska finnas som eget test. Följer
+  av `LARDOMAR.md` (2026-09-02, saveEntries validerar ingenting).
+- **Paket 4: rad 3 och rad 7 nås bara med en `Proxy`, och de ska nås.** En
+  cirkulär post och `amountSek: 1n` avvisas redan av rad 2 och ger
+  `Posterna kunde inte sparas: post nummer 1 är ogiltig.` — de kan alltså inte
+  visa att rad 3 finns. Följande konstruktioner är **inte körda av arkitekten**;
+  byggaren kör dem, klistrar in utfallet och lämnar tillbaka paketet om de inte
+  håller:
+  - rad 3: `new Proxy(giltigPost, { get: (t, p) => p === 'toJSON' ? () => { throw new Error('nej'); } : t[p] })`
+    — `toJSON` är ingen egen nyckel, så `isEntry` ser sex fält och godkänner,
+    medan `JSON.stringify` frågar efter `toJSON` och får ett kast.
+  - rad 7: `new Proxy(giltigPost, { get() { throw new Error('nej'); } })` —
+    `Object.keys` går genom `ownKeys` och kastar inte, men `isEntry` kastar när
+    den läser ett fält, och det felet fångas bara av rad 7.
+- **Paket 4: OS-felen ska provoceras på riktigt.** Rad 4–6 ska ha minst ett
+  testfall var som får just det anropet att kasta. Per fall asserteras
+  `error instanceof StorageError`, exakt `error.message` enligt tabellen,
+  `assert.ok(error.cause)`, att `error.message` varken innehåller
+  `operation not permitted`, `illegal operation` eller `EPERM`, och att ingen
+  fil vars namn slutar på `.tmp` finns kvar i katalogen. Provokationerna är
+  byggarens val men ska vara deterministiska och köras i den här miljön.
+  Förslag, **inte körda av arkitekten**:
+  - rad 4 (`mkdir`): `HEMOCHEKONOMI_DATA_FILE` pekar på
+    `<tmpdir>/enfil/hemochekonomi/entries.json` där `<tmpdir>/enfil` redan finns
+    som en **fil**.
+  - rad 5 (`writeFile`): en sökväg där katalogen är giltig men filnamnet inte
+    kan skapas i den här miljön.
+  - rad 6 (`rename`): datafilens sökväg är en befintlig **katalog**, eller
+    datafilen hålls öppen med `await fs.open(filePath, 'r')` under skrivningen —
+    granskarens körning gav `EPERM ... rename` för det senare på den här
+    maskinen.
+  Lärdomens recept "en katalog på `.tmp`-namnets plats" går inte längre att
+  köra, eftersom temporärnamnet innehåller ett UUID som testet inte kan
+  förutsäga. Det ersätts av raderna ovan och är därmed avhandlat, inte
+  bortglömt. Går en rad inte att provocera i den här miljön lämnas paketet
+  tillbaka till arkitekten med körningen som underlag — raden får varken byggas
+  utan testfall eller tas bort utan beslut. Följer av `LARDOMAR.md` (2026-09-02,
+  saveEntries kastar råa engelska OS-fel).
+- **Paket 4: `getDataFilePath` testas på tomma och blanka värden.**
+  `HEMOCHEKONOMI_DATA_FILE` osatt
+  (`delete process.env.HEMOCHEKONOMI_DATA_FILE`), `''` och `'   '` (tre
+  blanksteg) ska alla ge standardsökvägen under `%APPDATA%`, och en sökväg med
+  ett inledande blanksteg ska returneras ordagrant med blanksteget kvar. Testet
+  återställer miljövariabeln efteråt.
+- **Mutationskravet gäller `src/server/storage.js` i paket 4 på samma sätt som
+  `src/core/`.** Varje rad 1–7 i "Beteende vid skrivning", det unika
+  temporärnamnet, löfteskedjan och `finally`-städningen tas bort en i taget;
+  `npm test` ska ge minst ett fallerande test och exit 1 för var och en.
+  Byggaren räknar upp villkoren skriftligt och visar en körning per villkor.
+  Ingen rad i skrivtabellen är undantagen — rad 3 och rad 7 har sina
+  `Proxy`-fall just därför.
 - **Validering ska ha egna tester.** Följer av `LARDOMAR.md`. Ett paket som tar
   emot användarinput utan testad validering är inte klart.
 - **Fält som kan komma i flera typer testas i alla typer.** Varje rad i
@@ -1526,19 +1782,38 @@ har. `schedule.js` importerar ingenting från `cost.js`.
 ### `src/server/paths.js` [paket 4]
 
 ```js
-export function getDataFilePath(): string;             // läser HEMOCHEKONOMI_DATA_FILE vid varje anrop
+export function getDataFilePath(): string;             // läser HEMOCHEKONOMI_DATA_FILE vid varje anrop; tom sträng och bara blanktecken räknas som osatt
 export function getWebDir(): string;
 export function getCoreDir(): string;
 ```
+
+Villkoret för när överstyrningen används, och regeln att värdet därefter
+returneras ordagrant utan `trim()`, står under "Lagring" och skrivs inte av här
+— ett facit per fråga.
 
 ### `src/server/storage.js` [paket 4]
 
 ```js
 export const STORAGE_VERSION;                          // 1
-export class StorageError extends Error {}             // .message är svensk text
-export async function loadEntries(): Promise<Entry[]>; // [] om filen saknas
-export async function saveEntries(entries: Entry[]): Promise<void>;  // atomär
+export class StorageError extends Error {}             // .message är svensk text; .cause satt när ett annat fel ligger bakom
+export async function loadEntries(): Promise<Entry[]>; // [] om filen saknas; köas inte
+export async function saveEntries(entries: Entry[]): Promise<void>;  // validerar före disken, köar, skriver atomärt
 ```
+
+Inga fler exporter tillkommer i paket 4. Temporärnamnet och löfteskedjan är
+modullokala: ett test som vill veta att temporärfilen är städad läser katalogen
+med `fs.readdir` i stället för att importera namnet och få en andra kopia av
+regeln.
+
+Beroenden modulen får ha: `node:fs/promises`, `node:path`, `randomUUID` från
+`node:crypto`, `isEntry` och `isPlainObject` från `../core/entry.js` samt
+`getDataFilePath` från `./paths.js`. `randomUUID` är samma inbyggda funktion som
+teknikvalstabellen redan har en rad för och ger inget nytt beroende.
+
+`saveEntries` kastar bara `StorageError`. Vilken sträng varje fel ger, i vilken
+ordning felen prövas och vad som gäller filen på disk står i "Beteende vid
+skrivning" under "Lagring". Modullokalt tillstånd: `writeQueue`, initierad till
+`Promise.resolve()`.
 
 ### `src/server/api.js` [paket 5]
 
@@ -2029,3 +2304,105 @@ visas för användaren.
   skäl som `\u00a0` rättades på båda ställena. (påverkat av lärdom: **ja**,
   `2026-09-02 — dokumentation: ARKITEKTUR.md:s exempelsträng för formatSek är
   inte den koden ger`)
+- **Temporärfilens namn blev unikt per anrop, och skrivningarna ställdes i en
+  modullokal löfteskedja** — namnet `entries.json.tmp` härleddes ur datafilens
+  namn och var därför detsamma för varje samtidigt anrop; granskarens 60
+  omgångar gav 44 skadade datafiler, 14 ohanterade `ENOENT ... rename` och 16
+  läsbara filer där det ena anropets poster hade försvunnit, medan båda anropen
+  rapporterade lyckad sparning. Det unika namnet ensamt hade räckt för att ingen
+  fil ska bli en blandning, men inte för att svara på frågan *vilket* anrop som
+  vinner: två `rename` i godtycklig ordning gör utfallet beroende av hur lång
+  tid varje skrivning tar. Kön lades därför till också, och facit skrevs ut i
+  stället för att lämnas åt implementationen: anropsordningen avgör, båda
+  löftena uppfylls och sista anropet vinner på disk. Två alternativ förkastades.
+  Ett fillås eller en `.lock`-fil löser inget problem i `PLAN.md`, kräver ett
+  eget svenskt felmeddelande och en egen upplåsning efter en krasch. Att låta
+  det andra anropet kasta förkastades därför att paket 5 gör en `POST` per
+  klick: två snabba klick på Spara ska spara, inte ge ett fel användaren inte
+  kan tolka. **Byggaren ska:** bygga namnet som
+  `` `${filePath}.${process.pid}.${randomUUID()}.tmp` ``, utöka `writeQueue`
+  synkront före funktionens första `await`, låta kedjan gå vidare även efter en
+  avvisning, och köra överlappningstestet med sin mutation. (påverkat av
+  lärdom: **ja**, `2026-09-02 — lagring: två överlappande saveEntries delar
+  samma .tmp-namn och förstör datafilen`)
+- **Skrivvägen fick en egen tabell, "Beteende vid skrivning", med sju rader och
+  en slutrad som fångar det oväntade** — grundorsaken till alla fyra
+  underkännandena i paket 4 var att den här filen bara hade en tabell för
+  läsvägen: `loadEntries` fick sin `catch` ur tabellens sista rad, `saveEntries`
+  hade ingen rad att bygga efter och fick därför ingen `try` alls. Tabellen
+  skrevs i samma form som lästabellen, med varje svensk sträng utskriven, och
+  numreringen är körordningen. Rad 7 (det oväntade) lades till därför att en
+  tabell med bara kända rader lämnar samma hål ett steg upp: ett `isEntry` som
+  kastar är varken `mkdir`, `writeFile` eller `rename`, och utan slutraden hade
+  ett rått engelskt fel gått rakt ut till användaren som `500 { error }`.
+  Alternativet att låta okända fel passera orört ("de är buggar, inte
+  användarfel") förkastades av just det skälet. `<sökväg>` i meddelandena är
+  datafilens sökväg, som på läsvägen, aldrig temporärfilens: den innehåller ett
+  pid och ett UUID som skiljer sig mellan två körningar. Rad 7 fick ingen
+  sökväg, eftersom den också fångar fel som inträffar innan sökvägen har
+  använts. **Byggaren ska:** lägga varje `node:fs`-anrop och `JSON.stringify`
+  innanför `try`, kasta om en redan kastad `StorageError` oförändrad så att rad
+  7 inte skriver över rad 1–6, ta bort temporärfilen i ett `finally` vars egen
+  `catch` sväljer sitt fel, och köra en mutation per rad. (påverkat av lärdom:
+  **ja**, `2026-09-02 — lagring: saveEntries kastar råa engelska OS-fel i
+  stället för StorageError`)
+- **Skrivvägen frågar `isEntry`, och den frågar innan något rör disken** —
+  `isEntry` satt bara på läsvägen, så `saveEntries` skrev en post med okänt
+  fält, en post med fel typ, `{a: 1}`, `'abc'` och `undefined` rakt till disk
+  och bytte ut den giltiga filen med `rename` innan felet gick att upptäcka.
+  Domaren är samma funktion på båda vägarna: `storage.js` får inte ha någon egen
+  åsikt om vad en giltig post är, lika lite som den får ha en åsikt om `id`.
+  Ordningen är array, sedan varje element, sedan `JSON.stringify` — beloppen
+  `1n` och de cirkulära posterna fastnar därmed på rad 2 och ger ett meddelande
+  om posten i stället för ett om serialiseringen, vilket är det svar som pekar
+  ut något användaren kan rätta. Invarianten *"allt som `saveEntries` accepterar
+  kan `loadEntries` läsa tillbaka"* skrevs in som bindande krav tillsammans med
+  sitt motstycke: ett avvisat anrop lämnar datafilen byte-identisk. Att
+  validera i `api.js` i stället förkastades — `saveEntries` är den funktion som
+  skriver över användarens enda datafil, och nästa anropare skulle annars ärva
+  ett krav som inte syns i signaturen. **Byggaren ska:** kontrollera i den
+  ordning tabellen anger, före `fs.mkdir`, och skriva invarianttestet med de
+  uppräknade indatavärdena. (påverkat av lärdom: **ja**, `2026-09-02 — lagring:
+  saveEntries validerar ingenting och kan skriva en fil appen vägrar läsa`)
+- **Atomicitetstestet ska döda en riktig skrivning i en barnprocess, och
+  `tests/helpers/` infördes för den** — det gamla testet skrev temporärfilen för
+  hand och passerade två av tre assertioner med atomiciteten helt borttagen; en
+  kommentar i `src/server/storage.js` åberopade det som bevis. Ett avbrott går
+  bara att pröva genom att verkligen avbryta, och en process går bara att döda
+  utifrån, alltså behövs en barnprocess och en fil åt den. Alternativet att låta
+  testet skriva barnets kod till en temporär fil under `os.tmpdir()` vid körning
+  förkastades: en genererad fil är svårare att läsa och lämnar inget spår i
+  trädet. Assertionen formulerades som "gamla listan eller nya listan, aldrig
+  ett fel" därför att den är sann oavsett när `SIGKILL` landar — då kan testet
+  vara deterministiskt utan att asserta på tid. Att fördelningen mellan de två
+  utfallen blir ett redovisningskrav och inte en assertion följer av
+  determinismkravet, precis som mätningen av snabbvägen i `checkName`. Att
+  temporärfilen ligger kvar efter ett `SIGKILL` skrevs in som ett utpekat
+  undantag i stället för att lösas med en sveprutin. **Byggaren ska:** följa de
+  sju punkterna under "Teststrategi" bokstavligt och klistra in mutationens
+  fallerande rad med filnamn och radnummer. (påverkat av lärdom: **ja**,
+  `2026-09-02 — test: atomicitetstestet avbryter aldrig en skrivning och bevisar
+  ingenting`)
+- **Läsvägens sista sträng naglades fast, lästabellen numrerades, och en blank
+  `HEMOCHEKONOMI_DATA_FILE` räknas som osatt** — tre frågor som byggaren fick
+  besvara själv därför att filen tvingade fram en gissning. Raden "Läsfel från
+  operativsystemet" krävde bara "svensk text", så strängen
+  `Datafilen kunde inte läsas: <sökväg>` var byggarens val trots att paket 5 och
+  8 ska citera den; den står nu utskriven som rad 2, på den plats i tabellen där
+  den prövas. Ordningen mellan "fel innehåll" och "version" var obesvarad när
+  båda är sanna, och `{ "version": 2, "entries": 42 }` gav i granskarens körning
+  `Datafilen har fel innehåll`; den ordningen skrevs in som facit tillsammans
+  med ett andra exempel där version vinner över en ogiltig post, eftersom en
+  numrerad tabell måste kunna prövas med en indata som gör mer än en rad sann.
+  För miljövariabeln fanns två tänkbara svar — trimma värdet, eller behandla ett
+  blankt värde som osatt. Trimning förkastades: en riktig sökväg får innehålla
+  blanksteg, och `paths.js` ska inte ha en åsikt om hur en sökväg ser ut. `'   '`
+  som sökväg är däremot alltid ett misstag i testuppsättningen, och att svara med
+  standardsökvägen är det enda svar som inte leder till ett OS-fel på engelska.
+  **Byggaren ska:** byta villkoret i `getDataFilePath` till
+  `typeof override === 'string' && override.trim() !== ''`, returnera värdet
+  ordagrant, och lägga till de fyra testfallen. (påverkat av lärdom: **ja**,
+  `2026-09-02 — lagring: saveEntries kastar råa engelska OS-fel i stället för
+  StorageError` för strängkravet, och `2026-09-02 — dokumentation:
+  totalYearlyOre-tabellen numrerar spärrarna i en ordning koden inte följer` för
+  tabellordningen)
