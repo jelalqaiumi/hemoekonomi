@@ -40,17 +40,31 @@ function asStorageError(error) {
   return new StorageError(SAVE_MESSAGES.unexpected, { cause: error });
 }
 
-// Modullokal löfteskedja. saveEntries utökar den synkront, före sitt första
-// await, så att kedjans ordning är anropsordningen. Kedjan går vidare både
-// efter uppfyllelse och efter avvisning: ett misslyckat anrop får varken
-// blockera nästa eller bli nästa anrops fel.
-let writeQueue = Promise.resolve();
+// Modullokal löfteskedja för varje diskoperation i modulinstansen. Både
+// loadEntries och saveEntries utökar den synkront, före sitt första await, så
+// att kedjans ordning är anropsordningen. Kedjan går vidare både efter
+// uppfyllelse och efter avvisning: ett misslyckat anrop får varken blockera
+// nästa eller bli nästa anrops fel.
+let ioQueue = Promise.resolve();
 
 export async function loadEntries() {
   // Sökvägen läses vid varje anrop, aldrig vid modulladdning. Filen på disk är
   // sanningen — ingenting cachas i modulminne.
   const filePath = getDataFilePath();
 
+  // Kön utökas synkront, före funktionens första await, precis som i
+  // saveEntries: annars är kedjans ordning inte anropsordningen. Läsningen
+  // ligger i samma kö som skrivningen, eftersom fs.rename på Windows ger EPERM
+  // när datafilen är öppen i en annan handtagare — även när det är appens egen
+  // samtidiga läsning som håller den öppen.
+  const work = ioQueue.then(() => readFromDisk(filePath));
+  ioQueue = work.then(() => undefined, () => undefined);
+  return work;
+}
+
+// Hela fs.readFile-arbetet ligger inuti kedjan: läsvägens tabell i
+// ARKITEKTUR.md prövas alltså först när kön släppt fram anropet.
+async function readFromDisk(filePath) {
   let text;
   try {
     text = await fs.readFile(filePath, 'utf8');
@@ -129,18 +143,16 @@ export async function saveEntries(entries) {
 
   // Kön utökas synkront, före funktionens första await. Anrop nummer två börjar
   // först när anrop nummer ett är klart, så anropsordningen avgör och sista
-  // anropet vinner på disk.
-  const work = writeQueue.then(
-    () => writeToDisk(filePath, text),
-    () => writeToDisk(filePath, text)
-  );
-  writeQueue = work.then(() => undefined, () => undefined);
+  // anropet vinner på disk. Kedjan behöver bara en handlare: nästa rad
+  // neutraliserar varje avvisning, så ioQueue kan aldrig vara ett avvisat löfte
+  // och en andra handlare vore en gren ingen indata når.
+  const work = ioQueue.then(() => writeToDisk(filePath, text));
+  ioQueue = work.then(() => undefined, () => undefined);
 
-  try {
-    await work;
-  } catch (error) {
-    throw asStorageError(error);
-  }
+  // Ingen catch här: writeToDisk lindar varje node:fs-anrop och sväljer sitt
+  // eget städningsfel, så work kan bara avvisa med StorageError. Rad 7 ligger
+  // därför bara runt arbetet före kön.
+  return work;
 }
 
 // Rad 4-6 i skrivtabellen. Varje node:fs-anrop ligger innanför sitt eget
@@ -182,4 +194,74 @@ async function writeToDisk(filePath, text) {
       // Med flit tom.
     }
   }
+}
+
+// Läs-ändra-skriv innanför en enda köplats (ARKITEKTUR.md, "Läs–ändra–skriv i
+// ett steg"). loadEntries() följt av saveEntries(...) är två köplatser med ett
+// glapp emellan: två överlappande anrop läser då samma utgångsläge och skriver
+// över varandra, och båda svarar att det gick bra.
+//
+// mutera(entries) körs mellan läsningen och skrivningen, innanför samma
+// köplats. Returnerar den skrivna listan, eller null när mutera valde att inte
+// skriva.
+export async function updateEntries(mutera) {
+  // Sökvägen läses synkront, före kön, precis som i loadEntries och
+  // saveEntries.
+  const filePath = getDataFilePath();
+
+  // Kön utökas synkront, före funktionens första await. Läsningen och
+  // skrivningen ligger i samma köplats: ingen annan diskoperation i den här
+  // modulinstansen kan komma emellan.
+  const work = ioQueue.then(() => readModifyWrite(filePath, mutera));
+  ioQueue = work.then(() => undefined, () => undefined);
+  return work;
+}
+
+// Innehållet i köplatsen. updateEntries anropar aldrig loadEntries eller
+// saveEntries: ett anrop till dem härifrån skulle ställa sig sist i en kö som
+// väntar på just den här köplatsen — en låsning som inget felmeddelande
+// beskriver. De modullokala readFromDisk och writeToDisk används i stället.
+async function readModifyWrite(filePath, mutera) {
+  // Läsvägens tabell gäller oförändrad, och readFromDisk kastar bara
+  // StorageError.
+  const entries = await readFromDisk(filePath);
+
+  let next;
+  let text;
+  try {
+    // Tillägg U1: kastar mutera blir svaret skrivtabellens rad 7, samma sträng
+    // och samma ägare — ingen ny sträng.
+    next = mutera(entries);
+
+    // Tillägg U2: null betyder "skriv inte". Det är inget fel, och ingenting
+    // rör disken.
+    if (next === null) {
+      return null;
+    }
+
+    // Skrivtabellens rad 1-3 prövas inuti köplatsen här, till skillnad från i
+    // saveEntries: listan finns först efter läsningen. Strängarna och ordningen
+    // är oförändrade.
+    if (!Array.isArray(next)) {
+      throw new StorageError(SAVE_MESSAGES.notAnArray);
+    }
+
+    for (let index = 0; index < next.length; index += 1) {
+      if (!isEntry(next[index])) {
+        throw new StorageError(SAVE_MESSAGES.invalidEntry(index));
+      }
+    }
+
+    try {
+      text = JSON.stringify({ version: STORAGE_VERSION, entries: next }, null, 2) + '\n';
+    } catch (error) {
+      throw new StorageError(SAVE_MESSAGES.notJson, { cause: error });
+    }
+  } catch (error) {
+    throw asStorageError(error);
+  }
+
+  // Rad 4-6 och finally-städningen, samma funktion som saveEntries använder.
+  await writeToDisk(filePath, text);
+  return next;
 }

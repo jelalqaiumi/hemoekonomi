@@ -33,3 +33,12 @@ export function getWebDir() {
 export function getCoreDir() {
   return path.join(SRC_DIR, 'core');
 }
+
+// Låsfilen hör till datafilen och inte till porten: två instanser med var sin
+// HEMOCHEKONOMI_DATA_FILE låser inte varandra. Sökvägen läses genom
+// getDataFilePath() och aldrig ur miljövariabeln själv — två uppslag vore två
+// kopior av samma regel. Suffixet .lock kan aldrig krocka med skrivvägens
+// temporärnamn, som slutar på .tmp.
+export function getLockFilePath() {
+  return `${getDataFilePath()}.lock`;
+}

@@ -1,0 +1,197 @@
+/* All styling för appen. Ingen inline-CSS i index.html. */
+
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --ink: #1d2430;
+  --muted: #5b6676;
+  --line: #dde1e7;
+  --accent: #1f6f54;
+  --accent-ink: #ffffff;
+  --error: #a52020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 1rem 3rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.page-header {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2rem 0 1rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.lead {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+}
+
+.field {
+  margin-bottom: 0.9rem;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field-error,
+.form-error {
+  margin: 0.25rem 0 0;
+  min-height: 1.25rem;
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+.form-error {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+button.primary {
+  padding: 0.55rem 1.4rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover {
+  filter: brightness(1.1);
+}
+
+.entry-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.entry:last-child {
+  border-bottom: none;
+}
+
+.entry-name {
+  font-weight: 600;
+}
+
+.entry-category,
+.entry-interval {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.entry-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+button.remove {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--error);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+button.remove:hover {
+  border-color: var(--error);
+}
+
+/* En knapp som spärrats under ett pågående anrop ska SYNAS som spärrad.
+   button.primary och button.remove sätter egen background, color och
+   cursor: pointer, och de reglerna åsidosätter webbläsarens egen gråtoning av en
+   avstängd knapp — utan den här regeln ser knappen oförändrad ut och visar
+   handpekare medan den inte går att klicka på. Regeln står sist bland
+   knappreglerna, så att den vinner på lika specificitet.
+   Ingen ny text mot användaren: det här är styling och ingenting annat. */
+button.primary:disabled,
+button.remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+/* :hover får inte lysa upp en spärrad knapp. */
+button.primary:disabled:hover {
+  filter: grayscale(1);
+}
+
+button.remove:disabled:hover {
+  border-color: var(--line);
+}
+
+@media (max-width: 34rem) {
+  .entry {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.25rem;
+  }
+}

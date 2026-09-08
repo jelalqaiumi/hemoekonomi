@@ -10,8 +10,14 @@ import { pathToFileURL } from 'node:url';
 import { saveEntries } from '../../src/server/storage.js';
 
 // Minst 20 000 poster enligt teststrategin i ARKITEKTUR.md: skrivningen ska
-// vara lång nog att hinna avbrytas.
-export const CHILD_ENTRY_COUNT = 20000;
+// vara lång nog att hinna avbrytas. Föräldern kan höja antalet med
+// HEMOCHEKONOMI_TEST_ENTRY_COUNT (punkt 7: fördubbla antalet poster när varje
+// omgång hann bli klar). Saknas variabeln skriver barnet 20 000 poster.
+const DEFAULT_CHILD_ENTRY_COUNT = 20000;
+const requestedCount = Number(process.env.HEMOCHEKONOMI_TEST_ENTRY_COUNT);
+export const CHILD_ENTRY_COUNT = Number.isInteger(requestedCount) && requestedCount > 0
+  ? requestedCount
+  : DEFAULT_CHILD_ENTRY_COUNT;
 
 export function childEntries(count = CHILD_ENTRY_COUNT) {
   const entries = [];

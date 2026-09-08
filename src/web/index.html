@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hemochekonomi</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Hemochekonomi</h1>
+      <p class="lead">Hemmets fasta utgifter och prenumerationer.</p>
+    </header>
+
+    <main>
+      <!-- Paket 5: formulär och lista. Totalrutan byggs i paket 6 och listan
+           över kommande dragningar i paket 7. -->
+      <section class="card">
+        <h2>Lägg till en utgift</h2>
+
+        <form id="entry-form" novalidate>
+          <div class="field">
+            <label for="name">Namn</label>
+            <input id="name" name="name" type="text" autocomplete="off" />
+            <p class="field-error" id="error-name" role="alert"></p>
+          </div>
+
+          <div class="field">
+            <label for="amountSek">Belopp per betalning (kr)</label>
+            <input id="amountSek" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+            <p class="field-error" id="error-amountSek" role="alert"></p>
+          </div>
+
+          <div class="field">
+            <label for="interval">Betalningsintervall</label>
+            <!-- Alternativen fylls i av app.js ur INTERVAL_LABELS. Ingen svensk
+                 etikett för intervall eller kategori skrivs för hand här. -->
+            <select id="interval" name="interval"></select>
+            <p class="field-error" id="error-interval" role="alert"></p>
+          </div>
+
+          <div class="field">
+            <label for="startDate">Startdatum</label>
+            <input id="startDate" name="startDate" type="date" />
+            <p class="field-error" id="error-startDate" role="alert"></p>
+          </div>
+
+          <div class="field">
+            <label for="category">Kategori</label>
+            <select id="category" name="category"></select>
+            <p class="field-error" id="error-category" role="alert"></p>
+          </div>
+
+          <p class="form-error" id="form-error" role="alert"></p>
+
+          <button type="submit" class="primary">Spara</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Dina poster</h2>
+        <ul id="entry-list" class="entry-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

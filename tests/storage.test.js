@@ -6,10 +6,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
 import { isEntry } from '../src/core/entry.js';
 import { getCoreDir, getDataFilePath, getWebDir } from '../src/server/paths.js';
-import { STORAGE_VERSION, StorageError, loadEntries, saveEntries } from '../src/server/storage.js';
+import { STORAGE_VERSION, StorageError, loadEntries, saveEntries, updateEntries } from '../src/server/storage.js';
 import { childEntries } from './helpers/interrupted-save.js';
 
 // Två giltiga poster med fasta datum. Inget i den här filen får bero på dagens
@@ -83,6 +84,72 @@ function manyEntries(count, prefix) {
   return entries;
 }
 
+// Billig jämförelse av två poster: fälten är platta och alla värden är
+// primitiver, så nycklarnas antal plus Object.is per nyckel avgör frågan utan
+// att något meddelande byggs. Object.is skiljer dessutom -0 från 0, precis som
+// assert.deepStrictEqual gör.
+function entriesDiffer(actual, expected) {
+  if (actual === expected) {
+    return false;
+  }
+  if (actual === null || expected === null
+    || typeof actual !== 'object' || typeof expected !== 'object') {
+    return true;
+  }
+  const actualKeys = Object.keys(actual);
+  if (actualKeys.length !== Object.keys(expected).length) {
+    return true;
+  }
+  for (const key of actualKeys) {
+    if (!Object.is(actual[key], expected[key])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Jämför två postlistor så att ett verkligt fel rapporteras i stället för att
+// spränga minnet. En assert.deepEqual mot en lång lista är billig bara när den
+// lyckas: kastvägen bygger först en fullständig util.inspect-diff, och
+// granskarens mätning på den här maskinen gav 60 344 ms och +8922 MB rss för
+// 20 000 mot 20 000 poster där hälften skiljer, 63 340 ms och +9353 MB när alla
+// skiljer, och 48 595 ms och +8734 MB för 3 mot 20 000 poster — samma
+// jämförelse med bara en post som skiljer kostar 200 ms och +119 MB. Kostnaden
+// följer alltså diffens storlek, inte listans.
+//
+// Två billigare assertioner fäller därför först: antalet poster, och därefter
+// det första avvikande indexet med index och den enskilda posten i meddelandet.
+// Först när båda har passerat körs assert.deepEqual mot hela listan som
+// slutkontroll — och då är den känt lyckad och därmed billig. Följer av
+// LARDOMAR.md (2026-09-07, den dyra diffen togs bort ur grenvalet men står kvar
+// i grenkropparna).
+function assertSameEntries(actual, expected, label) {
+  assert.ok(Array.isArray(actual), `${label}: förväntade en array, fick ${typeof actual}`);
+  assert.equal(actual.length, expected.length, `${label}: fel antal poster`);
+
+  let firstDiff = -1;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (entriesDiffer(actual[index], expected[index])) {
+      firstDiff = index;
+      break;
+    }
+  }
+
+  if (firstDiff !== -1) {
+    // Bara den enskilda posten jämförs här: diffen blir läsbar och liten.
+    assert.deepEqual(
+      actual[firstDiff],
+      expected[firstDiff],
+      `${label}: första avvikande post har index ${firstDiff}`
+    );
+    // Nås bara om deepEqual godkänner ett par som entriesDiffer förkastade.
+    // Meddelandet är kort med flit — hela listan får aldrig inspekteras här.
+    assert.fail(`${label}: post ${firstDiff} skiljer sig utan att deepEqual såg det`);
+  }
+
+  assert.deepEqual(actual, expected, label);
+}
+
 // Temporärfilens namn är modullokalt och innehåller ett UUID som testet inte
 // kan förutsäga. Katalogen läses därför i stället för namnet — det är den enda
 // vägen som inte blir en andra kopia av regeln.
@@ -100,6 +167,69 @@ async function exists(filePath) {
     }
     throw error;
   }
+}
+
+// Barnprocessens sökväg byggs ur import.meta.url, aldrig ur process.cwd():
+// en cwd-relativ sökväg hittar bara filen så länge kommandot körs från
+// projektroten, och barnet dör annars innan sitt första meddelande.
+const CHILD_PATH = fileURLToPath(new URL('./helpers/interrupted-save.js', import.meta.url));
+
+// Hängningsspärr, inte en dödandetid: barnet ska vara igång på bråkdelen av en
+// sekund, och tiden nedan finns bara för att ett barn som aldrig startar ska ge
+// ett fallerat test i stället för en väntan utan exitkod.
+const CHILD_START_TIMEOUT_MS = 30000;
+
+function forkChild(filePath, entryCount) {
+  const child = fork(CHILD_PATH, [], {
+    env: {
+      ...process.env,
+      HEMOCHEKONOMI_DATA_FILE: filePath,
+      HEMOCHEKONOMI_TEST_ENTRY_COUNT: String(entryCount)
+    },
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc']
+  });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  return { child, stderrText: () => stderr };
+}
+
+// Väntar på barnets 'startar', men aldrig för alltid: meddelandet kapplöper mot
+// exit, error och en timeout. Vinner något annat faller testet med barnets
+// exitCode, signalCode och stderr — en hängning ger ingen exitkod alls, och då
+// går kravet i CLAUDE.md att kontrollera utgångskoden inte att uppfylla.
+async function waitForChildStart(child, stderrText) {
+  const outcome = await new Promise((resolve) => {
+    child.once('message', () => resolve({ kind: 'meddelande' }));
+    child.once('exit', () => resolve({ kind: 'exit' }));
+    child.once('error', (error) => resolve({ kind: 'error', error }));
+    AbortSignal.timeout(CHILD_START_TIMEOUT_MS).addEventListener(
+      'abort',
+      () => resolve({ kind: 'timeout' }),
+      { once: true }
+    );
+  });
+
+  if (outcome.kind !== 'meddelande') {
+    child.kill('SIGKILL');
+    const orsak = outcome.error ? `${outcome.kind}: ${outcome.error.message}` : outcome.kind;
+    assert.fail(
+      `barnprocessen ${CHILD_PATH} skickade aldrig "startar" (${orsak}): `
+      + `exitCode=${child.exitCode}, signalCode=${child.signalCode}, stderr=${stderrText()}`
+    );
+  }
+}
+
+// Punkt 3 i teststrategin: dödandetiden härleds ur en mätning. Mätomgången
+// dödar inte barnet utan tar tiden från att 'startar' togs emot till exit.
+async function matTKlar(filePath, entryCount) {
+  const { child, stderrText } = forkChild(filePath, entryCount);
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  await waitForChildStart(child, stderrText);
+  const start = performance.now();
+  await exited;
+  return performance.now() - start;
 }
 
 // ---------------------------------------------------------------- paths.js
@@ -726,7 +856,7 @@ test('allt som saveEntries accepterar kan loadEntries läsa tillbaka', async () 
   await withDataFile(async () => {
     for (const [label, entries] of lists) {
       await saveEntries(entries);
-      assert.deepEqual(await loadEntries(), entries, label);
+      assertSameEntries(await loadEntries(), entries, label);
     }
   });
 });
@@ -745,8 +875,57 @@ test('två överlappande saveEntries: båda uppfylls och sista anropet vinner', 
         ['fulfilled', 'fulfilled'],
         `omgång ${round}: ${results.map((r) => r.reason?.message).join(' | ')}`
       );
-      assert.deepEqual(await loadEntries(), b, `omgång ${round}`);
+      // b har 1 500 poster: en misslyckad deepEqual mot hela listan skulle bygga
+      // en fullständig diff, så assertSameEntries fäller på antal och index först.
+      assertSameEntries(await loadEntries(), b, `omgång ${round}`);
       assert.deepEqual((await fs.readdir(dir)).sort(), ['entries.json'], `omgång ${round}`);
+    }
+  });
+});
+
+// Storleken är uppmätt, inte vald: med kön borttagen ur loadEntries gav 10 000
+// poster (1 897 818 byte) 19 avvisningar av 20 omgångar och 20 000 poster
+// (3 817 818 byte) 20 av 20, i båda anropsordningarna. Testet använder det
+// senare, så att läsningen med säkerhet fortfarande pågår när rename körs.
+const OVERLAP_ENTRY_COUNT = 20000;
+
+test('en läsning och en skrivning som överlappar: båda uppfylls och anropsordningen avgör', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const stor = manyEntries(OVERLAP_ENTRY_COUNT, 'stor');
+    const b = manyEntries(3, 'b');
+
+    for (const ordning of ['skrivning först', 'läsning först']) {
+      for (let round = 0; round < 20; round += 1) {
+        // Den stora listan ligger på disk före varje omgång: läsningen ska
+        // fortfarande pågå när rename körs. b är en annan lista än den.
+        await saveEntries(stor);
+
+        const results = ordning === 'skrivning först'
+          ? await Promise.allSettled([saveEntries(b), loadEntries()])
+          : await Promise.allSettled([loadEntries(), saveEntries(b)]);
+
+        // En avvisning med rad 6:s meddelande betyder att läsningen inte gick
+        // genom kön: fs.rename ger EPERM när datafilen är öppen någon annanstans.
+        assert.deepEqual(
+          results.map((result) => result.status),
+          ['fulfilled', 'fulfilled'],
+          `${ordning}, omgång ${round}: ${results.map((r) => r.reason?.message).join(' | ')}`
+        );
+
+        // Anropsordningen avgör vad läsningen ser: efter skrivningen ger den b,
+        // före skrivningen ger den listan som låg på disk före omgången.
+        // Samma mätning som i assertSameEntries gäller här: läsningens värde kan
+        // vara 20 000 poster, och b är 3 — ett misslyckat deepEqual mellan dem
+        // kostade 48 595 ms och +8734 MB i granskarens körning.
+        if (ordning === 'skrivning först') {
+          assertSameEntries(results[1].value, b, `${ordning}, omgång ${round}`);
+        } else {
+          assertSameEntries(results[0].value, stor, `${ordning}, omgång ${round}`);
+        }
+
+        assertSameEntries(await loadEntries(), b, `${ordning}, omgång ${round}`);
+        assert.deepEqual((await fs.readdir(dir)).sort(), ['entries.json'], `${ordning}, omgång ${round}`);
+      }
     }
   });
 });
@@ -754,39 +933,396 @@ test('två överlappande saveEntries: båda uppfylls och sista anropet vinner', 
 test('en skrivning som dödas med SIGKILL lämnar antingen den gamla eller den nya listan', async () => {
   await withDataFile(async (filePath) => {
     const before = sampleEntries();
-    await saveEntries(before);
 
-    const childList = childEntries();
-    const outcomes = { gammal: 0, ny: 0 };
+    // Antal omgångar, inte en tid. Punkt 3 kräver minst 20; talet nedan är
+    // uppmätt, inte valt. Med 20 omgångar fällde punkt 6:s mutation (direkt
+    // fs.writeFile i stället för temporärfil plus rename) det här testet i 1 av
+    // 30 körningar på den här maskinen — dödandet måste träffa tiden mellan
+    // trunkeringen och sista byten, och den tiden är cirka 0,2 ms av ett
+    // fönster på cirka 120 ms. Varje omgång är ett nytt försök i samma fönster,
+    // så fler omgångar höjer chansen att någon träffar: med 200 omgångar föll
+    // testet i 9 av 10 muterade körningar, alla på punkt 4:s assertioner
+    // (8 gånger "lämnade en datafil som inte gick att läsa", 1 gång "varken den
+    // gamla eller barnets lista (0 poster)"). Priset är körtid: testet tar
+    // cirka 37 s i stället för 3,5 s.
+    const rounds = 200;
+    // Punkt 2: minst 20 000 poster, och punkt 7 fördubblar antalet om varje
+    // omgång hann bli klar. Punkt 7 fördubblar i stället fönstrets övre gräns
+    // om varje dödande landade före rename.
+    let entryCount = 20000;
+    let windowFactor = 2;
+    let counters = { gamlaListan: 0, barnetsLista: 0 };
+    const attempts = [];
 
-    for (let i = 0; i < 20; i += 1) {
-      const child = fork('tests/helpers/interrupted-save.js', [], {
-        env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: filePath }
+    // Punkt 7: högst tre försök totalt, och tKlar mäts om före varje försök.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const childList = childEntries(entryCount);
+
+      // Punkt 1: utgångslistan får inte vara tom och ska ha ett annat antal
+      // poster än barnets lista. Skälet är rad 3 i "Beteende vid läsning": en
+      // tom fil läses som []. Vore utgångslistan tom skulle en avbruten
+      // skrivning som lämnar en tom fil räknas som den gamla listan och passera
+      // oupptäckt. Antalen måste dessutom skilja sig för att grenvalet på
+      // after.length ska kunna avgöra vilken lista som ligger på disk — punkt 7
+      // kan fördubbla entryCount, så villkoret prövas i varje försök.
+      assert.notEqual(before.length, 0, 'punkt 1: utgångslistan får inte vara tom');
+      assert.notEqual(
+        before.length,
+        childList.length,
+        `punkt 1: utgångslistan och barnets lista har samma antal poster (${before.length})`
+      );
+
+      const tKlar = await matTKlar(filePath, entryCount);
+
+      // Omgång i av N väntar Math.round((i * windowFactor * tKlar) / (N - 1))
+      // millisekunder efter meddelandet. Inget millisekundtal står som konstant.
+      const delays = [];
+      for (let i = 0; i < rounds; i += 1) {
+        delays.push(Math.round((i * windowFactor * tKlar) / (rounds - 1)));
+      }
+
+      counters = { gamlaListan: 0, barnetsLista: 0 };
+      for (let i = 0; i < rounds; i += 1) {
+        // Utgångsläget läggs tillbaka före varje omgång, också efter en omgång
+        // där barnets lista vann: annars skulle nästa omgång räkna barnets
+        // lista som den gamla.
+        await saveEntries(before);
+
+        const { child, stderrText } = forkChild(filePath, entryCount);
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        await waitForChildStart(child, stderrText);
+        await sleep(delays[i]);
+        child.kill('SIGKILL');
+        await exited;
+
+        // Punkt 4: avbrottet får aldrig ge en tredje utgång. loadEntries kastar
+        // inte, och listan är antingen den gamla eller barnets. Det är de här
+        // assertionerna mutationen ska fälla.
+        let after;
+        try {
+          after = await loadEntries();
+        } catch (error) {
+          assert.fail(
+            `avbrottet efter ${delays[i]} ms lämnade en datafil som inte gick att läsa: ${error.message}`
+          );
+        }
+
+        // Grenvalet sker på after.length, aldrig på ett kast: ett
+        // assert.deepEqual som *misslyckas* betalar hela util.inspect-diffen
+        // (mätt: 20 000 poster, 52,7 s och +9,2 GB rss), och ett enda sådant
+        // kast fick nästa fork att falla med "spawn UNKNOWN" /
+        // "VirtualAlloc failed". Punkt 1 gör längderna till ett giltigt grenval:
+        // utgångslistan är inte tom och har ett annat antal poster än barnets.
+        // Grenkroppen jämför fortfarande hela listan, men genom
+        // assertSameEntries, som fäller på antal och första avvikande index
+        // innan deepEqual körs — kostnaden ligger i diffen, inte i placeringen.
+        if (after.length === before.length) {
+          assertSameEntries(
+            after,
+            before,
+            `avbrottet efter ${delays[i]} ms gav ${after.length} poster som inte är den gamla listan`
+          );
+          counters.gamlaListan += 1;
+        } else if (after.length === childList.length) {
+          assertSameEntries(
+            after,
+            childList,
+            `avbrottet efter ${delays[i]} ms gav ${after.length} poster som inte är barnets lista`
+          );
+          counters.barnetsLista += 1;
+        } else {
+          // Punkt 4: ingen tredje utgång godtas.
+          assert.fail(
+            `avbrottet efter ${delays[i]} ms gav varken den gamla eller barnets lista (${after.length} poster)`
+          );
+        }
+      }
+
+      attempts.push({
+        forsok: attempt,
+        poster: entryCount,
+        tKlarMs: Math.round(tKlar),
+        fonsterMs: `0…${Math.round(windowFactor * tKlar)}`,
+        dodandetiderMs: delays.join(','),
+        gamlaListan: counters.gamlaListan,
+        barnetsLista: counters.barnetsLista
       });
-      const exited = new Promise((resolve) => child.once('exit', resolve));
-      await new Promise((resolve) => child.once('message', resolve));
-      await sleep(i);
-      child.kill('SIGKILL');
-      await exited;
 
-      // Punkt 4 i teststrategin: avbrottet får aldrig ge en tredje utgång.
-      // loadEntries kastar inte, och listan är antingen den gamla eller
-      // barnets. Det är den här assertionen mutationen ska fälla.
-      const after = await loadEntries();
-      try {
-        assert.deepEqual(after, before);
-        outcomes.gammal += 1;
-      } catch {
-        assert.deepEqual(
-          after,
-          childList,
-          `avbrottet efter ${i} ms gav varken den gamla eller den nya listan (${after.length} poster)`
-        );
-        outcomes.ny += 1;
+      if (counters.gamlaListan >= 1 && counters.barnetsLista >= 1) {
+        break;
+      }
+      // Punkt 7: barnets lista aldrig sedd betyder att varje dödande landade
+      // före rename — vidga fönstret. Den gamla listan aldrig sedd betyder att
+      // barnet blev klart före även det tidigaste dödandet — öka postantalet.
+      if (counters.barnetsLista === 0) {
+        windowFactor *= 2;
+      }
+      if (counters.gamlaListan === 0) {
+        entryCount *= 2;
       }
     }
 
-    // Redovisningskrav, inte assertion: fördelningen mellan utfallen.
-    console.log(`  SIGKILL-fördelning: gamla listan ${outcomes.gammal}, barnets lista ${outcomes.ny}`);
+    // Redovisningskrav: mätvärden och fördelning per försök.
+    for (const attempt of attempts) {
+      console.log(`  SIGKILL-försök ${JSON.stringify(attempt)}`);
+    }
+
+    // Punkt 4: båda grenarna ska ha körts. En körning där någondera grenen
+    // kördes noll gånger är ett fallerat test, inte ett godkänt.
+    assert.ok(
+      counters.gamlaListan >= 1,
+      `ingen omgång gav den gamla listan efter ${attempts.length} försök: ${JSON.stringify(attempts)}`
+    );
+    assert.ok(
+      counters.barnetsLista >= 1,
+      `ingen omgång gav barnets lista efter ${attempts.length} försök: ${JSON.stringify(attempts)}`
+    );
+  });
+});
+
+// ---------------------------------------------------------- updateEntries
+//
+// Paket 5. Läs–ändra–skriv innanför en enda köplats (ARKITEKTUR.md,
+// "Läs–ändra–skriv i ett steg"). Felen är läsvägens och skrivvägens, med två
+// tillägg: U1 (mutera kastar) och U2 (mutera svarar null).
+
+test('updateEntries skriver den lista mutera returnerar och svarar med den', async () => {
+  await withDataFile(async () => {
+    const [forst, andra] = sampleEntries();
+    await saveEntries([forst]);
+
+    const svar = await updateEntries((entries) => {
+      assertSameEntries(entries, [forst], 'mutera fick inte filens innehåll');
+      return [...entries, andra];
+    });
+
+    assertSameEntries(svar, [forst, andra], 'updateEntries svarade fel lista');
+    assertSameEntries(await loadEntries(), [forst, andra], 'filen fick fel innehåll');
+  });
+});
+
+test('updateEntries mot en fil som saknas ger mutera en tom lista', async () => {
+  await withDataFile(async (filePath) => {
+    const [forst] = sampleEntries();
+    const svar = await updateEntries((entries) => {
+      assert.deepEqual(entries, []);
+      return [forst];
+    });
+    assertSameEntries(svar, [forst], 'updateEntries svarade fel lista');
+    assert.equal(await exists(filePath), true);
+  });
+});
+
+test('U2: mutera som svarar null skriver inte och ger null', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const [forst] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+
+    assert.equal(await updateEntries(() => null), null);
+
+    assert.deepEqual(await fs.readFile(filePath), fore);
+    assertSameEntries(await loadEntries(), [forst], 'filen ändrades av ett null-svar');
+    assert.deepEqual(await tempFilesIn(dir), []);
+  });
+});
+
+test('U2: null mot en fil som saknas skapar ingen fil', async () => {
+  await withDataFile(async (filePath, dir) => {
+    assert.equal(await updateEntries(() => null), null);
+    assert.equal(await exists(filePath), false);
+    assert.deepEqual(await fs.readdir(dir), []);
+  });
+});
+
+test('U1: mutera som kastar ger rad 7:s meddelande med cause och rör inte disken', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const [forst] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+    const orsak = new Error('mutera gick sönder');
+
+    await assert.rejects(
+      () => updateEntries(() => {
+        throw orsak;
+      }),
+      (error) => {
+        assert.ok(error instanceof StorageError, `förväntade StorageError, fick ${error}`);
+        assert.equal(error.message, 'Posterna kunde inte sparas: ett oväntat fel inträffade.');
+        assert.equal(error.cause, orsak);
+        return true;
+      }
+    );
+
+    assert.deepEqual(await fs.readFile(filePath), fore);
+    assert.deepEqual(await tempFilesIn(dir), []);
+  });
+});
+
+test('rad 1 i skrivtabellen gäller inuti köplatsen: mutera som inte ger en array', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const [forst] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+
+    for (const varde of [undefined, 'abc', 42, { a: 1 }, true]) {
+      await rejectsWithMessage(
+        () => updateEntries(() => varde),
+        'Posterna kunde inte sparas: listan över poster är ogiltig.'
+      );
+      assert.deepEqual(await fs.readFile(filePath), fore, String(varde));
+      assert.deepEqual(await tempFilesIn(dir), [], String(varde));
+    }
+  });
+});
+
+test('rad 2 i skrivtabellen gäller inuti köplatsen: lägsta ogiltiga index vinner', async () => {
+  await withDataFile(async (filePath) => {
+    const [forst, andra] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+
+    await rejectsWithMessage(
+      () => updateEntries(() => [forst, { ...andra, amountSek: '199' }]),
+      'Posterna kunde inte sparas: post nummer 2 är ogiltig.'
+    );
+    await rejectsWithMessage(
+      () => updateEntries(() => [{ ...forst, income: 5000 }, andra]),
+      'Posterna kunde inte sparas: post nummer 1 är ogiltig.'
+    );
+
+    assert.deepEqual(await fs.readFile(filePath), fore);
+  });
+});
+
+test('rad 3 i skrivtabellen gäller inuti köplatsen: en post vars toJSON kastar', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const [forst] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+
+    // toJSON är ingen egen nyckel, så isEntry ser sex fält och godkänner posten,
+    // medan JSON.stringify frågar efter toJSON och får ett kast.
+    const trasig = new Proxy(forst, {
+      get: (target, key) => (key === 'toJSON'
+        ? () => {
+            throw new Error('nej');
+          }
+        : target[key])
+    });
+
+    await rejectsWithMessage(
+      () => updateEntries(() => [trasig]),
+      'Posterna kunde inte sparas: de gick inte att omvandla till JSON.'
+    );
+
+    assert.deepEqual(await fs.readFile(filePath), fore);
+    assert.deepEqual(await tempFilesIn(dir), []);
+  });
+});
+
+test('läsvägens fel når anroparen oförändrat genom updateEntries', async () => {
+  await withDataFile(async (filePath) => {
+    await fs.writeFile(filePath, '{ trasig', 'utf8');
+    let muteraKordes = false;
+    await rejectsWithMessage(
+      () => updateEntries((entries) => {
+        muteraKordes = true;
+        return entries;
+      }),
+      `Datafilen är skadad och kunde inte läsas: ${filePath}`
+    );
+    assert.equal(muteraKordes, false, 'mutera kördes trots att läsningen misslyckades');
+  });
+});
+
+test('rad 6 i skrivtabellen gäller inuti köplatsen: rename som misslyckas', async () => {
+  await withDataFile(async (filePath, dir) => {
+    const [forst, andra] = sampleEntries();
+    await saveEntries([forst]);
+    const fore = await fs.readFile(filePath);
+
+    // Datafilen hålls öppen av en annan handtagare: fs.rename ger då EPERM på
+    // den här maskinen, precis som i saveEntries-fallet ovan.
+    const handle = await fs.open(filePath, 'r');
+    try {
+      await rejectsWithMessage(
+        () => updateEntries((entries) => [...entries, andra]),
+        `Datafilen kunde inte sparas: den nya filen gick inte att byta in: ${filePath}`
+      );
+    } finally {
+      await handle.close();
+    }
+
+    assert.deepEqual(await fs.readFile(filePath), fore);
+    assert.deepEqual(await tempFilesIn(dir), []);
+  });
+});
+
+test('två överlappande updateEntries: båda ändringarna blir av, ingen går förlorad', async () => {
+  await withDataFile(async () => {
+    const [forst, andra] = sampleEntries();
+    // Facit: anropsordningen avgör, det andra anropet ser resultatet av det
+    // första, och ett därpå följande loadEntries ger båda ändringarna. Utan den
+    // gemensamma köplatsen läser anrop två samma utgångsläge som anrop ett och
+    // skriver över det.
+    for (let omgang = 0; omgang < 20; omgang += 1) {
+      await saveEntries([]);
+      const [ettSvar, tvaSvar] = await Promise.all([
+        updateEntries((entries) => [...entries, forst]),
+        updateEntries((entries) => [...entries, andra])
+      ]);
+      assertSameEntries(ettSvar, [forst], `omgång ${omgang}: första anropets svar`);
+      assertSameEntries(tvaSvar, [forst, andra], `omgång ${omgang}: andra anropets svar`);
+      assertSameEntries(await loadEntries(), [forst, andra], `omgång ${omgang}: filen`);
+    }
+  });
+});
+
+test('updateEntries och saveEntries som överlappar: sista anropet vinner', async () => {
+  await withDataFile(async () => {
+    const [forst, andra] = sampleEntries();
+    await saveEntries([]);
+    const resultat = await Promise.allSettled([
+      updateEntries((entries) => [...entries, forst]),
+      saveEntries([andra])
+    ]);
+    assert.deepEqual(resultat.map((r) => r.status), ['fulfilled', 'fulfilled']);
+    assertSameEntries(await loadEntries(), [andra], 'sista anropet vann inte');
+  });
+});
+
+test('updateEntries låser sig inte mot en samtidig loadEntries', async () => {
+  await withDataFile(async () => {
+    const [forst, andra] = sampleEntries();
+    await saveEntries([forst]);
+    // Skulle updateEntries anropa den exporterade loadEntries inifrån sin
+    // köplats vore det en låsning: kön väntar då på sig själv.
+    const resultat = await Promise.allSettled([
+      updateEntries((entries) => [...entries, andra]),
+      loadEntries()
+    ]);
+    assert.deepEqual(resultat.map((r) => r.status), ['fulfilled', 'fulfilled']);
+    // Anropsordningen avgör: läsningen ställdes i kön efter skrivningen och ser
+    // därför dess resultat, precis som facit för två överlappande anrop säger.
+    assertSameEntries(resultat[1].value, [forst, andra], 'läsningen såg inte skrivningens resultat');
+    assertSameEntries(await loadEntries(), [forst, andra], 'filen efteråt');
+  });
+});
+
+test('ett misslyckat updateEntries blockerar inte nästa', async () => {
+  await withDataFile(async () => {
+    const [forst] = sampleEntries();
+    await saveEntries([]);
+    const misslyckat = updateEntries(() => {
+      throw new Error('mutera gick sönder');
+    });
+    const nasta = updateEntries((entries) => [...entries, forst]);
+
+    await assert.rejects(misslyckat, StorageError);
+    // Kedjan går vidare efter en avvisning: det första anropets fel får aldrig
+    // bli det andra anropets fel, och det andra får inte hoppas över.
+    assertSameEntries(await nasta, [forst], 'nästa anrop kom inte fram');
+    assertSameEntries(await loadEntries(), [forst], 'filen efteråt');
   });
 });

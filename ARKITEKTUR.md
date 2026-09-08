@@ -76,8 +76,9 @@ hemochekonomi/
 │   │   ├── cost.js       Månadskostnad och årskostnad (paket 3).
 │   │   └── schedule.js   Nästa dragningsdatum och kommande dragningar (paket 7).
 │   ├── server/           Node-specifikt. Får importera node:-moduler och src/core.
-│   │   ├── paths.js      Var datafilen ligger (paket 4).
-│   │   ├── storage.js    Läser/skriver JSON-filen (paket 4).
+│   │   ├── paths.js      Var datafilen ligger (paket 4; getLockFilePath i 5).
+│   │   ├── storage.js    Läser/skriver JSON-filen (paket 4; updateEntries i 5).
+│   │   ├── lock.js       Låset på datafilen: en instans i taget (paket 5).
 │   │   ├── api.js        Routing och JSON-svar för /api/* (paket 5).
 │   │   └── server.js     HTTP-server, statisk filserver, startpunkt (paket 5).
 │   └── web/              Det som skickas till webbläsaren.
@@ -95,20 +96,28 @@ hemochekonomi/
     ├── money.test.js     Paket 3.
     ├── cost.test.js      Paket 3.
     ├── storage.test.js   Paket 4.
+    ├── api.test.js       Paket 5.
+    ├── lock.test.js      Paket 5.
+    ├── server.test.js    Paket 5.
+    ├── app.test.js       Paket 5, byggs ut i 6 och 7. Kör src/web/app.js mot
+    │                     DOM-attrappen. Ingen webbläsare, ingen server.
     ├── schedule.test.js  Paket 7.
     └── helpers/
-        └── interrupted-save.js  Barnprocess för atomicitetstestet: anropar
-                                 saveEntries och dödas med SIGKILL av
-                                 storage.test.js. Namnet slutar medvetet inte
-                                 på .test.js (paket 4).
+        ├── interrupted-save.js  Barnprocess för atomicitetstestet: anropar
+        │                        saveEntries och dödas med SIGKILL av
+        │                        storage.test.js. Namnet slutar medvetet inte
+        │                        på .test.js (paket 4).
+        └── dom.js               DOM-attrapp, fetch-attrapp och laddare för
+                                 app.test.js. Projektets enda DOM-attrapp
+                                 (paket 5).
 ```
 
 **Paketmärkningen är bindande.** Varje fil i trädet är märkt med det paket där
 den skapas. En fil som inte finns är korrekt så länge dess paket inte är
 påbörjat, och ett fel så snart paketet är klart — den skillnaden ska aldrig
-behöva gissas. Tre moduler byggs i flera omgångar (`dates.js`, `index.html` +
-`app.js`); för dem gäller den finkorniga märkningen per export respektive per
-punkt i ansvarslistan, se "Gränssnitt". Saknas märkning för något nytt är det en
+behöva gissas. Fyra moduler byggs i flera omgångar (`dates.js`, `storage.js`,
+`index.html` + `app.js`); för dem gäller den finkorniga märkningen per export
+respektive per punkt i ansvarslistan, se "Gränssnitt". Saknas märkning för något nytt är det en
 lucka i den här filen och ska lämnas tillbaka till arkitekten, inte gissas bort.
 
 **Beroenderiktning — bindande.** `src/core/` importerar ingenting utom andra
@@ -284,10 +293,11 @@ ingen information och kan inte identifiera en post i `DELETE /api/entries/<id>`.
 
 **Bindande för koden.** `createEntry` och `isEntry` anropar `isValidEntryId`.
 Ingen av dem får ha en egen handskriven kopia av villkoret — samma ägarregel som
-för `ISO_DATE_PATTERN` (se "Mappstruktur"). I dagens `src/core/entry.js` står
-villkoret skrivet för hand på båda ställena; de två raderna ska ersättas av två
-anrop till `isValidEntryId`. Ingen felmeddelandesträng ändras av det, och inget
-observerbart beteende ändras — kontrollen är redan `trim`-baserad i koden.
+för `ISO_DATE_PATTERN` (se "Mappstruktur"). Kravet är uppfyllt sedan tidigare:
+granskarens körning 2026-09-07 av `grep -n "trim().length" src/core/entry.js`
+gav en enda träff, inuti `isValidEntryId` själv. Den instruktion som stod här —
+att två handskrivna kopior skulle ersättas av anrop — är struken. Den var utförd
+och beskrev därför kod som inte längre såg ut så.
 
 **Id:t lagras exakt som `makeId()` gav det, utan trimning.** `name` trimmas,
 `id` gör det inte: `crypto.randomUUID()` ger aldrig blanktecken, och ett id får
@@ -1009,6 +1019,8 @@ i förtid: de har inga användare före paket 7 och skulle då stå otestade.
 - **Plats:** `%APPDATA%\hemochekonomi\entries.json`, dvs.
   `path.join(process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'), 'hemochekonomi', 'entries.json')`.
   Datan ligger utanför git-repot med flit — den är användarens, inte projektets.
+  I samma katalog ligger låsfilen `entries.json.lock` medan appen kör, och
+  ibland efter en krasch; se "Låset på datafilen — en instans i taget".
 - **Överstyrning för tester:** om miljövariabeln `HEMOCHEKONOMI_DATA_FILE` är
   satt till ett värde som innehåller minst ett tecken som inte är blanktecken
   används den sökvägen i stället. Osatt, tom sträng och en sträng med bara
@@ -1093,27 +1105,67 @@ för en tyst feltolkning; det är inte en förberedelse för framtida funktioner
   `Promise.allSettled([saveEntries(3000 poster), saveEntries(1500 poster)])`
   gav 16 läsbara filer där det ena anropets poster hade försvunnit, 14
   ohanterade `ENOENT ... rename` och 44 filer som `loadEntries` avvisade.
-- **Skrivningarna serialiseras i en modullokal löfteskedja.** `storage.js` har
-  en modullokal variabel `writeQueue`, initierad till `Promise.resolve()`.
-  `saveEntries` utökar kedjan **synkront, före funktionens första `await`** —
-  annars är kedjans ordning inte anropsordningen och facit nedan gäller inte.
-  Ett misslyckat anrop får inte blockera nästa: kedjan går vidare både efter
-  uppfyllelse och efter avvisning, och ett anrops fel får aldrig bli ett annat
-  anrops fel.
-- **Facit när två anrop överlappar: anropsordningen avgör, och sista anropet
-  vinner.** `saveEntries(a)` följt av `saveEntries(b)` utan `await` emellan ger:
-  båda löftena uppfylls, `a` skrivs först och `b` sist, och ett därpå följande
-  `loadEntries()` returnerar exakt `b`. Det andra anropet kastar aldrig på grund
-  av det första, inget anrop hoppas över, och filen på disk är aldrig en
-  blandning. Det här är ett beslut, inte en följd av implementationen: kod som
-  ger något annat svar är fel.
-- **`loadEntries` köas inte.** `rename` byter filen i ett enda steg, så en
-  läsning ser antingen hela den gamla eller hela den nya filen.
-- Kön ligger i modulminnet och skyddar därför bara anrop i samma modulinstans.
-  Två processer som skriver samtidigt skyddas av det unika temporärnamnet plus
-  `rename`: en av dem vinner hela filen, och ingen fil blir en blandning. Något
-  fillås införs inte — det löser inget problem i `PLAN.md` och skulle kräva ett
-  eget felmeddelande och en egen upplåsning efter en krasch.
+- **Diskoperationerna serialiseras i en modullokal löfteskedja.** `storage.js`
+  har en modullokal variabel `ioQueue`, initierad till `Promise.resolve()`.
+  Kedjan infördes i paket 4 under namnet `writeQueue` och omfattade då bara
+  skrivningarna; den omfattar nu varje diskoperation i modulinstansen, och
+  namnet följer med. Skälet står i punkten om `loadEntries` nedan.
+  `saveEntries` och `loadEntries` utökar kedjan **synkront, före funktionens
+  första `await`** — annars är kedjans ordning inte anropsordningen och facit
+  nedan gäller inte. Ett misslyckat anrop får inte blockera nästa: kedjan går
+  vidare både efter uppfyllelse och efter avvisning, och ett anrops fel får
+  aldrig bli ett annat anrops fel.
+- **Facit när två skrivningar överlappar: anropsordningen avgör, och sista
+  anropet vinner.** `saveEntries(a)` följt av `saveEntries(b)` utan `await`
+  emellan ger: båda löftena uppfylls, `a` skrivs först och `b` sist, och ett
+  därpå följande `loadEntries()` returnerar exakt `b`. Det andra anropet kastar
+  aldrig på grund av det första, inget anrop hoppas över, och filen på disk är
+  aldrig en blandning. Det här är ett beslut, inte en följd av implementationen:
+  kod som ger något annat svar är fel.
+- **`loadEntries` ställs i samma kö som `saveEntries`.** Påståendet att en
+  läsning inte behöver köas gällde bara åt läsarens håll: `rename` byter filen i
+  ett enda steg, så en läsning ser antingen hela den gamla eller hela den nya
+  filen — men åt skrivarens håll gäller motsatsen. På Windows kastar `fs.rename`
+  `EPERM` när målfilen är öppen i en annan handtagare, och granskarens körning av
+  `Promise.allSettled([loadEntries(), saveEntries(liten)])` mot en datafil på
+  37 577 818 byte (200 000 poster) gav `saveEntries lyckades 0, avvisade 25` av
+  25 omgångar, samtliga med rad 6:s meddelande och `cause=EPERM`. Paket 5 gör
+  `GET /api/entries` (`loadEntries`) och `POST`/`DELETE /api/entries`
+  (`updateEntries`, som gör sitt `rename` inuti samma kö) mot samma fil i samma
+  process, så en användare som klickar Spara medan listan läses om når fallet
+  utan att göra något ovanligt. `loadEntries` läser därför
+  `getDataFilePath()` synkront, utökar `ioQueue` synkront och gör hela sitt
+  `fs.readFile`-arbete inuti kedjan.
+- **Facit när en läsning och en skrivning överlappar: anropsordningen avgör, och
+  ingen av dem misslyckas på grund av den andra.** `saveEntries(b)` följt av
+  `loadEntries()` utan `await` emellan ger: båda löftena uppfylls, och läsningen
+  returnerar exakt `b`. `loadEntries()` följt av `saveEntries(b)` utan `await`
+  emellan ger: båda löftena uppfylls, läsningen returnerar filens innehåll före
+  `b`, och skrivningen lyckas. Ett läsfel får aldrig bli en skrivnings fel, och
+  tvärtom. Det här är ett beslut, inte en följd av implementationen: kod som ger
+  något annat svar är fel.
+- Kön ligger i modulminnet och skyddar därför bara anrop som går genom
+  `loadEntries` och `saveEntries` i samma modulinstans. Ett `fs.open` eller
+  `fs.readFile` som någon annan gör — ett testfall, en annan process, ett
+  virusskydd, en filsynk — ligger utanför kön, och då kan `fs.rename` fortfarande
+  kasta `EPERM`. Svaret på det är rad 6 i tabellen "Beteende vid skrivning";
+  ingen ny felsträng och ingen omförsöksslinga införs för det, och skälet står i
+  beslutsloggen.
+- **Två processer mot samma datafil är ett problem kön inte kan lösa, och det
+  ligger utanför `storage.js`.** Det unika temporärnamnet plus `rename` svarar på
+  frågan om **filens integritet**: ingen fil blir en blandning, och en av
+  processerna vinner hela filen. Frågan om **användarens data** har ett annat
+  svar, och det är inte samma svar: att den ena vinner hela filen betyder att den
+  andras poster är borta. Körd i det här projektet, två serverprocesser på 3111
+  och 3112 mot samma datafil, 20 omgångar av
+  `Promise.all([POST mot A, POST mot B])`: `omgångar där en post tappades:
+  20 av 20`, `svar med 500: 16`, `poster på disk till slut: 20 (förväntat 40)`.
+  Granskarens oberoende körning gav 19 av 20 för `POST`, 19 av 20 för `DELETE`
+  och `500` i 5 av 80 svar. Kön ändrar ingenting på det: den
+  ligger i modulminnet, och två processer delar inte modulminne. Svaret är därför
+  inte en spärr i `storage.js` utan en spärr vid processgränsen — se "Låset på
+  datafilen — en instans i taget" nedan, som hindrar att en andra instans
+  över huvud taget startar mot samma fil.
 - **Validering och strängifiering sker före kön**, alltså utan att ta plats i
   den. Ett avvisat anrop varken fördröjer eller fördröjs av en pågående
   skrivning.
@@ -1126,7 +1178,7 @@ filePath = getDataFilePath()          // en gång per anrop, som i loadEntries
 kontrollera att entries är en array   // tabellrad 1
 kontrollera varje element med isEntry // tabellrad 2, lägsta index vinner
 text = JSON.stringify(...)            // tabellrad 3
-ställ arbetet sist i writeQueue:
+ställ arbetet sist i ioQueue:
     fs.mkdir(path.dirname(filePath))  // tabellrad 4
     fs.writeFile(tempPath, text)      // tabellrad 5
     fs.rename(tempPath, filePath)     // tabellrad 6
@@ -1200,6 +1252,304 @@ bara `entries.json`.
    rad för rad; vad som händer vid ett strömavbrott mitt i `rename` kan
    projektets kod inte påstå något om, och påstås inte här.
 
+### Läs–ändra–skriv i ett steg: `updateEntries` (bindande) [paket 5]
+
+Kön ovan gör varje **enskild** diskoperation odelbar, men inte ett par av dem.
+`loadEntries()` följt av `saveEntries(...)` är två köplatser med ett glapp
+emellan, och två anrop som överlappar läser då samma utgångsläge och skriver
+över varandra. Granskarens körningar mot en riktig server:
+`Promise.all([POST Klick A, POST Klick B])` i 20 omgångar gav 20 av 20 omgångar
+där bara en post låg kvar på disk, båda svaren `201`; `Promise.all([DELETE a,
+DELETE b])` mot tre poster gav 19 av 20 omgångar där bara den ena borttagningen
+blev av, båda svaren `204`. Användaren fick alltså kvitto på något som inte hade
+hänt.
+
+Därför gäller: **en läs-ändra-skriv-sekvens mot datafilen utförs som ett steg i
+`ioQueue`, aldrig som två.** `storage.js` får en export för det:
+
+```js
+// mutera(entries) körs mellan läsningen och skrivningen, innanför samma köplats.
+// Returnerar den skrivna listan, eller null när mutera valde att inte skriva.
+export async function updateEntries(mutera: (entries: Entry[]) => Entry[] | null): Promise<Entry[] | null>;
+```
+
+Ordningen inuti köplatsen, som pseudokod. Stegen körs sekventiellt, och det
+första fel som inträffar avgör meddelandet:
+
+```
+filePath = getDataFilePath()          // synkront, före kön, som i loadEntries
+ställ arbetet sist i ioQueue:
+    entries = läs filen                       // läsvägens tabell, oförändrad
+    nästa = mutera(entries)                   // tabellrad U1 om anropet kastar
+    om nästa === null: returnera null         // ingenting rör disken
+    kontrollera att nästa är en array         // skrivtabellens rad 1
+    kontrollera varje element med isEntry     // skrivtabellens rad 2
+    text = JSON.stringify(...)                // skrivtabellens rad 3
+    fs.mkdir / fs.writeFile / fs.rename       // skrivtabellens rad 4–6
+    finally: ta bort tempPath om den finns kvar
+    returnera nästa
+```
+
+Fyra punkter är bindande utöver pseudokoden:
+
+- **`updateEntries` anropar aldrig `loadEntries` eller `saveEntries`.** Den
+  använder samma modullokala läs- och skrivfunktioner som de gör. Ett anrop till
+  den exporterade `loadEntries` inifrån en köplats skulle ställa sig sist i en kö
+  som väntar på just den köplatsen — en låsning som inget felmeddelande beskriver.
+- **Felen är skrivvägens fel, med två tillägg.** Läsningen ger läsvägens
+  meddelanden (tabellen "Beteende vid läsning"), skrivningen ger skrivvägens
+  (tabellen "Beteende vid skrivning"), och båda tabellernas ordning gäller
+  oförändrad. Tillägg U1: kastar `mutera` blir svaret
+  `StorageError`: `Posterna kunde inte sparas: ett oväntat fel inträffade.` med
+  `cause` satt till originalfelet — samma sträng och samma ägare som
+  skrivtabellens rad 7, ingen ny sträng. Tillägg U2: `mutera` som returnerar
+  `null` är inget fel utan svaret "skriv inte", och `updateEntries` uppfyller sig
+  då med `null` utan att något har rört disken.
+- **Skrivtabellens rad 1–3 prövas inuti köplatsen här, inte före den.** För
+  `saveEntries` prövas de före kön, eftersom listan är känd då; i `updateEntries`
+  finns listan först efter läsningen. Skillnaden ändrar ingen sträng och ingen
+  inbördes ordning, bara var i tiden prövningen sker, och den står skriven här
+  för att punkten "Validering och strängifiering sker före kön" ovan gäller
+  `saveEntries` och inte den här funktionen.
+- **Facit när två `updateEntries` överlappar: anropsordningen avgör, och båda
+  ändringarna blir av.** `updateEntries(f)` följt av `updateEntries(g)` utan
+  `await` emellan ger: båda löftena uppfylls, `g` ser resultatet av `f`, och ett
+  därpå följande `loadEntries()` returnerar `g(f(x))`. Ingen ändring går
+  förlorad. Överlappar `updateEntries` och `saveEntries` gäller samma sak som för
+  två skrivningar: anropsordningen avgör och sista anropet vinner. Det här är ett
+  beslut, inte en följd av implementationen: kod som ger något annat svar är fel.
+
+`api.js` får därefter inte anropa `loadEntries` och `saveEntries` efter varandra
+i samma hanterare. `GET /api/entries` läser bara och använder `loadEntries`;
+`POST` och `DELETE` går genom `updateEntries`. Vad `mutera` gör i respektive
+hanterare, och hur `null` blir `404`, står under "HTTP-API".
+
+### Låset på datafilen — en instans i taget (bindande) [paket 5]
+
+`ioQueue` och `updateEntries` gör varje läs-ändra-skriv odelbar **inom en
+process**. De kan inte göra mer än så: kön är en variabel i modulminnet, och två
+processer delar inte modulminne. Två serverprocesser mot samma datafil läser
+alltså samma utgångsläge och skriver över varandra, och användaren får `201`
+eller `204` på en ändring som är borta — mätningen står under "Skrivvägen".
+
+**Beslut: en datafil används av högst en process åt gången.** `start()` tar ett
+lås på datafilen innan servern binder någon port, och en andra instans mot samma
+fil startar inte utan avslutas med ett svenskt felmeddelande och exitkod `1`.
+Beslutet är den enda mekanism som svarar på frågan om användarens data i stället
+för frågan om filens integritet, och det följer `PLAN.md` beslut 3 (*en person,
+en enhet*): två samtidiga instanser är inte en funktion som ska fungera sämre,
+det är ett läge appen inte har.
+
+**Låsfilen.** Namnet är datafilens sökväg plus `.lock`, och det ägs av
+`paths.js`: `getLockFilePath()` returnerar `` `${getDataFilePath()}.lock` ``.
+Låset hör därmed till datafilen och inte till porten — två instanser med var sin
+datafil (`HEMOCHEKONOMI_DATA_FILE`) låser inte varandra, vilket är det som gör
+testerna körbara. Suffixet `.lock` kan aldrig krocka med temporärnamnet, som
+slutar på `.tmp`.
+
+**Låsfilens innehåll är en märkning**, och ingenting mer: den låsande processens
+pid som decimal text, ett kolon, ett `randomUUID()`, och ett avslutande `\n`.
+
+```
+<pid>:<uuid>\n          t.ex.  4711:2f6f4a1e-0d2e-4c1a-9a2b-8f3c5d7e1b04\n
+```
+
+Märkningen skapas en gång per anrop till `acquireDataFileLock()` och är det enda
+som avgör vad ett släpp får ta bort. Pid:en ensam räcker inte: samma process kan
+ha skrivit ett *tidigare* lås på samma sökväg som redan är släppt, och en
+jämförelse på pid kan då inte skilja "vårt gamla lås" från "vårt nya". Uuid:t är
+det som gör dem åtskilda.
+
+Innehållet är giltigt om och endast om det, sedan ett avslutande `\n` tagits
+bort, matchar
+`/^([0-9]+):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` och
+pid-delen är ett `Number.isSafeInteger` större än `0`. Allt annat är rad L2 — en
+låsfil som bara innehåller en pid, till exempel en som en tidigare körning av en
+äldre version lämnat kvar, ger alltså rad L2, som ber användaren ta bort filen.
+Det är det avsedda svaret och inget särfall i koden. `pid <= 0` avvisas inte bara
+för formens skull: `process.kill(0, 0)` frågar om den egna processgruppen och
+skulle svara "lever" för varje körning, så en märkning med `0` skulle annars
+blockera för alltid utan att någon kör.
+
+`randomUUID` från `node:crypto` är samma inbyggda funktion som
+teknikvalstabellen redan har en rad för och som `storage.js` använder till
+temporärnamnet; den ger inget nytt beroende.
+
+Låsfilen ligger i datafilens katalog. Kravet under "Paket 4: två överlappande
+skrivningar" att `fs.readdir(dirname)` ger exakt `['entries.json']` gäller
+oförändrat, eftersom låset bara tas av `start()` och `tests/storage.test.js`
+startar ingen server. En testfil som både startar en server och läser katalogen
+ska räkna med `entries.json.lock`.
+
+Ordningen i `acquireDataFileLock()`, som pseudokod. Hela kroppen ligger i en
+köplats i `lockQueue` (se punkten om kön nedan), skrivförsöket görs högst **två**
+gånger, och det första fel som inträffar avgör meddelandet:
+
+```
+lockPath = getLockFilePath()                  // en gång per anrop
+heldLocks har redan en post för lockPath  → rad L5   (ingenting rör disken)
+token = `${process.pid}:${randomUUID()}`      // en gång per anrop
+
+försök 1:
+    fs.mkdir(path.dirname(lockPath), { recursive: true })   // kastar → rad L4
+    fs.writeFile(lockPath, `${token}\n`, { flag: 'wx' })
+        lyckas → heldLocks.set(lockPath, token), registrera exit-städningen,
+                 uppfyll med lockPath
+        kastar med annan code än 'EEXIST' → rad L4
+    // EEXIST: låsfilen finns redan. Vem äger den?
+    fs.readFile(lockPath, 'utf8')             // kastar, oavsett code → rad L3
+    innehållet matchar inte märkningens mönster → rad L2
+    pid === process.pid → vårt eget kvarlämnade lås: tas över
+                          (ingen nuvarande innehavare, annars vann rad L5)
+    annars process.kill(pid, 0):
+        kastar med code 'ESRCH' → pid:en är död: låset tas över
+        varje annat utfall      → rad L1
+    fs.unlink(lockPath)                       // ingen egen felhantering,
+                                              // se noten nedan
+försök 2:
+    fs.writeFile(lockPath, `${token}\n`, { flag: 'wx' })   // ingen egen felhantering
+        lyckas → heldLocks.set(lockPath, token), registrera exit-städningen,
+                 uppfyll med lockPath
+```
+
+**De två sista anropen har ingen egen felhantering, och strykningen är mätt.**
+Pseudokoden svalde tidigare felet från `fs.unlink` och lät `försök 2` kasta rad
+L4 med `cause` satt. Ingen indata når någon av de två grenarna. Den enda
+konstruktion som kunde nå dem — en märkning med en död pid plus ett öppet handtag
+på låsfilen — kördes i den här miljön av byggaren och gav `unlink LYCKADES med
+oppet handtag`, `filen finns efterat: false`, `writeFile wx LYCKADES` och ett
+uppfyllt `acquireDataFileLock`, alltså inget `EEXIST` i försök 2 och ingen rad L4.
+Byggarens instrumentering av båda grenarna över hela sviten gav
+`GREN unlink-catch: 0` och `GREN forsok2-catch: 0`, och båda mutationerna ("ta
+bort `try`/`catch` runt andra skrivförsöket" respektive "kasta vidare i stället
+för att svälja unlink-felet") gav `pass 18, fail 0, EXIT=0`. Kvar fanns bara
+fönstret där en **annan** process hinner skapa låsfilen mellan vårt `unlink` och
+vårt `writeFile` — samma sorts fönster som `ENOENT`-grenen ströks för, och lika
+omöjligt att träffa deterministiskt. Grenarna är därför strukna: en gren ingen
+indata når är inte ett skydd utan en osann uppgift om vad koden hanterar
+(`LARDOMAR.md`, 2026-09-04, två konstruktioner i storage.js körs aldrig och
+överlever mutation).
+
+Följden skrivs ut i stället för att antas. Ett fel från `fs.unlink` eller från
+`försök 2`:s `fs.writeFile` lämnar `acquireDataFileLock` som ett **rått OS-fel**,
+inte som ett `DataFileLockError`. Modulen har en enda anropare i `src/`, `start`,
+och hela dess kropp ligger innanför en `try`/`catch` som lämnar varje fel vidare
+som rad 3 under "Beteende vid start": svensk text, `cause` satt, ingen krasch och
+inget engelskt stackspår. Priset är att det felet namnger porten i stället för
+låsfilen, och det priset är billigare än en `catch` som ingen indata når. Rad L4
+är oförändrad och nås fortfarande av `mkdir` och av ett fel från `försök 1` vars
+`code` inte är `EEXIST` — båda vägarna har var sitt testfall i
+`tests/lock.test.js`.
+
+Numren i tabellen är **namn på rader, inte en ordning**: rad L5 prövas först och
+rad L1–L4 i pseudokodens ordning. Namnen L1–L4 är oförändrade därför att
+`tests/lock.test.js` och `LARDOMAR.md` refererar till dem.
+
+| # | Situation | Resultat |
+|---|-----------|----------|
+| L5 | `heldLocks` har redan en post för `lockPath`: processen håller själv låset på den datafilen | `DataFileLockError`: `Hemochekonomi kör redan i den här processen mot samma datafil: <datafilens sökväg>. En datafil används av högst en instans i taget — stäng den första servern innan du startar en ny.` |
+| L1 | Låsfilen finns och bär en pid som inte bevisligen är död | `DataFileLockError`: `Hemochekonomi kör redan i en annan process (pid <pid>) mot samma datafil: <datafilens sökväg>. Stäng den först — två samtidiga körningar mot samma fil kan förstöra dina poster.` |
+| L2 | Låsfilen finns men innehållet är inte en märkning | `DataFileLockError`: `Hemochekonomi kunde inte starta: låsfilen <låsfilens sökväg> går inte att tolka. Kontrollera att appen inte redan kör, ta bort filen och försök igen.` |
+| L3 | Låsfilen finns men gick inte att läsa | `DataFileLockError`: `Hemochekonomi kunde inte starta: låsfilen <låsfilens sökväg> gick inte att läsa. Kontrollera att appen inte redan kör, ta bort filen och försök igen.`, `cause` satt till originalfelet |
+| L4 | Låsfilen gick inte att skapa av något annat skäl | `DataFileLockError`: `Hemochekonomi kunde inte starta: låsfilen <låsfilens sökväg> gick inte att skapa.`, `cause` satt till originalfelet |
+| – | Låset togs | Löftet uppfylls med låsfilens sökväg. |
+
+Rad L1 och rad L5 namnger **datafilen**, eftersom det är den resurs användaren
+delar och den enda uppgift som gör felet begripligt när två fönster står öppna.
+Rad L2–L4 namnger **låsfilen**, eftersom den är det användaren ska ta bort.
+`<pid>` står med i rad L1 av samma skäl: utan den går det andra fönstret inte att
+hitta. Rad L5 bär ingen pid — det är den egna processen, och en pid som pekar på
+en själv hjälper ingen.
+
+Punkterna nedan är bindande utöver pseudokoden:
+
+- **Låset släpper bara på ett bevis, aldrig på en gissning.** Enda vägen att ta
+  över ett lås som bär en **annan** process pid är att `process.kill(pid, 0)`
+  avvisar den pid:en med `ESRCH`. Varje annat utfall — en pid som lever, ett
+  `EPERM`, ett oläsbart innehåll, en tom fil — blockerar starten. Bär låsfilen
+  den **egna** pid:en är det inget undantag utan det starkare beviset: hade någon
+  i den här processen hållit låset hade rad L5 vunnit innan disken rördes, så en
+  post som saknas i `heldLocks` betyder att låset inte har någon innehavare.
+  Beviset kommer där från den egna bokföringen i stället för från
+  operativsystemet. Riktningen är vald med
+  flit: ett fel åt det hållet betyder "appen startar inte och säger varför på
+  svenska", och ett fel åt andra hållet betyder "två instanser skriver över
+  varandras poster utan att någon får veta det". Det första går att rätta med
+  ett kommando, det andra går inte att rätta alls.
+- **En krasch, ett `SIGKILL` eller ett Ctrl+C kan lämna låsfilen kvar.** Det är
+  inte ett fel utan det normala fallet, och det är därför `ESRCH`-grenen finns:
+  nästa start läser pid:en, ser att processen är borta och tar över låset. En
+  pid som operativsystemet hunnit återanvända ger i stället rad L1 fastän
+  ingenting kör — det är priset för att felet ska falla åt det ofarliga hållet,
+  och rad L1:s text ska därför alltid gå att svara på genom att stänga fönstret
+  eller ta bort filen. Ingen signalhanterare införs för att göra fallet
+  ovanligare: `SIGINT` och `SIGTERM` beter sig olika på olika operativsystem, och
+  ett påstående om hur de beter sig här vore ett påstående ingen har kört.
+- **Två samtidiga anrop i samma process delar inte lås — det andra avvisas med
+  rad L5.** En datafil används av högst *en instans*, och två `start()` i samma
+  process är två instanser lika mycket som två processer är det. Svaret kommer
+  från den egna bokföringen och inte från filsystemet: `heldLocks` frågas innan
+  något rör disken, så rad L5 kostar ingen filoperation och kan aldrig förväxlas
+  med rad L1. Ett andra `start()` mot samma datafil avvisas därmed **före**
+  `createServer` och `listen`, och det första `start()`:s lås ligger orört kvar.
+  Sekventiellt är två anrop tillåtna: när den första serverns `close`-hanterare
+  har släppt låset finns ingen post kvar, och nästa `acquireDataFileLock()` tar
+  ett nytt lås med en ny märkning. Att i stället låta det andra anropet dela
+  låset förkastades, och skälet står i beslutsloggen.
+- **Ägarskapet bokförs per låssökväg, aldrig i en enda variabel.** Modulen håller
+  `heldLocks`, en `Map` från låssökväg till den märkning processen skrev i just
+  den filen. Två datafiler kan därför hållas samtidigt — testerna gör det — och
+  varje släpp och varje `exit`-städning gäller den sökväg det handlar om, aldrig
+  "den senast tagna".
+- **Släppandet tar aldrig ett annat lås än sitt eget.**
+  `releaseDataFileLock(lockPath)` tar sökvägen som argument, samma värde som
+  `acquireDataFileLock()` uppfyllde sig med. `null`, `undefined` och en sökväg
+  som `heldLocks` inte har en post för betyder alla "ingenting att släppa", och
+  då rör anropet inte disken. Finns posten läser den filen och tar bort den
+  **endast** om innehållet, sedan ett avslutande `\n` tagits bort, är exakt den
+  märkning posten bär. En jämförelse på bara pid räcker inte: en märkning från
+  ett tidigare, redan släppt lås i samma process bär samma pid. Posten tas bort
+  ur `heldLocks` oavsett filens utfall, och funktionen kastar aldrig utan sväljer
+  sina egna fel, precis som `finally`-städningen av temporärfilen i
+  `saveEntries`. Den anropas på tre ställen: när `start` inte lyckas binda porten
+  (med den sökväg `start` fick av låset, eller `null` när det var låset som
+  fällde starten), i `server.once('close', …)`, och som en sista utväg i en
+  `process.once('exit', …)` som registreras när det första låset tas.
+  Exit-städningen går igenom **varje** post i `heldLocks`, är den enda synkrona
+  filoperationen i `src/` — en `exit`-hanterare kan inte invänta ett löfte — och
+  sväljer också den sina egna fel.
+- **`acquireDataFileLock` och `releaseDataFileLock` ligger i en modullokal
+  löfteskedja, `lockQueue`.** Samma konstruktion som `ioQueue` i `storage.js`:
+  kedjan utökas synkront före funktionens första `await`, så att kedjans ordning
+  är anropsordningen, och neutraliseringsraden
+  `lockQueue = work.then(() => undefined, () => undefined)` gör att kedjan aldrig
+  kan vara ett avvisat löfte — därför har `work`-raden bara en handlare, en andra
+  vore en gren ingen indata når. Skälet är att bokföringen och filen annars kan
+  komma ur takt på två sätt, båda nåbara utan kön: två `acquireDataFileLock()`
+  som startar innan någon av dem hunnit skriva sin post ser båda ett `heldLocks`
+  utan posten, tar sig båda förbi rad L5 och skriver över varandras låsfil; och
+  ett `releaseDataFileLock` vars `fs.unlink` ligger i luften kan hinna ta bort
+  den låsfil ett efterföljande `acquireDataFileLock` just skapat. Med kedjan är
+  `heldLocks` alltid i takt med filen när rad L5 avgörs.
+- **Varje test som startar en server har sin egen temporära datafil, och
+  `HEMOCHEKONOMI_DATA_FILE` är alltid satt när `start` anropas.** Två följder,
+  båda bindande. Ett `start()` utan överstyrd datafil tar låset i användarens
+  riktiga `%APPDATA%\hemochekonomi\` och kan dessutom fällas av rad L1 för att
+  användarens egen app kör — samma skäl som redan förbjuder ett testfall att
+  skriva i den riktiga datafilen. Och ett `start()` i testprocessen håller låset
+  när ett barn startas mot samma fil: barnet avslutas då med rad L1 i stället för
+  att skriva sin rad. Undantaget är fall 1 och 3 under "Paket 5: två instanser
+  mot samma datafil", som handlar om just det och delar fil med flit. Två
+  `start()` i **samma** process mot samma temporära datafil ger på motsvarande
+  sätt rad L5 för det andra anropet, så ett testfall som behöver två servrar
+  igång samtidigt ska ge dem var sin datafil.
+
+`start()` tar låset **före** `createServer` och `listen`. Ordningen är ett
+beslut: den gör "Hemochekonomi kör redan" till ett svar från låset och aldrig
+från `EADDRINUSE`, så de två felen svarar på var sin fråga i stället för på
+samma. `EADDRINUSE` betyder därefter att porten är upptagen av något annat, och
+rad 1 i tabellen "Beteende vid start" är omskriven efter det.
+
 ---
 
 ## Teststrategi
@@ -1214,8 +1564,12 @@ bara `entries.json`.
   matchar. En testfil som inte slutar på `.test.js` körs inte och räknas som
   obefintlig.
 - **Enhetstester (automatiska) för:** `dates` och `entry` (paket 2), `money` och
-  `cost` (paket 3), `storage` (paket 4), `schedule` (paket 7). Det är den logik
-  där fel är tysta. **Varje fil under `src/core/` ska ha en egen
+  `cost` (paket 3), `storage` (paket 4), `api`, `lock`, `server` och `app`
+  (paket 5), `schedule` (paket 7). Det är den logik
+  där fel är tysta. `app` är `src/web/app.js`, körd mot en DOM-attrapp och inte i
+  en webbläsare; vad den filen får och inte får göra står under "Paket 5:
+  `src/web/app.js` körs av `tests/app.test.js`". **Varje fil under `src/core/`
+  ska ha en egen
   `tests/<modul>.test.js` som testar modulens egna exporter direkt, i samma
   paket som filen skapas.** Indirekt täckning via en annan moduls tester räknas
   inte. `dates` är den enda modul som byggs ut i ett senare paket: de fem
@@ -1227,9 +1581,491 @@ bara `entries.json`.
   export får byggas i förtid — en export utan användare får inga meningsfulla
   tester och blir just den otestade kod som lärdomen om `dates.js`
   (2026-08-18) handlar om.
-- **Manuell genomgång för:** paket 5 och 6 (gränssnittet). Ingen webbläsar-
-  automatisering införs — det skulle vara projektets största beroende och testa
-  minst.
+- **Manuell genomgång för:** `index.html` och `style.css`, och för det i
+  `app.js` som bara en webbläsare kan visa — layout, faktisk rendering och att
+  den spärrade knappen syns som spärrad. Ingen webbläsar-automatisering införs;
+  det skulle vara projektets största beroende och testa minst. Undantaget gäller
+  därmed webbläsarens *visning*, aldrig `app.js`:s logik: den filen laddas och
+  körs av `tests/app.test.js` mot en DOM-attrapp. Serverns två moduler är inte
+  gränssnitt och omfattas inte av undantaget: `api.js` och `server.js` tar emot
+  användarinput och har automatiska tester enligt punkten ovan.
+- **Paket 5: `tests/api.test.js` och `tests/server.test.js`.**
+  `tests/api.test.js` anropar `handleApiRequest(req, res, pathname)` direkt och
+  behöver ingen server: signaturen tar de tre värdena just för att vägen ska gå
+  att pröva utan att något lyssnar på en port. `tests/server.test.js` måste
+  däremot gå över HTTP, eftersom det är routningen och svarshuvudena den prövar;
+  den startar servern med `createServer()` och `server.listen(0, '127.0.0.1')` —
+  port `0`, aldrig `3000`, så att en körning inte krockar med en app som redan
+  är igång. **Ingen körning får binda `3000`**; det är regeln, och port `0` är
+  det vanliga sättet att följa den. Punkt 3, 4 och 5 nedan använder ett annat
+  portnummer än `0`, men aldrig ett de har valt själva: numret är det kärnan
+  tilldelade en `listen(0, …)` tidigare i samma körning.
+  **Servern stängs i en `after`-hook, aldrig i ett `finally` — bindande.** De
+  två är inte utbytbara, och skillnaden är mätt. Avbryts ett testfall av ett
+  ohanterat kast någon annanstans i processen körs funktionens `finally` aldrig:
+  lyssnaren blir kvar och `npm test` avslutas aldrig. Två av byggarens
+  mutationskörningar orsakade just ett sådant kast i serverns handler, och med
+  städningen i ett `finally` slutade båda i `EXIT=124` från en yttre
+  `timeout 120` — alltså ingen exitkod alls att kontrollera. Med städningen i
+  `t.after()` ger samma två mutationer `exit 1`. En hängning utan exitkod är
+  sämre än ett fel (`LARDOMAR.md`, 2026-09-04, storage-testet hänger för alltid
+  i stället för att falla när barnprocessen inte startar), och `CLAUDE.md`
+  kräver att utgångskoden kontrolleras, inte bara utskriften.
+  **Stängningen kör `server.closeAllConnections()` före `server.close()`.**
+  `close()` slutar ta emot nya anslutningar men väntar på att varje redan öppen
+  anslutning stängs, och en keep-alive-socket stängs inte av sig själv — den
+  väntan är samma hängning utan exitkod som stycket ovan. Av samma skäl gör
+  varje förfrågan i testfilen sitt anrop med `agent: false`: en egen socket per
+  anrop, som stängs när svaret är läst. Samma två krav gäller varje server ett
+  test startar, oavsett om den kom från `createServer()` eller från `start()`.
+  `tests/api.test.js` täcker minst: `GET /api/entries`; en giltig `POST` som ger
+  `201` och en post som finns kvar vid nästa `GET`; `400` med `error` och
+  `fieldErrors` enligt facit under "HTTP-API", inklusive fallet där två fält är
+  ogiltiga samtidigt; `400` med `Kunde inte tolka anropet.` för en kropp som
+  inte är JSON; `500` med `error` och utan `fieldErrors` när `createEntry` ger
+  ett fel med `field: 'id'`; `DELETE` som ger `204` respektive `404` med
+  `Posten finns inte.`; samt `405` med `Metoden stöds inte.`
+  `tests/server.test.js` täcker minst: att `/`, `/style.css`, `/app.js` och
+  `/core/entry.js` ger `200` med exakt den `Content-Type` den statiska tabellen
+  anger; att en okänd statisk sökväg ger `404` utan kropp medan
+  `GET /api/finns-inte` ger `404` med JSON-kroppen — facit står under "Statiska
+  filer"; och att sökvägsfiltret håller. Filtret är den enda validering av
+  användarinput som bara `server.js` gör, och dess testfall är obligatoriska:
+  `/core/../server/paths.js`, `/core/..%2fpaths.js`, `/core/../../package.json`,
+  `/core/Entry.js` (versal), `/core/under/entry.js` och `/core/entry.txt` ska
+  alla ge `404` utan kropp, och ingen fil utanför `src/core/` får levereras.
+  **Portvalet och autostarten prövas var för sig, och inget villkor i
+  `server.js` lämnas medvetet otestat.** Skälet till uppdelningen står i
+  beslutsloggen. Kraven:
+  1. `resolvePort` anropas direkt, en gång per rad i facittabellen under
+     `src/server/server.js` i "Gränssnitt". Inget av anropen binder en port och
+     inget av dem ändrar `process.env` — funktionen tar sin miljö som argument
+     just därför.
+  2. `isDirectRun` anropas direkt med båda utfallen: `argv1` lika med serverns
+     egen sökväg ger `true`, medan `argv1` lika med en annan sökväg och `argv1`
+     som `undefined` ger `false`.
+  3. `start()` anropas **utan argument** en gång, med `process.env.PORT` satt
+     till en port som testet först har fått av kärnan: lyssna på `0`, läs
+     `server.address().port`, stäng. Då körs default-uttrycket på riktigt utan
+     att `3000` bindas. Miljövariabeln återställs i en `after`-hook.
+  4. Autostartens kropp — `start()` plus utskriften — nås inte av något anrop
+     inifrån processen och prövas därför i en barnprocess:
+     `spawn(process.execPath, [serverPath], { env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: <temporär fil>, PORT: String(sondensPort) } })`,
+     där `serverPath` byggs ur `import.meta.url` och aldrig ur `process.cwd()`
+     och `sondensPort` hämtas med metoden i punkt 3. Testet läser barnets
+     `stdout` tills raden `Hemochekonomi kör på http://127.0.0.1:<port>` kommit,
+     med `<port>` lika med den port som skickades in, gör därefter `GET /` mot
+     den porten och kräver `200`. Väntan på raden kapplöper mot
+     `child.once('exit', …)`, `child.once('error', …)` och en
+     `AbortSignal.timeout(…)` vars värde står som en namngiven konstant i den
+     här testfilen, med samma namn och samma minsta värde (30 000 ms) som
+     hängningsspärren i atomicitetstestets punkt 8, och av samma skäl;
+     vinner något annat än raden faller testet med barnets `exitCode`,
+     `signalCode` och `stderr` i meddelandet. Barnet dödas i en `after`-hook.
+     Datafilen måste vara en temporär fil: en spawnad server som skriver i
+     användarens riktiga `%APPDATA%\hemochekonomi\entries.json` vore ett
+     testfall som ändrar användarens data.
+     Sonden är den enda vägen till en ledig port här. `PORT` osatt binder
+     `3000`, och `PORT=0` ger också `3000`, eftersom `0` är falskt — se
+     facittabellens rad `'0'`. Hinner något annat ta porten mellan sonden och
+     barnets `listen` avslutas barnet med `EADDRINUSE`, och testet faller då med
+     barnets `stderr` i meddelandet: ett synligt fel med utskriven orsak, aldrig
+     en hängning.
+  5. Autostartens **felgren** — `try`/`catch` runt `start()`, utskriften till
+     `stderr` och `process.exitCode = 1` — nås inte heller av något anrop inifrån
+     processen och prövas i en barnprocess på samma sätt som punkt 4. En egen
+     server binder en port med `listen(0, '127.0.0.1')`, och barnet startas med
+     `PORT` satt till just den porten och `HEMOCHEKONOMI_DATA_FILE` till en
+     temporär fil. Krav: barnet avslutas med kod `1`, `stdout` är tomt, och
+     `stderr` är exakt rad 1:s sträng i tabellen under "Beteende vid start" följt
+     av `\n` — varken `address already in use` eller `Error:` får förekomma.
+     Väntan på barnets `exit` kapplöper mot `child.once('error', …)` och samma
+     hängningsspärr som punkt 4, `CHILD_START_TIMEOUT_MS`; vinner något annat än
+     `exit` faller testet med barnets `stdout` och `stderr` i meddelandet.
+     Punkten finns därför att mutationen av `catch`-grenen annars överlever —
+     byggarens körning visade det — och en gren som inget test når
+     är enligt filens egen regel ingen spärr utan en osann uppgift om vad koden
+     hanterar. Det här är det enda automatiska provet av hela vägen `npm start`
+     mot en upptagen port; direktanropet `start(<upptagen port>)` under "Paket 5:
+     `npm start` på en upptagen port" prövar samma fel utan autostarten.
+  Mutationer som ska köras. Var och en pekar ut vilket testfall som ska falla,
+  och resultatet är inte godkänt förrän namnet på det fallerande testet har
+  jämförts med det utpekade — klistra in raden som börjar med kryss (`✖`).
+  Faller bara andra tester räknas mutationen som överlevd, oavsett exitkod, och
+  paketet lämnas tillbaka:
+  - ta bort kontrollen mot `CORE_FILE_PATTERN` innan sökvägen slås samman →
+    sökvägsfiltrets testfall faller;
+  - byt `Number(env.PORT) || DEFAULT_PORT` i `resolvePort` mot
+    `Number(env.PORT)` → facittabellens testfall faller på raden där `PORT` är
+    osatt;
+  - byt samma uttryck mot enbart `DEFAULT_PORT` → facittabellens testfall faller
+    på raden `'8080'`;
+  - låt `isDirectRun` alltid returnera `false` → `isDirectRun`-fallet i punkt 2
+    faller, och autostartfallet i punkt 4 faller på att barnet avslutas utan att
+    ha skrivit sin rad;
+  - ta bort autostart-`if`-satsen helt → autostartfallet i punkt 4 faller på
+    samma sätt, på barnets `exit` och aldrig på en väntan utan exitkod;
+  - ta bort `try`/`catch` runt `start()` i autostarten, så att avvisningen blir
+    ohanterad → felgrensfallet i punkt 5 faller. Vilken av punktens assertioner
+    som faller står inte utskrivet här: byggaren kör mutationen och klistrar in
+    kryssraden.
+  Ingen mutation får däremot få autostarten att köra vid `import`, alltså varken
+  `isDirectRun` som alltid ger `true` eller ett borttaget villkor med kroppen
+  kvar (till skillnad från punkten ovan, som tar bort hela satsen): modulkroppen
+  skulle då anropa `start()` i testprocessen, med `PORT` osatt, och binda `3000`
+  — vilket regeln ovan förbjuder. Den riktningen av villkoret prövas i stället av
+  punkt 2, som anropar `isDirectRun` direkt och utan att något startas.
+- **Paket 5: två överlappande anrop får inte tappa en ändring.** Obligatoriskt i
+  `tests/api.test.js`, som anropar `handleApiRequest` direkt — två samtidiga
+  anrop är två `handleApiRequest(...)` som inte inväntas var för sig, och ingen
+  server behövs. Två testfall, **minst 20 omgångar var**, mot en tom datafil per
+  omgång:
+  1. `await Promise.all([POST a, POST b])` med olika `name`. Krav per omgång:
+     båda svaren är `201`, deras `entry.id` är olika, och `await loadEntries()`
+     innehåller **exakt två** poster, en med `a`:s namn och en med `b`:s.
+  2. Tre poster på disk, `await Promise.all([DELETE id1, DELETE id2])`. Krav per
+     omgång: båda svaren är `204`, och `await loadEntries()` innehåller **exakt
+     en** post, den med `id3`.
+  Ett tredje fall skrivs för `404`-facit under samtidighet:
+  `await Promise.all([DELETE id1, DELETE id1])` med samma `id` ska ge
+  statuskoderna `[204, 404]` sedda som en mängd (sortera de två koderna innan de
+  jämförs — vilket av löftena som får vilken kod är inte bestämt), och posten ska
+  vara borta. Mutation som ska köras: byt `updateEntries` i `handleCreate` och i
+  `handleDelete` mot `loadEntries()` följt av `saveEntries(...)`; `npm test` ska
+  ge exit 1, och de fallerande testerna ska vara de här. Klistra in raderna som
+  börjar med kryss. Följer av `LARDOMAR.md` (2026-09-07, api: två snabba klick
+  tappar en post).
+- **Paket 5: ett trasigt anrop får inte döda processen.** Obligatoriskt i
+  `tests/server.test.js`. Förfrågningsraderna skickas som råa byte över en
+  `net.Socket` mot `127.0.0.1:<port>`, aldrig med `http.request({ path })`, som
+  alltid ger en sökväg i origin-form och därför inte kan nå felet. Minst dessa
+  rader, var och en följd av `Host: 127.0.0.1` och en tom rad:
+  `GET http://[v1.x]/ HTTP/1.1`, `GET http://[::1 HTTP/1.1`,
+  `GET https://[fe80::1%25]/ HTTP/1.1`, `GET http://%/ HTTP/1.1` och
+  `OPTIONS * HTTP/1.1`. Krav per rad:
+  ett svar kommer på sockeln (statusraden läses), och ett därpå följande
+  `GET /api/entries` över HTTP ger `200`. De fyra första raderna är fall för rad
+  S1 och ska ge `400` med rad S1:s kropp: granskarens körning visar att `new URL`
+  kastar `ERR_INVALID_URL` för just dem. `OPTIONS * HTTP/1.1` är **inget** fall
+  för rad S1 utan ska ge `404` utan kropp — `*` går att tolka mot basen och ger
+  då en okänd statisk sökväg. Byggarens körning i paket 5 gav den statuskoden.
+  Raden står med i listan oavsett svar, eftersom det
+  är en förfrågningsrad som ingen webbläsare skickar och därför den sortens indata
+  som aldrig prövats. Rad S2 och S3 provoceras i stället genom `handler`-
+  argumentet, och provokationshanteraren **kastar på sitt första anrop och
+  svarar som en okänd statisk sökväg därefter** — `res.writeHead(404)` följt av
+  `res.end()`. Med en hanterare som kastar vid *varje* anrop går ingenting att
+  bevisa: det andra anropet kastar då också, och det är just det andra anropets
+  `404` utan kropp som är beviset att processen lever. Rad S2 kräver två
+  varianter av samma hanterare: den synkrona, som kastar med `throw` direkt i
+  kroppen, och den asynkrona (`async`), som kastar och därmed avvisar sitt löfte.
+  Båda ska ge `500 { "error": "Ett oväntat fel inträffade. Försök igen." }` på
+  det första anropet och `404` utan kropp på det andra. Den synkrona varianten
+  returnerar `Promise.resolve()` på sin icke-kastande väg, eftersom `handler`
+  enligt kontraktet under "Ett trasigt anrop får inte döda appen" ska returnera
+  ett löfte. Ett eget testfall prövar det brutna kontraktet:
+  `createServer(() => undefined)` ska ge `500` med rad S2:s kropp på **ett**
+  anrop — `.catch` på ett värde som inte är ett löfte kastar `TypeError`, och det
+  kastet fångas av samma `try`/`catch` som ett synkront kast. Byggarens och
+  granskarens körningar gav det svaret. Kravet på ett **andra** anrop gäller inte
+  det här fallet: `() => undefined` beter sig likadant vid varje anrop, så ett
+  andra anrop asserterar ingenting som det första inte redan gör. Granskaren
+  mätte det — med bara ett varv ger `node --test tests/server.test.js`
+  fortfarande `tests 22, pass 22, fail 0`, och båda de föreskrivna mutationerna
+  ger identiskt utfall med och utan det andra varvet. Det andra anropet hör till
+  provokationshanteraren i rad S2 och S3, som kastar på sitt *första* anrop och
+  svarar `404` utan kropp därefter; där, och bara där, är det andra anropets svar
+  beviset att processen lever.
+  Rad S3 provoceras med en hanterare som på sitt första anrop först skriver
+  `res.writeHead(200, …)` och därefter kastar: klienten ska då få ett avbrutet
+  svar utan att processen dör, och det andra anropet ska ge `404` utan kropp.
+  Väntan på ett svar har en hängningsspärr, se undantagslistan under "Inget test
+  asserterar på körtid". Mutationer som ska köras, en i taget, eftersom de två
+  konstruktionerna i `createServer` fångar olika indata: ta bort `.catch(...)`
+  och behåll `try`/`catch` → rad S2:s asynkrona variant och rad S3:s testfall ska
+  falla; ta bort `try`/`catch` och behåll `.catch(...)` → rad S2:s synkrona
+  variant och kontraktsfallet `() => undefined` ska falla; ta bort `try`/`catch`
+  runt `new URL` → testfallet för `GET http://[v1.x]/ HTTP/1.1` ska falla,
+  eftersom svaret då blir rad S2:s `500` i stället för rad S1:s `400`. Vilka
+  testfall de två första mutationerna fäller ska byggaren visa med inklistrade
+  kryssrader; stämmer de inte med raderna ovan lämnas paketet tillbaka till
+  arkitekten. De två mutationerna kan dessutom döda
+  testprocessen med en ohanterad avvisning respektive ett ohanterat kast i
+  stället för att ge ett ✖ på det utpekade testfallet; händer det klistrar
+  byggaren in kraschutdatan i stället för kryssraden och skriver ut vilket av de
+  två utfallen körningen gav. Följer av `LARDOMAR.md` (2026-09-07, server: ett
+  enda HTTP-anrop dödar hela appen).
+- **Paket 5: `npm start` på en upptagen port.** Obligatoriskt i
+  `tests/server.test.js`. `asStartError` anropas direkt, en gång per rad i
+  tabellen "Beteende vid start": ett `DataFileLockError` med en känd text för rad
+  0, samt `{ code: 'EADDRINUSE' }`, `{ code: 'EACCES' }` och
+  `{ code: 'EFELSTAVAT' }` med ett portnummer, och varje rads svenska sträng
+  jämförs ordagrant, med `instanceof ServerStartError` och `error.cause` satt.
+  Rad 0:s krav är att `message` är låsfelets text ordagrant och att portnumret
+  inte har smugit in i den.
+  Rad 1 provoceras dessutom på riktigt: bind en port med `listen(0, '127.0.0.1')`
+  på en egen server, läs `server.address().port`, anropa `start(<den porten>)`
+  och kräv att löftet **avvisas** med rad 1:s sträng, att `error.message` inte
+  innehåller `address already in use`, och att testprocessen lever vidare. Båda
+  servrarna stängs i en `after`-hook. Mutation som ska köras: ta bort
+  `server.once('error', reject)` ur `start` → det provocerade fallet ska falla
+  (utan lyssnaren fullbordas löftet aldrig, så det är hängningsspärren i
+  `RESPONSE_TIMEOUT_MS` som fäller det, och testet ska då falla på en assertion
+  som namnger att `start` aldrig svarade). Följer av `LARDOMAR.md` (2026-09-07,
+  server: npm start på en upptagen port).
+- **Paket 5: två instanser mot samma datafil.** Obligatoriskt i
+  `tests/lock.test.js`. Varje barnprocess startas med
+  `spawn(process.execPath, [serverPath], { env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: <fil>, PORT: String(<sondens port>) } })`,
+  där `serverPath` byggs ur `import.meta.url` och aldrig ur `process.cwd()` och
+  porten hämtas med sonden i punkt 3 ovan. Väntan på ett barn som ska starta är
+  väntan på dess utskrivna rad, väntan på ett barn som ska vägra är väntan på
+  dess `exit`; ingen väntan är en tidsgräns som räknas som en mätning, och båda
+  kapplöper mot `child.once('error', …)` och hängningsspärren
+  `CHILD_START_TIMEOUT_MS`. Datafilen är alltid en temporär fil. Fyra fall:
+  1. **Instans två startar inte — minst 20 omgångar.** En temporär datafil,
+     instans ett startad en gång och kvar under hela testet. I varje omgång
+     startas instans två mot **samma** datafil och en **ledig** port. Att porten
+     är ledig är ett krav och inte en detalj: med instans ettas port skulle en
+     trasig låsning falla på `EADDRINUSE`, och fallet vore då bevisat av fel
+     spärr. Krav per
+     omgång: instans två avslutas med kod `1`, dess `stdout` är tomt, och dess
+     `stderr` är exakt rad L1:s sträng följd av `\n`, med instans ettas pid i
+     strängen; instans ett svarar därefter `200` på `GET /api/entries`. Efter de
+     20 omgångarna: ett `POST` mot instans ett, och datafilen ska därefter
+     innehålla exakt en post — läst med `loadEntries()` efter att
+     `process.env.HEMOCHEKONOMI_DATA_FILE` satts till just den filen i
+     testprocessen, och återställd i en `after`-hook. Förväntat utfall, som ska
+     skrivas ut i redovisningen:
+     `omgångar där instans två startade: 0 av 20`,
+     `omgångar där instans två gav exitkod 1 och rad L1 på stderr: 20 av 20`,
+     `poster på disk efteråt: 1`. Det är samma indata som gav granskaren
+     `omgångar där en post tappades: 20 av 20`.
+  2. **Var sin datafil låser inte varandra.** Två barn med var sin temporära
+     datafil och var sin port: båda ska skriva sin rad och båda svara `200` på
+     `GET /api/entries`. Fallet är det som visar att låset hör till datafilen och
+     inte till processen eller porten.
+  3. **Ett dött lås tas över.** Starta ett barn, vänta på dess rad, döda det med
+     `SIGKILL`, och **assertera att låsfilen ligger kvar** (`getLockFilePath()`
+     finns på disk) innan nästa barn startas — annars prövar fallet ingenting.
+     Starta därefter ett nytt barn mot samma datafil: det ska skriva sin rad.
+     Ligger låsfilen *inte* kvar efter `SIGKILL` i den här miljön är det inget
+     att laga i testet: paketet lämnas tillbaka till arkitekten med körningen som
+     underlag, eftersom hela `ESRCH`-grenen då saknar indata.
+  4. **Ett otolkbart lås blockerar.** Skriv `''`, `'inte en pid'` respektive
+     `` `${process.pid}\n` `` till `getLockFilePath()` och starta ett barn: det
+     ska avsluta med kod `1` och rad L2:s sträng på `stderr`. Den tredje indatan
+     är en låsfil i det gamla formatet — bara en pid, utan märkning — och den ska
+     ge rad L2 och inte tolkas som ett giltigt lås.
+  Mutationer som ska köras, en i taget, med kryssraden inklistrad och jämförd med
+  det utpekade testfallet: ta bort `await acquireDataFileLock()` ur `start` →
+  fall 1 faller; låt varje `EEXIST` betyda att låset är övergivet (ta bort
+  livskontrollen) → fall 1 faller; ta bort `ESRCH`-grenen så att varje `EEXIST`
+  blockerar → fall 3 faller; byt `getLockFilePath()` mot en sökväg som inte
+  härleds ur datafilen → fall 2 faller. Följer av `LARDOMAR.md` (2026-09-07,
+  api: två snabba klick tappar en post) och av granskarens underkännande av
+  paket 5.
+- **Paket 5: två `start()` i samma process, och låsets bokföring.**
+  Obligatoriskt i `tests/lock.test.js`. Fallen prövar den variant där felet
+  uppstod: porten hålls upptagen av en server som **själv har tagit låset**,
+  aldrig av en naken `http.createServer()`. Ett fall som håller porten upptagen
+  med en server utan lås räknas inte som täckning för någon av raderna här.
+  Datafilen är alltid en temporär fil, och varje lås som tas i testprocessen
+  släpps i en `after`-hook.
+  5. **Ett andra `start()` mot första serverns port lämnar låset orört.**
+     `const s1 = await start(0)`; läs `s1.address().port` och läs låsfilens
+     innehåll till `f1`. Anropa därefter `start(<samma port>)` i samma process.
+     Krav: löftet **avvisas**; `error instanceof ServerStartError`;
+     `error.message` är rad L5:s sträng ordagrant, med datafilens sökväg i;
+     `error.cause instanceof DataFileLockError`; `error.message` innehåller
+     varken `Port ` eller `address already in use`; låsfilen finns kvar och dess
+     innehåll är byte-identiskt med `f1`; `s1` svarar `200` på
+     `GET /api/entries`. Starta därefter ett barn med `spawnServer` mot **samma**
+     datafil och en ledig port och kräv att det avslutas med kod `1` och rad L1:s
+     sträng med testprocessens pid på `stderr`. Utan den sista halvan prövar
+     fallet bara en sträng och inte det låset finns för.
+     Porten ska vara `s1`:s egen, trots att rad L5 avgörs före `listen`: det är
+     just den kombinationen — samma port **och** samma datafil — som gav
+     granskaren `låsfil efter att start 2 misslyckades: ENOENT`, och kravet att
+     meddelandet är rad L5 och inte rad 1:s porttext är beviset att låset svarar
+     före porten. Fallet ersätter inte `start på en upptagen port avvisas med rad
+     1:s svenska text` i `tests/server.test.js`, som håller porten med en server
+     **utan** lås: det fallet är den indata som når släppandet efter ett
+     misslyckat `listen`, och där ska låsfilen vara borta efteråt. De två fallen
+     prövar var sin sida av samma rad och ska båda finnas.
+  6. **Två datafiler, två lås, två släpp.** Ta `const p1 = await
+     acquireDataFileLock()` med `HEMOCHEKONOMI_DATA_FILE` satt till `a.json` och
+     därefter `const p2 = await acquireDataFileLock()` med den satt till
+     `b.json`. Krav: `p1 !== p2` och båda låsfilerna finns.
+     `await releaseDataFileLock(p1)` → `a.json.lock` är borta, `b.json.lock`
+     finns kvar. `await releaseDataFileLock(p2)` → båda är borta, och `fs.readdir`
+     på katalogen ger noll filer som slutar på `.lock`.
+  7. **Exit-städningen tar varje lås processen håller.** Samma barn som redan
+     provar exit-städningen, men med två datafiler: barnet tar båda låsen,
+     skriver sin rad och avslutas med `process.exit(0)`. Krav efter barnets
+     `exit`: ingen av de två låsfilerna finns kvar.
+  8. **Ett kvarlämnat lås med den egna pid:en tas över.** Skriv
+     `` `${process.pid}:<ett uuid>\n` `` till `getLockFilePath()` utan att gå
+     genom modulen och anropa `acquireDataFileLock()`. Krav: löftet uppfylls, och
+     låsfilens innehåll är **inte** det påskrivna — låset togs över och skrevs
+     om. Det är den indata som når grenen `pid === process.pid`: en pid som
+     operativsystemet återanvänt, eller ett släpp som inte fick bort filen.
+  9. **Ett släpp tar inte bort en främmande märkning med den egna pid:en.**
+     `const p = await acquireDataFileLock()`; skriv därefter
+     `` `${process.pid}:<ett annat uuid>\n` `` till samma fil och kör
+     `await releaseDataFileLock(p)`. Krav: filen ligger kvar med exakt det
+     påskrivna innehållet. Fallet är den indata som når märkningsjämförelsen;
+     utan det är jämförelsen bara en pid-jämförelse som inget test skiljer från
+     den rätta.
+  10. **Två överlappande `acquireDataFileLock()` mot samma datafil.**
+     `const [a, b] = await Promise.allSettled([acquireDataFileLock(),
+     acquireDataFileLock()])`, alltså båda startade innan någon av dem hunnit
+     uppfylla sig. Krav: exakt ett utfall är `fulfilled`, det andra är `rejected`
+     med rad L5:s sträng, och låsfilen finns med den uppfylldas märkning.
+  11. **Struket nummer, och det återanvänds aldrig.** Fallet krävde ett andra
+     skrivförsök som också misslyckas och därmed ger rad L4. Byggarens körning
+     visade att den indatan inte går att konstruera i den här miljön —
+     `fs.unlink` lyckas med ett öppet handtag — grenen är struken ur pseudokoden,
+     och fallet är därmed borta. Numret står kvar som en tom rad av samma skäl som
+     namnen L1–L4 är oförändrade: numren är **namn**, och ett nummer som får en ny
+     innebörd gör varje äldre hänvisning tvetydig. Nästa fall som tillkommer får
+     nummer 13.
+  12. **Ett släpp utan post i bokföringen rör inte disken.**
+     `releaseDataFileLock(null)`, `releaseDataFileLock(undefined)` och
+     `releaseDataFileLock('<en sökväg utan post i heldLocks>')` ska var och en
+     göra **noll** filoperationer. Kravet mäts och antas inte: testet ersätter
+     `fs.readFile` med en räknande omslutning runt anropet, kräver `0` läsningar,
+     och lägger tillbaka originalet både direkt efter anropet och i en
+     `after`-hook — ett fall som avbryts får inte lämna en patchad kärnmodul efter
+     sig. Formuleringen "låsfilen är oförändrad" duger inte som enda assertion och
+     är förbjuden här: utan spärren `token === undefined` läser modulen ändå filen
+     och jämför innehållet med `undefined`, vilket också lämnar filen i fred, så
+     villkoret överlever mutation med den gamla formuleringen — det var byggarens
+     skäl att byta mätsätt. Filen får gärna kontrolleras som oförändrad **utöver**
+     räkningen, aldrig i stället för den. Räkningen förutsätter att `lock.js` når
+     sina filoperationer genom modulnamnrymden (`import fs from
+     'node:fs/promises'`): med `import { readFile }` ser testet ingenting, och då
+     ska mätsättet bytas — kravet på noll filoperationer står kvar.
+  Mutationer som ska köras, en i taget, med kryssraden inklistrad och jämförd med
+  det utpekade fallet: (a) låt `acquireDataFileLock` uppfylla sig med `lockPath`
+  när `heldLocks` redan har posten, i stället för rad L5 → **fall 5** faller;
+  (b) jämför bara pid i `releaseDataFileLock`, inte hela märkningen → **fall 9**
+  faller; (c) byt `heldLocks` mot en enda variabel för den senast tagna sökvägen
+  → **fall 6** faller; (d) låt exit-städningen bara ta den senast tagna sökvägen
+  → **fall 7** faller; (e) ta bort köplatsen och anropa arbetet direkt i både
+  `acquireDataFileLock` och `releaseDataFileLock` → **fall 10** faller;
+  (f) ta bort spärren `token === undefined` i släppandet, så att en sökväg utan
+  post ändå läser filen → **fall 12** ska falla, och den assertion som fäller det
+  ska vara räknaren; visar meddelandet i stället en filjämförelse är mätsättet
+  inte det kravet säger och paketet lämnas tillbaka.
+  Mutation (e) ska köras **tio gånger** och antalet körningar som fällde fall 10
+  redovisas; kravet är tio av tio, annars är fallet inget skydd mot mutationen
+  och paketet lämnas tillbaka (`LARDOMAR.md`, 2026-09-07, mutationsdetektor som
+  beror på tur). Följer av `LARDOMAR.md` (2026-09-07, lås: ett misslyckat andra
+  `start()` i samma process tar bort ett lås som fortfarande används).
+- **Paket 5: `api.js` importerar inte `saveEntries`.** Obligatoriskt i
+  `tests/api.test.js`. Regeln "varje läs-ändra-skriv går genom `updateEntries`"
+  är annars bara en mening i den här filen, och en mening kan paket 6 och 7 inte
+  falla på. Testet läser `src/server/api.js` som text, med sökvägen byggd ur
+  `import.meta.url`, och kräver: strängen `'./storage.js'` förekommer på exakt
+  ett ställe i filen; den förekomsten matchar en namngiven importsats
+  (`/import\s*\{([^}]*)\}\s*from\s*'\.\/storage\.js'/`), alltså aldrig
+  `import * as`; och namnlistan i den satsen innehåller inte `saveEntries`.
+  **Regeln gäller bindningen `saveEntries` i modulens omfång, inte strängen
+  `saveEntries` i en importlista.** Varje element i listan normaliseras därför
+  till sitt importerade namn — `del.split(/\s+as\s+/)[0].trim()` — innan
+  jämförelsen. Utan normaliseringen är `namn.includes('saveEntries')` falskt för
+  elementet `saveEntries as spara`, och spärren släpper igenom exakt den
+  återinföring den byggdes för att stoppa; granskaren körde den stavningen och
+  fick `✔` och `EXIT=0`.
+  Mutationer som ska köras, **alla tre**, en i taget, var och en med kryssraden
+  inklistrad — en textspärr prövas med varje stavning språket tillåter för samma
+  bindning, aldrig bara med den stavning regeltexten råkar använda
+  (`LARDOMAR.md`, 2026-09-07, textspärren mot `saveEntries` går förbi med ett
+  alias):
+  1. `import { loadEntries, updateEntries, saveEntries } from './storage.js';`
+     — det raka namnet;
+  2. `import { loadEntries, updateEntries, saveEntries as spara } from './storage.js';`
+     — aliaset, som fälls av normaliseringen och av ingenting annat;
+  3. `import * as storage from './storage.js';` — namnrymden, som fälls av kravet
+     på en namngiven importsats.
+  Alla tre ska ge `EXIT=1` på samma kryssrad, alltså på det här testfallet.
+  **En textspärr räknas aldrig som det enda skyddet mot regressionen:** skriv i
+  redovisningen ut vilka beteendetestfall samma återinföring fäller — de tre
+  samtidighetsfallen under "Paket 5: två överlappande anrop får inte tappa en
+  ändring" — och kör dem. Regeln som testet upprätthåller står under
+  `src/server/storage.js` i "Gränssnitt".
+- **Paket 5: `src/web/app.js` körs av `tests/app.test.js` mot en incheckad
+  DOM-attrapp.** Ingen webbläsarautomatisering införs — det skulle vara
+  projektets största beroende och pröva minst — men filen ska laddas och köras av
+  `npm test`. Kravet på fem redovisade körningar mot en attrapp byggaren själv
+  slängde efteråt är avskaffat och får inte återinföras: en mätapparat som kastas
+  bort gör mätningen omöjlig att göra om, och under det kravet gav mutationen "ett
+  namn som inte finns plus `const trasig = ( ;` i `src/web/app.js`"
+  `tests 241, pass 241, fail 0` och `EXIT=0` (`LARDOMAR.md`, 2026-09-07,
+  `src/web/app.js` kan göras syntaktiskt trasig utan att `npm test` faller).
+  - **Två filer, med var sitt ansvar.** `tests/app.test.js` är testfilen.
+    `tests/helpers/dom.js` är mätapparaten: DOM-attrappen, `fetch`-attrappen och
+    laddaren. Attrappen ligger under `helpers/`, körs aldrig av testköraren och
+    är den **enda** DOM-attrappen i projektet — en andra kopia i en annan testfil
+    är ett fel, samma ägarregel som för konstanterna i `src/core/`.
+  - **Laddningen är bindande.** Laddaren läser `src/web/app.js` från disk vid
+    varje anrop (så att ett syntaxfel når körningen), pekar om
+    `/core/`-specifikationerna till `src/core/` (webbläsaren hämtar dem över
+    HTTP, en Node-körning har ingen server), och importerar källan som en
+    `data:`-modul med ett unikt inslag per anrop — `app.js` har modullokalt
+    tillstånd som inte får följa med till nästa testfall. `globalThis.document`
+    och `globalThis.fetch` sätts av laddaren och återställs i en `after`-hook.
+    Sökvägarna byggs ur `import.meta.url`, aldrig ur `process.cwd()`.
+  - **Ingen server och inga timers i den här testfilen.** `fetch` är alltid
+    attrappen: allt `app.js` gör här är löften utan I/O, och testet driver dem
+    själv genom att flöda ut mikrotaskerna ett bestämt antal varv. Därför behövs
+    ingen tidsgräns och ingen hängningsspärr, och därför har filerna ingen rad i
+    tabellen under "Inget test asserterar på körtid". Kontrollen där gäller också
+    här, men med två mönster till (`setInterval` och `Date.now`), eftersom kravet
+    på de här två filerna är strängare än på de andra: ingen klocka alls.
+    `grep -n "setTimeout\|setInterval\|AbortSignal.timeout\|Promise.race\|performance.now\|Date.now" tests/app.test.js tests/helpers/dom.js`
+    ska ge noll träffar för båda filerna; en sökning efter de sex mönstren i de
+    två filerna gav noll träffar 2026-09-07. Serversidan prövas av
+    `tests/api.test.js` och
+    `tests/server.test.js`; ett fall som startar en server hör hemma där och inte
+    här.
+  - **Attrappen är sträng, och den växer bara med `app.js`.** En selektor eller
+    ett element den inte känner till ska ge ett **kast**, aldrig `null`: en
+    attrapp som svarar `null` på något den inte förstår låter `app.js` gå sönder
+    tyst, och då mäter testet ingenting. Den får bara ha de element, egenskaper
+    och metoder `index.html` och `app.js` verkligen använder — den ska inte bli en
+    DOM-implementation, och inget stöd får byggas för ett anrop som ingen rad i
+    `src/web/` gör. Ett avstängt element tar inte emot ett klick (det är
+    webbläsarens beteende och grunden för spärren under "Knappen spärras under ett
+    pågående anrop"), medan `submit` går fram oavsett — en submit-händelse behöver
+    inte komma från knappen, och det är därför `app.js` har ett eget
+    pågående-läge. Attrappens id:n jämförs med de id:n `index.html` själv skriver
+    ut; det testfallet är det som gör att paket 6 och 7 inte kan lägga till ett
+    fält i `index.html` utan att attrappen får det.
+  - **`tests/app.test.js` täcker minst**, och de tre första är de gamla fall 1–3:
+    (1) ett `400` med två `fieldErrors` visar båda texterna vid sina fält och
+    lämnar den allmänna rutan tom; (2) ett `500 { error }` visar `error`-texten i
+    den allmänna rutan; (3) ett `500` med en kropp som inte är JSON visar
+    `GENERAL_ERROR` — den konkreta indata som når
+    `typeof body.error === 'string'`-grenen; (4) ett `fetch` som avvisas visar
+    `GENERAL_ERROR` och lämnar Spara-knappen påslagen; (5) att modulen laddas utan
+    att kasta och att `#interval` och `#category` fyllts med nycklarna **och**
+    etiketterna ur `INTERVAL_LABELS` respektive `CATEGORY_LABELS`, alltså att
+    ingen svensk etikett skrivs för hand i `app.js`; (6) att attrappens id:n är
+    exakt `index.html`:s; (7) en giltig post: kroppen är utkastet ordagrant med
+    beloppet som rå sträng, formuläret nollställs, listan hämtas om (`GET`,
+    `POST`, `GET`) och raden visar `formatSek`-strängen; (8) två `submit` i rad
+    medan det första anropet är i luften ger **exakt ett** `POST`; (9) ett andra
+    klick på **samma** Ta bort-knapp medan anropet är i luften ger **inget** andra
+    `DELETE`; (10) klick på Ta bort för den första posten och därefter för den
+    **andra** ger två `DELETE` och tömmer listan — granskarens underkännande av
+    paket 5, som ska visas grönt och inte antas; (11) en borttagning som ger `404`
+    visar serverns text och lämnar raden kvar i vyn.
+  - **Mutation som ska köras innan filen räknas som testad:** stoppa in ett
+    syntaxfel i `src/web/app.js` (`const trasig = ( ;`) → `npm test` ska ge
+    `EXIT=1`, och byggaren klistrar in kryssraderna. Paket 6 och 7 kör om samma
+    mutation innan de lämnar vidare: det är den enda kontroll som visar att den
+    fil de bygger i fortfarande körs av sviten.
 - **Determinism:** inget test får bero på dagens datum. Dagens datum skickas
   alltid in som parameter. Ett test som skulle gå sönder i mars är ett trasigt
   test.
@@ -1237,9 +2073,11 @@ bara `entries.json`.
   `saveEntries`, därefter importerar modulen på nytt med en cache-brytande
   query (`await import('../src/server/storage.js?fresh=' + Date.now())`) och
   läser tillbaka. Filen på disk är sanningen, inget cachas i modulminne.
-  Den nya importen ger en **ny modulinstans med en egen `writeQueue`**: två
-  instanser delar inte kö. Ett test får därför aldrig ha skrivningar i luften
-  från båda instanserna samtidigt — invänta den ena innan den andra startas.
+  Den nya importen ger en **ny modulinstans med en egen `ioQueue`**: två
+  instanser delar inte kö. Ett test får därför aldrig ha läsningar eller
+  skrivningar i luften från båda instanserna samtidigt — invänta den ena innan
+  den andra startas. Två instanser som rör filen samtidigt kan ge `EPERM` från
+  `rename`, precis som en handtagare utanför modulen.
 - **Paket 4: två överlappande skrivningar.** Bygg `a` med 3 000 giltiga poster
   och `b` med 1 500 giltiga poster, med olika `id` och `name` så att en
   blandning syns. Kör minst 20 omgångar av
@@ -1251,38 +2089,163 @@ bara `entries.json`.
   mäter. Mutation som ska köras: ta bort löfteskedjan så att `saveEntries` går
   direkt på disken, kör `npm test` och kräv exit 1. Följer av `LARDOMAR.md`
   (2026-09-02, två överlappande saveEntries delar samma .tmp-namn).
+- **Paket 4: en läsning och en skrivning som överlappar.** Datafilen ska vara
+  stor nog att läsningen fortfarande pågår när `rename` körs. Storleken är inget
+  tal den här filen anger: byggaren mäter den genom att först köra fallet med kön
+  borttagen ur `loadEntries` och öka antalet poster tills körningen ger minst en
+  avvisning, och klistrar in antalet poster och filens storlek i byte i
+  redovisningen. Granskarens körning nådde felet med 200 000 poster och en fil på
+  37 577 818 byte. Kör därefter minst 20 omgångar av vardera anropsordningen:
+  `await Promise.allSettled([saveEntries(b), loadEntries()])` och
+  `await Promise.allSettled([loadEntries(), saveEntries(b)])`, där `b` är en
+  annan lista än den som ligger på disk. Krav per omgång: båda resultaten har
+  `status: 'fulfilled'`; i den första ordningen är läsningens värde `deepEqual`
+  med `b`, i den andra `deepEqual` med listan som låg på disk före omgången; och
+  `await loadEntries()` efteråt är `deepEqual` med `b`. En avvisning med
+  `Datafilen kunde inte sparas: den nya filen gick inte att byta in: <sökväg>`
+  betyder att läsningen inte gick genom kön. Mutation som ska köras: ta bort kön
+  ur `loadEntries` så att läsningen går direkt på disken; `npm test` ska ge exit
+  1, och det fallerande testet ska vara det här. Byggaren redovisar vilken av de
+  två anropsordningarna som fällde mutationen. Följer av `LARDOMAR.md`
+  (2026-09-04, en pågående loadEntries får saveEntries att misslyckas med EPERM).
 - **Paket 4: atomicitetstestet ska avbryta en riktig skrivning.** Ett test som
   själv skapar en temporärfil bevisar ingenting — det gamla testet passerade två
   av tre assertioner med atomiciteten helt borttagen. Kraven är bokstavliga:
-  1. Testet skapar utgångsläget genom att anropa `saveEntries` och läser
-     därefter filens byte med `fs.readFile(filePath)` (en `Buffer`).
-  2. Skrivningen som avbryts sker i en barnprocess:
-     `fork('tests/helpers/interrupted-save.js', [], { env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: filePath } })`.
+  1. Testet skapar utgångsläget genom att anropa `saveEntries` med en lista som
+     **inte är tom** och som har ett annat antal poster än barnets lista (punkt
+     2 nedan). Listan behålls i minnet och är facit för den första grenen i
+     punkt 4. Någon `Buffer`-läsning av filen krävs inte: punkt 4 jämför listor med
+     `deepEqual` genom `loadEntries`, och en byte-jämförelse svarar på en annan
+     fråga än den punkt 4 ställer — barnets lista är ett godkänt utfall, och
+     dess byte är varken kända före omgången eller intressanta efter den. Att
+     utgångslistan inte får vara tom är däremot bindande, och skälet är rad 3 i
+     "Beteende vid läsning": en tom fil läses som `[]`. Vore utgångslistan tom
+     skulle en avbruten skrivning som lämnar en tom fil räknas som "den gamla
+     listan" och passera oupptäckt.
+  2. Skrivningen som avbryts sker i en barnprocess. Sökvägen till barnet byggs
+     ur `import.meta.url`, aldrig ur `process.cwd()`:
+     `const childPath = fileURLToPath(new URL('./helpers/interrupted-save.js', import.meta.url));`
+     och därefter
+     `fork(childPath, [], { env: { ...process.env, HEMOCHEKONOMI_DATA_FILE: filePath, HEMOCHEKONOMI_TEST_ENTRY_COUNT: String(antal) } })`.
+     En cwd-relativ sökväg hittar barnet bara så länge kommandot körs från
+     projektroten, medan testfilens egna importer alltid löses mot filens plats
+     (`LARDOMAR.md`, 2026-09-04, storage-testet hänger för alltid).
      Barnet skickar `process.send('startar')` omedelbart före sitt
-     `saveEntries`-anrop, som skriver minst 20 000 poster.
-  3. Föräldern väntar på meddelandet, väntar därefter `i` millisekunder i
-     omgång `i` (`i = 0 … 19`), kör `child.kill('SIGKILL')` och inväntar
-     `exit`.
+     `saveEntries`-anrop, som skriver `antal` poster. `antal` är minst 20 000 och
+     kan höjas av punkt 7; saknas miljövariabeln skriver barnet 20 000 poster.
+  3. **Dödandetiden härleds ur en mätning, aldrig ur ett tal i den här filen.**
+     Före omgångarna kör testet en mätomgång som inte dödar barnet och tar tiden
+     `tKlar` från att `startar`-meddelandet togs emot till barnets `exit`.
+     Omgång `i` av `N` väntar därefter `Math.round((i * 2 * tKlar) / (N - 1))`
+     millisekunder efter meddelandet, kör `child.kill('SIGKILL')` och inväntar
+     `exit`. **`N` är 200.** Fönstret `0 … 2 × tKlar` är valt för att spänna
+     över hela skrivningen: dess undre hälft ligger före `rename`, dess övre
+     efter. Antalet omgångar är mätt fram och inte valt, och mätningen står i
+     beslutsloggen: tiden som ett dödande måste träffa för att fälla mutationen
+     i punkt 6 är cirka 0,2 ms av ett fönster på cirka 120 ms, och därför fällde
+     mutationen testet i 1 av 30 körningar med `N = 20` men i 9 av 10 med
+     `N = 200`. `N` är ett antal omgångar och ingen dödandetid: talet får stå
+     skrivet i testkoden, och förbudet i nästa mening gäller det inte.
+     **Ingen dödandetid får stå som ett millisekundtal, varken i
+     testkoden eller i den här filen:** varje väntan före ett
+     `child.kill('SIGKILL')` räknas ut ur `tKlar`. Den tidigare lydelsen band
+     fönstret till `i = 0 … 19` ms, och granskarens mätning visade att barnet
+     börjar skriva först efter cirka 45 ms, så assertionsgrenen i punkt 4 kördes
+     noll gånger och mutationen i punkt 6 överlevde. Förbudet gäller
+     dödandetiden och ingenting annat — hängningsspärren i punkt 8 är ett
+     utskrivet undantag med sitt eget skäl. Byggaren klistrar in `tKlar` och de
+     använda dödandetiderna i redovisningen.
   4. **Assertionen som ska fälla mutationen ligger i det här testet och namnger
      avbrottet:** `await loadEntries()` kastar inte, och listan är antingen
      `deepEqual` med utgångslistan eller `deepEqual` med barnets lista. Ingen
-     tredje utgång godtas.
+     tredje utgång godtas. Varje omgång räknas dessutom upp i en av två räknare,
+     `gamlaListan` respektive `barnetsLista`, och efter sista omgången asserteras
+     att **båda är minst 1**. En körning där någondera grenen kördes noll gånger
+     är ett fallerat test, inte ett godkänt — det är den assertion som saknades
+     när mutationen överlevde. En `console.log` av fördelningen ersätter aldrig
+     assertionen.
   5. Testet skapar aldrig en temporärfil själv och asserterar aldrig på en
      temporärfil som det självt har skrivit. Det asserterar inte heller att
      temporärfilen är borta efter ett `SIGKILL` — ett dödat `finally` körs inte,
      se "Skrivvägen" under "Lagring".
-  6. Mutation som ska köras: ersätt `writeFile` till temporärfilen plus `rename`
-     med `await fs.writeFile(filePath, text, 'utf8')`. Körningen ska ge exit 1,
-     och det fallerande anropet ska vara punkt 4 i det här testet. Byggaren
-     klistrar in raden med filnamn och radnummer.
-  7. Redovisningskrav, inte assertion: hur många av de 20 omgångarna som gav
-     utgångslistan respektive barnets lista. Gav alla omgångar barnets lista
-     avbröts ingen skrivning och testet bevisar ingenting — byggaren ökar
-     antalet poster tills båda utfallen förekommer och redovisar den nya
-     fördelningen. Ingen assertion får röra tid eller fördelning
-     (determinismkravet ovan).
+  6. **Mutationen, och hur utfallet räknas.** Mutationen är: ersätt `writeFile`
+     till temporärfilen plus `rename` med
+     `await fs.writeFile(filePath, text, 'utf8')`. Kravet är **inte** att varje
+     körning fäller det här testet. Om en omgångs dödande landar inne i den
+     direkta skrivningen eller utanför den avgörs av var i barnets arbete tiden
+     hamnar, och det kan testet inte styra: granskaren körde mutationen 12
+     gånger, och testet föll 6 gånger och passerade 6. Ett krav som är uppfyllt i
+     hälften av körningarna är inget krav, och det gjorde paket 4 omöjligt att
+     lämna vidare på ett utfall slumpen bestämde.
+     Kravet lyder därför: **kör mutationen tio gånger. Minst en av de tio
+     körningarna ska falla på just det här testet, och det fallerande anropet
+     ska vara punkt 4:s assertion.** Byggaren redovisar hur många av de tio
+     körningarna som föll på testet och klistrar in raden som börjar med kryss
+     (`✖`) från en av dem, med filnamn och radnummer för det fallerande
+     anropet. Faller testet i noll av tio körningar räknas mutationen som
+     överlevd och paketet lämnas tillbaka.
+     **Referensvärdet med `N = 200` är 9 av 10.** Det är byggarens mätning på
+     den här maskinen, och det är också skälet till att `N` höjdes från 20:
+     med `N = 20` föll testet i 1 av 30 körningar (tre serier om tio: 0, 1, 0),
+     alltså hade två av de tre serierna inte klarat kravet ovan. En körning som
+     ger märkbart färre än 9 av 10 är ett tecken på att något annat har ändrats
+     och ska redovisas med mätvärdena, även när kravet formellt är uppfyllt.
+     Det är den formuleringen som skiljer ett test som verkligen prövar
+     atomiciteten från ett som inte gör det, och det är hela syftet med kravet:
+     det gamla testet föll i **noll** körningar med atomiciteten borttagen, och
+     ett test som föll ungefär varannan körning och sedan inte faller i någon av
+     tio har slutat pröva det det ska pröva.
+     Två saker gäller oförändrat. `exit 1` ensamt är aldrig ett godkänt utfall —
+     i paket 4 gav mutationen exit 1 från två andra tester medan raden
+     `✔ en skrivning som dödas med SIGKILL lämnar antingen den gamla eller den
+     nya listan` stod kvar, och en sådan körning räknas som en av de tio där
+     testet inte föll. Att andra tester faller under mutationen är alltså varken
+     ett godkännande eller ett fel; de räknas inte. Och åt andra hållet:
+     **utan** mutationen ska testet passera. Byggaren kör den ostörda sviten tre
+     gånger i rad och redovisar `fail 0` och exit 0 för alla tre. Ett enda fall
+     där testet faller på ostörd kod ska lämnas tillbaka, eftersom punkt 4:s
+     assertion bara kan vara falsk för en skrivning som inte är atomär.
+  7. **Är någon räknare 0 justeras uppsättningen och omgångarna körs om, högst
+     tre försök totalt.** Är `barnetsLista` 0 landade varje dödande före
+     `rename`: fördubbla fönstrets övre gräns (`4 × tKlar`, sedan `8 × tKlar`).
+     Är `gamlaListan` 0 blev barnet klart före även det tidigaste dödandet:
+     fördubbla `antal` poster i punkt 2. `tKlar` mäts om före varje nytt försök.
+     Är någon räknare fortfarande 0 efter det tredje försöket faller testet på
+     assertionen i punkt 4, och byggaren lämnar tillbaka paketet med mätvärdena.
+     Räknarnas slutliga värden och antalet försök är dessutom redovisningskrav.
+     Villkoret "minst 1 i var och en" är den enda assertion i projektet vars
+     utfall beror på hur lång tid en skrivning tar; den står här därför att det
+     tidigare förbudet mot varje sådan assertion var det som lät mutationen
+     överleva. De enda andra ställen i projektet där tid alls kan avgöra ett
+     utfall är hängningsspärrarna i tabellen under "Inget test asserterar på
+     körtid", och de mäter ingenting — de bryter en väntan som annars är oändlig. Ingen annan assertion i testet får röra tid
+     eller fördelning, och determinismkravet ovan — inget test beror på dagens
+     datum — gäller oförändrat.
+  8. **Hängningsspärren — det utskrivna undantaget från punkt 3.** Varje väntan
+     på barnets `startar`-meddelande ska kapplöpa mot `child.once('exit', …)`,
+     `child.once('error', …)` och en `AbortSignal.timeout(…)`. Vinner något
+     annat än meddelandet ska testet falla, och felmeddelandet ska innehålla
+     barnets `exitCode`, `signalCode` och `stderr` — barnet startas därför med
+     `stderr` som `'pipe'`, och utskriften samlas upp från start.
+     Timeouten **är** ett millisekundtal och står som en namngiven konstant i
+     testfilen, `CHILD_START_TIMEOUT_MS`, på minst 30 000 ms. Undantaget är
+     avgränsat och inte en uppluckring: en dödandetid avgör var i barnets arbete
+     avbrottet landar och därmed vad omgången mäter, medan den här tiden aldrig
+     kan påverka utfallet av en omgång som blir av. Den avgör bara att ett barn
+     som **aldrig** startar ger ett fallerat test i stället för en väntan utan
+     exitkod. Gränsen är satt så högt just för att en långsam maskin inte ska
+     kunna göra spärren till ett falskt fel; ett högre värde är alltid tillåtet,
+     ett lägre inte. Skälet till att spärren måste finnas är att en hängning
+     inte ger någon exitkod alls, och kravet i `CLAUDE.md` att kontrollera
+     utgångskoden går då inte att uppfylla — granskarens körning från en annan
+     katalog hängde i tio minuter utan exitkod och gav vid nästa försök
+     `EXIT=124` från en yttre `timeout 60`. Innan testet räknas som skrivet ska
+     det köras en gång med barnets filnamn medvetet felstavat och ge exit 1 inom
+     några sekunder; den utdatan klistras in i redovisningen.
   Följer av `LARDOMAR.md` (2026-09-02, atomicitetstestet avbryter aldrig en
-  skrivning).
+  skrivning, och 2026-09-04, SIGKILL-testet dödar barnet innan skrivningen har
+  börjat, och 2026-09-04, storage-testet hänger för alltid i stället för att
+  falla när barnprocessen inte startar).
 - **Paket 4: skrivvägens validering har egna tester.** Rad 1–3 i "Beteende vid
   skrivning" ska ha testfall, och listan ska minst innehålla `undefined`,
   `null`, `'abc'`, `{ a: 1 }`, `42`, `[giltigPost, undefined]`, en post med ett
@@ -1298,9 +2261,8 @@ bara `entries.json`.
 - **Paket 4: rad 3 och rad 7 nås bara med en `Proxy`, och de ska nås.** En
   cirkulär post och `amountSek: 1n` avvisas redan av rad 2 och ger
   `Posterna kunde inte sparas: post nummer 1 är ogiltig.` — de kan alltså inte
-  visa att rad 3 finns. Följande konstruktioner är **inte körda av arkitekten**;
-  byggaren kör dem, klistrar in utfallet och lämnar tillbaka paketet om de inte
-  håller:
+  visa att rad 3 finns. Byggaren kör konstruktionerna nedan, klistrar in utfallet
+  och lämnar tillbaka paketet om de inte håller:
   - rad 3: `new Proxy(giltigPost, { get: (t, p) => p === 'toJSON' ? () => { throw new Error('nej'); } : t[p] })`
     — `toJSON` är ingen egen nyckel, så `isEntry` ser sex fält och godkänner,
     medan `JSON.stringify` frågar efter `toJSON` och får ett kast.
@@ -1313,8 +2275,8 @@ bara `entries.json`.
   `assert.ok(error.cause)`, att `error.message` varken innehåller
   `operation not permitted`, `illegal operation` eller `EPERM`, och att ingen
   fil vars namn slutar på `.tmp` finns kvar i katalogen. Provokationerna är
-  byggarens val men ska vara deterministiska och köras i den här miljön.
-  Förslag, **inte körda av arkitekten**:
+  byggarens val men ska vara deterministiska och köras i den här miljön. Förslag
+  som byggaren prövar:
   - rad 4 (`mkdir`): `HEMOCHEKONOMI_DATA_FILE` pekar på
     `<tmpdir>/enfil/hemochekonomi/entries.json` där `<tmpdir>/enfil` redan finns
     som en **fil**.
@@ -1339,11 +2301,15 @@ bara `entries.json`.
   återställer miljövariabeln efteråt.
 - **Mutationskravet gäller `src/server/storage.js` i paket 4 på samma sätt som
   `src/core/`.** Varje rad 1–7 i "Beteende vid skrivning", det unika
-  temporärnamnet, löfteskedjan och `finally`-städningen tas bort en i taget;
-  `npm test` ska ge minst ett fallerande test och exit 1 för var och en.
-  Byggaren räknar upp villkoren skriftligt och visar en körning per villkor.
-  Ingen rad i skrivtabellen är undantagen — rad 3 och rad 7 har sina
-  `Proxy`-fall just därför.
+  temporärnamnet, löfteskedjan i både `saveEntries` och `loadEntries` samt
+  `finally`-städningen tas bort en i taget; `npm test` ska ge minst ett
+  fallerande test och exit 1 för var och en. Byggaren räknar upp villkoren
+  skriftligt och visar en körning per villkor. Ingen rad i skrivtabellen är
+  undantagen — rad 3 och rad 7 har sina `Proxy`-fall just därför. **Pekar den
+  här filen ut vilket test som ska falla för en viss mutation är resultatet inte
+  godkänt förrän namnet på det fallerande testet har jämförts med det utpekade
+  testet:** klistra in raden som börjar med kryss (`✖`). Faller bara andra tester
+  räknas mutationen som överlevd, oavsett exitkod.
 - **Validering ska ha egna tester.** Följer av `LARDOMAR.md`. Ett paket som tar
   emot användarinput utan testad validering är inte klart.
 - **Fält som kan komma i flera typer testas i alla typer.** Varje rad i
@@ -1409,7 +2375,55 @@ bara `entries.json`.
 - **Inget test asserterar på körtid.** Determinismkravet ovan gäller även
   maskinens hastighet: ett test som kräver "under N millisekunder" går sönder på
   en långsam maskin, och ett trasigt test är inget fynd. Prestandakrav visas med
-  en redovisad mätning, inte med en assertion.
+  en redovisad mätning, inte med en assertion. Undantagen är uppräknade nedan,
+  vart och ett med sitt skäl. Inget annat villkor får åberopa något av dem, och
+  varje ny hängningsspärr kräver en egen rad i tabellen — med syfte, konstantens
+  namn och skälet till att spärren inte kan påverka utfallet av ett prov som blir
+  av. Kontrollen körs innan en testfil lämnas vidare:
+  `grep -n "setTimeout\|AbortSignal.timeout\|Promise.race\|performance.now"
+  tests/<fil>`, och varje träff ska ha en rad här.
+
+  **Undantag 1 — det enda villkor vars utfall beror på tid.** Räknarvillkoret i
+  atomicitetstestets punkt 4, motiverat i punkt 7. Det står ensamt och får inte
+  åberopas av något annat test.
+
+  **Undantag 2 — hängningsspärrar.** Alla är samma konstruktion av samma skäl: de
+  mäter ingenting och kan inte påverka utfallet av ett prov som blir av. De avgör
+  bara att en väntan som annars vore oändlig ger ett fallerat test i stället för
+  en körning utan exitkod, vilket `CLAUDE.md`:s krav på att kontrollera
+  utgångskoden annars gör omöjligt att uppfylla. **Varje hängningsspärr skrivs som
+  en namngiven konstant i sin testfil, aldrig som en literal, och på minst
+  30 000 ms** — gränsen är satt så högt just för att en långsam maskin inte ska
+  kunna göra spärren till ett falskt fel. Ett högre värde är alltid tillåtet, ett
+  lägre inte. Tre namn finns, ett per roll:
+
+  | Testfil | Konstant | Väntan spärren bryter | Villkoret den skyddar |
+  |---------|----------|-----------------------|-----------------------|
+  | `tests/storage.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets `startar`-meddelande, atomicitetstestets punkt 8 | Ett barn som aldrig startar (felstavad sökväg, syntaxfel, kastande import) |
+  | `tests/server.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets utskrivna rad i autostartfallet, punkt 4 under "Paket 5" | Ett barn som avslutas utan att skriva sin rad |
+  | `tests/server.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets `exit` i autostartens felgren, punkt 5 under "Paket 5" | `try`/`catch` runt `start()` i autostarten, som skriver felet och sätter `process.exitCode = 1`: ett barn som i stället fortsätter lyssna avslutas aldrig |
+  | `tests/lock.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets utskrivna rad, fall 1–3 under "Paket 5: två instanser mot samma datafil" och fall 7 under "Paket 5: två `start()` i samma process" | Ett barn som avslutas utan att skriva sin rad, t.ex. för att låset felaktigt blockerade det |
+  | `tests/lock.test.js` | `CHILD_START_TIMEOUT_MS` | Instans tvås `exit`, fall 1 och 4 under samma punkt, och barnets `exit` i fall 5 och 7 | `acquireDataFileLock` i `start`: ett barn som i stället startar fortsätter lyssna och avslutas aldrig |
+  | `tests/lock.test.js` | `RESPONSE_TIMEOUT_MS` | Svaret på `GET /api/entries` och `POST /api/entries`, mot ett barn eller mot en server i testprocessen | Att instans ett lever vidare: en instans som dött svarar aldrig |
+  | `tests/api.test.js` | `RESPONSE_TIMEOUT_MS` | `handleApiRequest` som aldrig fullbordar sitt löfte | Lyssnaren på `'error'` i `readBody`: utan den svarar ett avbrutet anrop aldrig |
+  | `tests/server.test.js` | `RESPONSE_TIMEOUT_MS` | Ett svar som aldrig kommer på sockeln, och `start()` som aldrig fullbordar sitt löfte | `try`/`catch` och `.catch(...)` runt hanteraranropet i `createServer` och `once('error', reject)` i `start` — utan dem kommer inget svar respektive inget avslut |
+  | `tests/lock.test.js` | `LOCK_RELEASE_TIMEOUT_MS` | Väntan på att låsfilen försvinner efter `server.close()` | `server.once('close', …)` i `start`: utan den släpps låset aldrig, och väntan på filen vore oändlig |
+
+  Raden för `LOCK_RELEASE_TIMEOUT_MS` är en tredje roll, inte en tredje sort:
+  väntan pekar på en **fil** i stället för på ett meddelande eller ett svar,
+  eftersom släppandet i `close`-hanteraren är ett löfte ingen anropare kan
+  invänta. Den fick ett eget namn av samma skäl som de två andra har var sitt —
+  ett namn per roll gör det synligt när en väntan byter innebörd. Konstanten
+  fanns i testfilen utan rad här; raden skrevs in efter granskarens fynd, av
+  samma slag som `LARDOMAR.md` (2026-09-07, en fjärde hängningsspärr byggdes utan
+  den rad ARKITEKTUR.md kräver för den).
+
+  Raden i `tests/api.test.js` fanns som en literal `5000` utan rad här; den
+  skrevs in i paket 5 efter granskarens fynd, och konstanten ersätter literalen.
+  Ett anrop i samma process som svarar, svarar på millisekunder, så 30 000 ms kan
+  inte göra ett prov som blir av till ett falskt fel. Priset står utskrivet i stället för att döljas: en mutationskörning där
+  spärren fäller testet tar 30 sekunder innan den ger exit 1, och det är billigare
+  än en körning utan exitkod.
 - **Kanonisk lagringsform testas separat från regelkedjan.** `isEntry` ska
   underkänna `amountSek: 199.999999999` och `199.000000001` och godkänna `0.01`,
   `199.5` och `9999999.99`. Fixpunktskörningen för `canonicalAmountSek` som
@@ -1427,8 +2441,8 @@ bara `entries.json`.
 Alla exporter är namngivna (`export function …`). Ingen `export default`.
 
 **Varje modul och varje export är märkt med sitt paket.** Rubriken bär paketet
-när hela modulen byggs i ett svep; `dates.js` är märkt per export eftersom den
-byggs i två omgångar. En export vars paket inte är påbörjat ska **inte** finnas
+när hela modulen byggs i ett svep; `dates.js` och `storage.js` är märkta per
+export eftersom de byggs i två omgångar. En export vars paket inte är påbörjat ska **inte** finnas
 i koden — att den saknas är avsiktligt och ingen lucka. När den byggs får den
 testfall i `tests/<modul>.test.js` i samma paket, utan undantag.
 
@@ -1779,28 +2793,70 @@ export function upcoming(entries: Entry[], todayIsoDate: string): UpcomingItem[]
 på hur många månader en period omfattar, konstanten på hur många månader ett år
 har. `schedule.js` importerar ingenting från `cost.js`.
 
-### `src/server/paths.js` [paket 4]
+### `src/server/paths.js` [paket 4; `getLockFilePath` i paket 5]
 
 ```js
 export function getDataFilePath(): string;             // läser HEMOCHEKONOMI_DATA_FILE vid varje anrop; tom sträng och bara blanktecken räknas som osatt
+export function getLockFilePath(): string;             // [paket 5] getDataFilePath() + '.lock'
 export function getWebDir(): string;
 export function getCoreDir(): string;
 ```
 
 Villkoret för när överstyrningen används, och regeln att värdet därefter
 returneras ordagrant utan `trim()`, står under "Lagring" och skrivs inte av här
-— ett facit per fråga.
+— ett facit per fråga. `getLockFilePath` läser sin sökväg genom
+`getDataFilePath()` och aldrig ur miljövariabeln själv: två uppslag vore två
+kopior av samma regel.
 
-### `src/server/storage.js` [paket 4]
+### `src/server/lock.js` [paket 5]
+
+```js
+export class DataFileLockError extends Error {}        // .message är svensk text; .cause satt när ett annat fel ligger bakom
+export async function acquireDataFileLock(): Promise<string>;                      // returnerar låsfilens sökväg; kastar DataFileLockError för rad L1-L5
+export async function releaseDataFileLock(lockPath: string | null): Promise<void>; // kastar aldrig; tar bort låsfilen bara om den bär den märkning sökvägen registrerades med
+```
+
+`releaseDataFileLock` har inget standardvärde för `lockPath`: `null`, `undefined`
+och en sökväg modulen inte har en post för betyder alla "ingenting att släppa",
+och anropet rör då inte disken. Ett andra släpp av samma sökväg är därmed
+ofarligt, och ingen anropare kan säga "släpp det som råkar vara taget". "Rör inte
+disken" är ett krav på **noll filoperationer** och inte på att låsfilen är
+oförändrad — hur det prövas står under "Teststrategi", fall 12.
+
+`acquireDataFileLock` avvisar med `DataFileLockError` för rad L1–L5, men inte för
+varje tänkbart fel: `fs.unlink` och `försök 2`:s `fs.writeFile` har ingen egen
+felhantering, och ett fel därifrån går ut rått. Skälet, mätningen bakom det och
+vad användaren då får se står under "Låset på datafilen — en instans i taget" i
+"Lagring" och skrivs inte av här.
+
+Beroenden modulen får ha: `node:fs/promises`, `node:fs` (bara för den synkrona
+`exit`-städningen), `node:path`, `randomUUID` från `node:crypto` samt
+`getLockFilePath` **och** `getDataFilePath` från `./paths.js`. `getDataFilePath`
+behövs därför att rad L1 och rad L5 namnger datafilen och inte låsfilen.
+`randomUUID` är samma inbyggda funktion som teknikvalstabellen redan har en rad
+för och ger inget nytt beroende. Vad funktionerna gör, i vilken ordning och med
+vilka strängar står under "Låset på datafilen — en instans i taget" i "Lagring"
+och skrivs inte om här. Modullokalt tillstånd: `heldLocks`, en `Map` från
+låssökväg till den märkning processen skrev i den filen; `lockQueue`, initierad
+till `Promise.resolve()`; och flaggan att `exit`-hanteraren är registrerad.
+Modulen är den enda i `src/server/` som rör låsfilen; `storage.js` känner inte
+till att den finns.
+
+### `src/server/storage.js` [paket 4; `updateEntries` i paket 5]
 
 ```js
 export const STORAGE_VERSION;                          // 1
 export class StorageError extends Error {}             // .message är svensk text; .cause satt när ett annat fel ligger bakom
-export async function loadEntries(): Promise<Entry[]>; // [] om filen saknas; köas inte
+export async function loadEntries(): Promise<Entry[]>; // [] om filen saknas; ställs i ioQueue som saveEntries
 export async function saveEntries(entries: Entry[]): Promise<void>;  // validerar före disken, köar, skriver atomärt
+// [paket 5] Läs–ändra–skriv innanför en enda köplats. null från mutera betyder "skriv inte".
+export async function updateEntries(mutera: (entries: Entry[]) => Entry[] | null): Promise<Entry[] | null>;
 ```
 
-Inga fler exporter tillkommer i paket 4. Temporärnamnet och löfteskedjan är
+Modulen får i paket 4 exakt de fyra första exporterna, och i paket 5 tillkommer
+`updateEntries` och ingenting annat. Vad den gör, i vilken ordning och med vilka
+fel står under "Läs–ändra–skriv i ett steg" i "Lagring" och skrivs inte om här.
+Temporärnamnet och löfteskedjan är
 modullokala: ett test som vill veta att temporärfilen är städad läser katalogen
 med `fs.readdir` i stället för att importera namnet och få en andra kopia av
 regeln.
@@ -1810,39 +2866,307 @@ Beroenden modulen får ha: `node:fs/promises`, `node:path`, `randomUUID` från
 `getDataFilePath` från `./paths.js`. `randomUUID` är samma inbyggda funktion som
 teknikvalstabellen redan har en rad för och ger inget nytt beroende.
 
+**När `saveEntries` får användas — bindande.** `saveEntries` skriver en **känd**
+lista, alltså en lista som inte kommer ur en läsning av samma fil. Varje
+läs-ändra-skriv går genom `updateEntries`, aldrig genom `loadEntries` följt av
+`saveEntries`; skillnaden mellan de två är 20 tappade poster på 20 omgångar i
+granskarens körning. Regeln gäller varje modul i `src/` och varje paket som
+kommer, inte bara `api.js` och inte bara paket 5.
+
+Mätt 2026-09-07 med `grep -rn "saveEntries" src/`: tio träffar, varav nio är
+kommentarer och en är definitionen — exporten har alltså ingen anropare i
+`src/`, och dess enda anropare är `tests/storage.test.js`. Att ta bort den
+prövades och förkastades: `updateEntries` läser innan den skriver, så den kan
+varken skriva över en fil som läsvägens tabell underkänner eller användas för
+att sätta ett känt utgångsläge — ett test som skriver en skadad fil och därefter
+vill lägga tillbaka en giltig lista skulle falla på läsvägen redan i sitt
+arrange-steg. `saveEntries` är den enda vägen till "filen ska innehålla exakt
+det här", och den vägen behövs. Exporten stannar därför, men regeln ovan får en
+automatisk spärr i stället för att bara stå skriven: se "Paket 5: `api.js`
+importerar inte `saveEntries`" i teststrategin.
+
 `saveEntries` kastar bara `StorageError`. Vilken sträng varje fel ger, i vilken
 ordning felen prövas och vad som gäller filen på disk står i "Beteende vid
-skrivning" under "Lagring". Modullokalt tillstånd: `writeQueue`, initierad till
-`Promise.resolve()`.
+skrivning" under "Lagring". Modullokalt tillstånd: `ioQueue`, initierad till
+`Promise.resolve()`. Både `loadEntries` och `saveEntries` utökar den kedjan
+synkront före sitt första `await`; skälet står under "Skrivvägen — namn, kö och
+ordning".
 
 ### `src/server/api.js` [paket 5]
 
 ```js
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean>;
+export const UNPARSABLE_MESSAGE;   // 'Kunde inte tolka anropet.' — ägs här, importeras av server.js för rad S1
 ```
+
+`UNPARSABLE_MESSAGE` är den enda av `api.js` strängar som en annan modul läser.
+Den exporteras därför att `server.js` behöver exakt samma text för en
+förfrågningsrad som inte går att tolka, och en handskriven kopia där vore en
+andra text för samma sak. Övriga strängar i `api.js` stannar i modulen.
 
 ### `src/server/server.js` [paket 5]
 
 ```js
-export function createServer(): http.Server;
-export async function start(port = Number(process.env.PORT) || 3000): Promise<http.Server>;
-// Startar automatiskt när filen körs direkt (npm start) och skriver då
-// "Hemochekonomi kör på http://127.0.0.1:3000" till stdout.
+export function resolvePort(env = process.env): number;                             // portvalet, facit nedan
+export function isDirectRun(argv1: string | undefined, moduleUrl: string): boolean;  // körs filen direkt?
+export function createServer(handler = handleRequest): http.Server;                  // handler ska returnera ett löfte, se nedan
+export async function start(port = resolvePort(process.env)): Promise<http.Server>;  // tar låset på datafilen först, binder porten sedan
+export class ServerStartError extends Error {}                                       // .message är svensk text; .cause satt till originalfelet
+export function asStartError(port: number, error: Error): ServerStartError;          // översätter ett listen-fel eller ett låsfel till svensk text, facit nedan
 ```
+
+`start` gör tre saker i den här ordningen, allt innanför samma `try`, så att
+invarianten nedan gäller varje fel som lämnar funktionen: den tar låset med
+`acquireDataFileLock()` och behåller sökvägen i en lokal variabel som är `null`
+tills låset är taget, den skapar servern med `createServer()`, och den binder
+porten. Misslyckas något av de två senare stegen anropas
+`releaseDataFileLock(<sökvägen>)` innan felet kastas vidare. Var det låset självt
+som fällde starten är variabeln fortfarande `null`, och anropet gör då
+ingenting — det är den enda vägen till "släpp ingenting", och `start` avgör den
+med sin egen variabel i stället för att fråga låsmodulen vad som råkar vara
+taget. Lyckas allt registreras `server.once('close', …)` som anropar
+`releaseDataFileLock(<sökvägen>)`. Skälet till ordningen, låsets regler och dess
+felsträngar står under "Låset på datafilen — en instans i taget" i "Lagring".
+
+Filen startar servern automatiskt när den körs direkt (`npm start`) och aldrig
+när den importeras. Villkoret är `isDirectRun(process.argv[1], import.meta.url)`,
+och kroppen anropar `start()` utan argument. Lyckas det skriver den exakt en rad
+till `stdout`:
+
+```
+Hemochekonomi kör på http://127.0.0.1:<port>
+```
+
+`<port>` är `server.address().port`, alltså den port som verkligen bands — inte
+siffran `3000` skriven i strängen. Med `PORT` osatt är de två samma tal.
+Misslyckas det skrivs ingenting till `stdout`; vad som då händer står under
+"Beteende vid start" nedan.
+
+#### Ett trasigt anrop får inte döda appen (bindande)
+
+Kravet under "Lagring" — servern får aldrig krascha på ett trasigt **lager** —
+gäller lika mycket ett trasigt **anrop**. Granskarens körning: förfrågningsraden
+`GET http://[v1.x]/ HTTP/1.1` fick `new URL(req.url, …)` att kasta
+`TypeError: Invalid URL` (`code: 'ERR_INVALID_URL'`), avvisningen blev ohanterad,
+processen dog med `EXIT=1` och nästa anrop mot samma port gav `000`. Fem av sex
+prövade rader gjorde detsamma. En `unhandledRejection`-lyssnare räknas inte som
+lösning: den byter kraschen mot en evig hängning, och sockeln lämnas öppen.
+
+Två spärrar, och de sitter på var sitt ställe därför att de svarar olika:
+
+1. **Sökvägen läses innanför `try`/`catch`.** Går `req.url` inte att tolka mot
+   basen `http://127.0.0.1` är det klientens förfrågan som är trasig, inte
+   appen: svaret är `400` och hanteringen är slut. Ingen annan kod i filen körs
+   för det anropet.
+2. **Hanteraranropet ligger i `try`/`catch`, och dess löfte i `.catch(...)`.**
+   `createServer` skriver
+
+   ```js
+   try {
+     handler(req, res).catch((error) => sendUnexpectedError(res, error));
+   } catch (error) {
+     sendUnexpectedError(res, error);
+   }
+   ```
+
+   och låter varken en avvisning eller ett kast nå `process`. De två
+   konstruktionerna är inte en dubblering och ingen av dem kan ersätta den
+   andra: `.catch(...)` når bara ett löfte som redan finns, medan ett synkront
+   kast sker innan löftet finns och därför bara fångas av `try`/`catch`.
+   Teststrategin kräver `500` för både `createServer(() => { throw … })` och
+   `createServer(async () => { throw … })`, och de två konstruktionerna
+   mutationsprövas var för sig. Spärren sitter här och inte inuti
+   `handleRequest`, därför att den ska täcka **varje** väg: sökvägsläsningen,
+   `handleApiRequest`, `serveStatic` och allt som tillkommer senare. En spärr
+   inuti `handleRequest` hade behövt upprepas för varje ny gren, och det är
+   precis den sortens andra kopia ägarregeln förbjuder.
+
+| # | Situation | Svar |
+|---|-----------|------|
+| S1 | `new URL(req.url, "http://127.0.0.1")` kastar | `400 { "error": "Kunde inte tolka anropet." }` |
+| S2 | Hanteraren kastar, avvisar eller returnerar något som inte är ett löfte, och `res.headersSent` är `false` | `500 { "error": "Ett oväntat fel inträffade. Försök igen." }` |
+| S3 | Hanteraren kastar, avvisar eller returnerar något som inte är ett löfte, och `res.headersSent` är `true` | Inget skrivs. Svaret är redan påbörjat, och sockeln stängs med `res.destroy()`. |
+
+Kropparna i rad S1 och S2 är `application/json; charset=utf-8` och har formen
+`{ "error": "<svensk text>" }`, samma form som `/api/*`. Rad S3 skickar ingen
+kropp alls, eftersom svaret redan är påbörjat. Skälet: rad S2 kan
+inträffa på vilken väg som helst, `/api/*` inräknad, så ett annat svarsformat
+här hade gett två format för samma svar. Det är också det enda undantaget från
+meningen under "Statiska filer" om att JSON-formen gäller `/api/*` — undantaget
+är dessa två rader och ingenting annat.
+
+Rad S1 återanvänder `Kunde inte tolka anropet.`, som ägs av `api.js` och
+exporteras därifrån som `UNPARSABLE_MESSAGE`. `server.js` importerar strängen
+och skriver ingen egen kopia: texten
+säger "anropet", inte "kroppen", och täcker därför båda fallen. En andra text
+för samma sak är just det ägarregeln under "Mappstruktur" förbjuder.
+
+Rad S2:s sträng är ny och ägs av `server.js`. Felets eget meddelande når aldrig
+användaren — det kan vara engelsk OS-text eller innehålla en sökväg, precis som
+skrivtabellens rad 7 finns för att hindra. Felet loggas inte heller: `src/`
+skriver ingenting till `stderr` utom vid start (se nedan), och ett svar som
+alltid kommer är hela hanteringen.
+
+`sendUnexpectedError` är modullokal. `createServer` tar däremot `handler` som
+argument med `handleRequest` som defaultvärde, av samma skäl som
+`handleApiRequest` tar `pathname`: annars finns ingen indata som når rad S2 och
+S3, och en gren ingen indata når är ingen spärr utan en osann uppgift om vad
+koden hanterar. `start()` och autostarten anropar `createServer()` utan argument,
+så produktionsvägen är oförändrad.
+
+**`handler` ska returnera ett löfte.** `handleRequest` är `async`, och varje
+hanterare ett test skickar in ska antingen vara `async` eller returnera
+`Promise.resolve()` på sin icke-kastande väg. Kontraktet har ett utskrivet
+utfall: returnerar `handler` något som inte är ett löfte kastar `.catch` ett
+`TypeError` inne i samma `try`, och det felet besvaras som rad S2 — eller som
+rad S3, om hanteraren redan hunnit skriva huvudena. Det är det avsedda
+beteendet och lagas inte med en normalisering
+(`Promise.resolve(handler(req, res)).catch(...)`): produktionsvägen har exakt en
+hanterare och den är `async`, ett brutet kontrakt är ett fel i appen, och `500`
+med svensk text är rätt svar på ett fel i appen — samma svar som varje annat
+kast från en hanterare får. En normalisering hade dessutom tyst tagit emot en
+andra sorts hanterare som ingen kod i projektet skickar in, alltså byggt för en
+framtid som inte står i planen. Kontraktsbrottet ska ha ett eget testfall,
+`createServer(() => undefined)`, se "Teststrategi". Att svaret blir rad S2 är
+kört och bekräftat av både byggaren och granskaren i paket 5.
+
+#### Beteende vid start
+
+`start` väntar på `listen` **och** på serverns `error`-händelse i samma
+`new Promise`: `server.once('error', reject)` sätts upp innan `server.listen`
+anropas. `listen` rapporterar sitt fel som en händelse och inte som en
+avvisning, så ett `await` utan den lyssnaren uppfylls aldrig och Node kastar
+händelsen vidare — granskarens körning gav `node:events:487 throw er` följt av
+`Error: listen EADDRINUSE: address already in use 127.0.0.1:3098` och sex rader
+stackspår, alltså noll svenska ord från `npm start`.
+
+Samma form som lästabellen och skrivtabellen: körordningen är tabellens ordning,
+och första sanna raden vinner. `<port>` är **argumentet till `start`**, aldrig
+`server.address()`, som är `null` när `listen` misslyckades.
+
+| # | Situation | Resultat |
+|---|-----------|----------|
+| 0 | `error instanceof DataFileLockError` | `ServerStartError` med `error.message` **ordagrant** och `cause` satt till låsfelet. Ingen ny sträng: texten är redan svensk och redan användarens svar, och rad 3 skulle annars skriva över den med en mening om porten. |
+| 1 | `error.code === 'EADDRINUSE'` | `ServerStartError`: `Port <port> är upptagen. Stäng programmet som använder porten, eller sätt PORT till ett annat portnummer och starta om Hemochekonomi.` |
+| 2 | `error.code === 'EACCES'` | `ServerStartError`: `Port <port> gick inte att öppna: åtkomst nekades. Sätt PORT till ett annat portnummer.` |
+| 3 | Något annat fel som lämnar `start` — från `listen`, eller från de två anrop i `acquireDataFileLock` som inte har egen felhantering | `ServerStartError`: `Servern kunde inte startas på port <port>.` |
+| – | Inget fel | Löftet uppfylls med servern, som lyssnar på `127.0.0.1:<port>`. |
+
+Rad 1:s text är omskriven i paket 5 och den gamla lydelsen är förbjuden. Den
+löd `… Hemochekonomi kör troligen redan på http://127.0.0.1:<port>. Sätt PORT
+till ett annat portnummer om du vill starta en till.` och bad alltså användaren
+på svenska att göra just det som förstör hens data — två instanser mot samma
+datafil, mätt till 20 tappade poster på 20 omgångar. Efter låset är "Hemochekonomi
+kör redan" dessutom rad L1:s svar och inte den här radens: när porten är upptagen
+och låset gick att ta är det något annat program som håller porten. Texten säger
+därför inte längre vad som håller porten och lockar inte till en andra instans.
+
+`cause` är satt till originalfelet på alla fyra raderna. `EACCES` får en egen rad
+och inte den gemensamma därför att åtgärden är en annan än vid `EADDRINUSE`:
+appen kör inte redan, utan porten är otillåten, och texten ska inte be
+användaren leta efter ett fönster som inte finns. Vilka portnummer som ger
+`EACCES` i den här miljön står inte utskrivet — det är ett påstående om
+operativsystemet som ingen har kört.
+
+**Invariant:** `start` avvisar alltid med `ServerStartError`, aldrig med ett rått
+OS-fel, och `.message` innehåller aldrig engelsk text som
+`address already in use`. Rad 3 finns för att göra invarianten sann även för ett
+fel ingen har sett, och den gäller varje fel som lämnar `start` — inte bara
+`listen`-händelsen. Hela kroppen ligger innanför spärren, precis som varje
+`node:fs`-anrop ligger innanför `saveEntries` rad 7.
+
+Översättningen ägs av `asStartError(port, error)`, som är exporterad. Skälet är
+teststrategins: ett villkor med en ägare testas på ägaren, och rad 2 och 3 går
+inte att provocera deterministiskt i den här miljön — med en exporterad funktion
+provas de med ett påhittat fel (`{ code: 'EACCES' }`), medan rad 1 dessutom
+provas på riktigt. Samma skäl som gjorde `canonicalAmountSek` och
+`isValidEntryId` till exporter.
+
+Autostarten fångar avvisningen, skriver `error.message` följt av `\n` till
+`stderr` med `process.stderr.write` och sätter `process.exitCode = 1`. Inget
+stackspår, ingen engelsk text och ingen rad till `stdout`. `process.stderr.write`
+och inte `console.error`: `LARDOMAR.md` (2026-09-07, felsökningsutskrifter
+lämnades kvar) gör `console.error` i `src/` till ett stoppkriterium i
+diffgranskningen, och startfelet är appens svar till användaren, inte en
+felsökningsutskrift. Raden med `console.log` för det lyckade fallet är oförändrad
+och berörs inte av den kontrollen, som läser diffens rader.
+
+Processen avslutas därefter med exitkod `1`: inget handtag är kvar när starten
+misslyckats, vare sig felet kom från låset eller från `listen`. Byggarens
+körning av `npm start` mot en upptagen port gav den koden, och granskaren
+bekräftade den. Kravet har dessutom sedan paket 5 ett
+automatiskt testfall — punkt 5 under "Paket 5" i teststrategin — som kräver
+exitkod `1`, tomt `stdout` och exakt rad 1:s sträng följd av `\n` på `stderr`.
+
+Efter ett lyckat `listen` sitter `once('error', reject)` kvar på ett redan
+uppfyllt löfte, så ett senare `error` från servern sväljs i stället för att
+kasta. Det är avsiktligt och följer kravet att servern aldrig får krascha; någon
+`removeListener` ska inte läggas till.
+
+**Facit för `resolvePort` — ett värde per rad.** `resolvePort` är uttrycket
+`Number(env.PORT) || DEFAULT_PORT` och ingenting mer: ingen validering, ingen
+trimning och inget nytt felmeddelande. Sökvägsfiltret är fortfarande den enda
+validering av användarinput som `server.js` gör själv. `DEFAULT_PORT` är `3000`,
+är modullokal och exporteras inte. Siffran har därmed en ägare och ska inte
+skrivas som literal någon annanstans i `server.js`.
+
+| `env.PORT` | `resolvePort(env)` |
+|------------|--------------------|
+| osatt (`undefined`) | `3000` |
+| `''` | `3000` |
+| `'   '` | `3000` |
+| `'abc'` | `3000` |
+| `'0'` | `3000` |
+| `'8080'` | `8080` |
+
+Varje rad är körd av byggaren i paket 5 och stämmer. Skulle uttrycket och
+tabellen någon gång ge olika svar är uttrycket facit och tabellen det som
+rättas.
+
+Raden `'0'` står utskriven därför att den är skälet till att ett test inte kan
+be om en ledig port via `PORT` — `0` är falskt, så `PORT=0` ger `3000`. Testerna
+får sin port av kärnan i stället, med `listen(0, …)` respektive den sond som
+beskrivs under "Teststrategi".
+
+De två första exporterna finns för att portvalet och autostartvillkoret annars
+inte går att pröva: båda nås bara via `start()` utan argument respektive via
+att filen körs direkt, och ingen indata inifrån processen når dem utan att en
+port bindas. Skälet i sin helhet står i beslutsloggen.
 
 ### HTTP-API [paket 5]
 
-Alla svar är `application/json; charset=utf-8` utom de statiska filerna. Alla
-felsvar har formen `{ "error": "<svensk text>" }` och valideringsfel har
-dessutom `{ "fieldErrors": [{ "field": "...", "message": "..." }] }`.
+Avsnittet gäller `/api/*`. Varje svar med en kropp är
+`application/json; charset=utf-8`, varje felsvar med en kropp har formen
+`{ "error": "<svensk text>" }`, och valideringsfel har dessutom
+`{ "fieldErrors": [{ "field": "...", "message": "..." }] }`. Två svar saknar
+kropp och därmed båda formerna: `204` från `DELETE` här, och `404` från en okänd
+statisk sökväg under "Statiska filer". De statiska filerna har sina egna
+`Content-Type`, också de under "Statiska filer".
+
+**Tabellen räknar upp varje statuskod respektive väg kan ge.** Kontrollen är
+mekanisk och körs varje gång tabellen ändras: `grep -n "sendJson(res, "
+src/server/api.js` och `grep -n "writeHead(" src/server/*.js`, och varje
+statuskod som kan komma ut ur en väg ska stå på den vägens rad. En avgränsning
+av ett svar ("vid internt fel från `createEntry`") får bara stå kvar om ingen
+annan kodväg kan ge samma statuskod på den raden.
 
 | Metod | Väg | Body in | Svar |
 |-------|-----|---------|------|
-| `GET` | `/api/entries` | – | `200 { "entries": Entry[] }` |
-| `POST` | `/api/entries` | `{ name, amountSek, interval, startDate, category }` | `201 { "entry": Entry }` · `400 { error, fieldErrors }` vid ogiltig post · `400 { error: "Kunde inte tolka anropet." }` vid trasig JSON · `500 { error }` vid internt fel från `createEntry` (se nedan) |
-| `DELETE` | `/api/entries/<id>` | – | `204` utan body · `404 { "error": "Posten finns inte." }` |
+| `GET` | `/api/entries` | – | `200 { "entries": Entry[] }` · `500 { error }` med lagringens text |
+| `POST` | `/api/entries` | `{ name, amountSek, interval, startDate, category }` | `201 { "entry": Entry }` · `400 { error, fieldErrors }` vid ogiltig post (vad `error` innehåller står nedan) · `400 { error: "Kunde inte tolka anropet." }` vid trasig JSON · `500 { error }` vid internt fel från `createEntry` (se nedan) **eller** med lagringens text |
+| `DELETE` | `/api/entries/<id>` | – | `204` utan body · `404 { "error": "Posten finns inte." }` · `500 { error }` med lagringens text |
 | annat | `/api/*` | – | `404 { "error": "Okänd adress." }` eller `405 { "error": "Metoden stöds inte." }` |
+
+"Lagringens text" är `StorageError.message` ordagrant, alltså en rad ur
+tabellerna "Beteende vid läsning" och "Beteende vid skrivning" under "Lagring".
+Alla tre vägarna rör datafilen och kan därför ge den, och `api.js` skriver aldrig
+om texten: den är redan svensk och avsedd för användaren.
+
+Utöver tabellen kan varje väg — `/api/*` inräknad — ge serverskiktets `500` med
+`Ett oväntat fel inträffade. Försök igen.` om något kastar utanför `api.js` egna
+`try`/`catch`. Den raden ägs av `server.js` och står under "Ett trasigt anrop får
+inte döda appen".
 
 `amountSek` i `POST`-body får vara antingen `string` eller `number`. Servern
 gör ingen egen konvertering — den skickar råvärdet vidare till
@@ -1856,9 +3180,67 @@ returnerar `ValidationResult` både vid formulärfel och vid ett internt
 eftersom anropet var korrekt och felet ligger i appen. Alla övriga
 valideringsfel ger `400` med `fieldErrors`.
 
+**Vad `error` innehåller i ett `400` med `fieldErrors` — bindande.** `fieldErrors`
+är `createEntry`-resultatets `errors` i oförändrad ordning, och `error` är
+`fieldErrors[0].message`. De två är alltid ordagrant samma sträng; en
+implementation som skriver någon annan text i `error` är fel.
+
+Ordningen är **fältens**, inte regelkedjans: `errors` kommer i den ordning
+fälten prövas av `validateEntryDraft` (ordningen står under "Valideringsregler
+och exakta felmeddelanden" och skrivs inte om här), och eftersom bara ett fel
+per fält returneras är `fieldErrors[0]` felet på det första fält i den ordningen
+som är ogiltigt. Regelkedjans ordning inom ett fält avgör bara *vilket*
+meddelande det fältet får, aldrig vilket fält som står först i listan.
+
+Ingen egen sträng införs för det här svaret, och det är skälet till valet: varje
+text som beskriver ett ogiltigt fält har redan en ägare i felmeddelandetabellen,
+så en ny sträng vore en andra text för samma sak. Den skulle dessutom aldrig nå
+användaren — `app.js` visar `fieldErrors` vid sina fält och använder `error`
+bara när svaret saknar `fieldErrors` (punkt 6 under "`src/web/app.js` —
+ansvar").
+
+Facit, som ska stå som testfall i `tests/api.test.js`: en `POST` med tomt `name`
+och `amountSek: 'abc'` ger
+
+```json
+{
+  "error": "Namnet får inte vara tomt.",
+  "fieldErrors": [
+    { "field": "name", "message": "Namnet får inte vara tomt." },
+    { "field": "amountSek", "message": "Beloppet måste vara ett tal." }
+  ]
+}
+```
+
+med statuskoden `400`. Ett anrop där bara `amountSek` är ogiltigt ger
+`error: "Beloppet måste vara ett tal."` — alltså det enda fältfelets meddelande.
+
 `<id>` i `DELETE`-vägen jämförs som en exakt sträng mot `entry.id`. Servern
 trimmar inte, normaliserar inte och tolkar inte id:t — en post som inte matchar
 exakt finns inte, och svaret blir `404`.
+
+**Hur `POST` och `DELETE` rör datafilen — bindande.** Båda gör ett enda anrop
+till `updateEntries` (se "Läs–ändra–skriv i ett steg" under "Lagring"), aldrig
+`loadEntries` följt av `saveEntries`. `GET` läser bara och använder
+`loadEntries`.
+
+| Väg | `mutera(entries)` returnerar | Svar |
+|-----|------------------------------|------|
+| `POST` | `[...entries, result.value]` — alltid en lista, aldrig `null` | `201 { entry }` |
+| `DELETE` | `entries.filter(e => e.id !== id)` när något `id` matchar, annars `null` | `204` respektive `404 { error: "Posten finns inte." }` när `updateEntries` gav `null` |
+
+Beslutet "finns posten?" fattas alltså inuti köplatsen, av `mutera`, och inte av
+en läsning före den. Det ger ett bestämt facit också när två anrop överlappar:
+`Promise.all([DELETE x, DELETE x])` med samma `id` ger exakt ett `204` och exakt
+ett `404`, och posten är borta. Skulle `404` avgöras av en läsning utanför
+köplatsen kunde båda anropen svara `204` för en borttagning som bara blev av en
+gång.
+
+`createEntry` anropas **före** `updateEntries`, inte inuti `mutera`: ett
+valideringsfel ska ge `400` utan att någon köplats tas i anspråk, precis som
+skrivvägens rad 1–3 avvisar utan att röra disken. `mutera` gör därför inget annat
+än att lägga till respektive ta bort en post i den lista den får, och kastar
+aldrig.
 
 Servern beräknar inte totaler. Webbläsaren importerar `cost.js` och
 `schedule.js` och räknar själv — samma kod, ett facit.
@@ -1871,9 +3253,28 @@ Servern beräknar inte totaler. Webbläsaren importerar `cost.js` och
 | `/style.css` | `src/web/style.css` | `text/css; charset=utf-8` |
 | `/app.js` | `src/web/app.js` | `text/javascript; charset=utf-8` |
 | `/core/<fil>.js` | `src/core/<fil>.js` | `text/javascript; charset=utf-8` |
-| övrigt | – | `404` |
+| övrigt | – | – (svaret är `404` utan kropp, se nedan) |
 
-`charset=utf-8` är obligatoriskt på alla svar, och `index.html` ska ha
+**En okänd statisk sökväg svarar `404` utan kropp och utan `Content-Type` —
+bindande.** Statusraden är hela svaret. Formen `{ "error": "<svensk text>" }`
+gäller `/api/*` och serverskiktets två egna felsvar (rad S1 och S2 under "Ett
+trasigt anrop får inte döda appen"), och ingenting annat: strängen
+`Okänd adress.` ägs av `api.js`
+(se HTTP-API-tabellen), och en kopia av den i `server.js` vore en andra text för
+samma sak — just det ägarregeln under "Mappstruktur" förbjuder. Att den statiska
+vägen klarar sig utan text är inget undantag från regeln att all text mot
+användaren är svensk: en okänd statisk sökväg är webbläsarens begäran om en fil
+som inte finns, inte en människas fråga, och svaret visas aldrig i
+gränssnittet.
+
+Facit, som ska stå som testfall: `GET /finns-inte` ger `404` med tom kropp,
+medan `GET /api/finns-inte` ger `404` med kroppen `{"error":"Okänd adress."}`
+och `Content-Type: application/json; charset=utf-8`. Skillnaden mellan de två
+`404`-svaren är avsiktlig.
+
+`charset=utf-8` är obligatoriskt på varje svar som har en kropp — de två svar
+som saknar kropp är `204` från `DELETE` och `404` från en okänd statisk sökväg —
+och `index.html` ska ha
 `<meta charset="utf-8">`. Utan det blir å, ä och ö förvanskade i webbläsaren.
 Endast filnamn som matchar `/^[a-z0-9-]+\.js$/` får slås upp under `/core/` —
 ingen sökvägssammanslagning med användarens indata utan den kontrollen.
@@ -1897,12 +3298,115 @@ Ingen ny logik. Varje punkt är märkt med det paket där den byggs:
    Beloppsfältet skickas som den råa strängen från formuläret — ingen egen
    `parseFloat` i `app.js`.
 6. **[paket 5]** Visa fel som **inte** hör till ett fält i formuläret i
-   formulärets allmänna felruta: `error`-texten från ett `500`-svar, och varje
-   `fieldError` vars `field` saknar motsvarande formulärelement. Inget felsvar
-   får leda till att ingenting syns på skärmen.
+   formulärets allmänna felruta. Fältfelen visas vid sina fält, och de allmänna
+   fallen är två: svarets `error`-text när svaret inte bär något fältfel (det
+   gäller varje `500` och `400 { error: "Kunde inte tolka anropet." }`), och
+   `GENERAL_ERROR` när svaret varken bär en `error`-sträng eller något fältfel.
+   Inget felsvar får leda till att ingenting syns på skärmen; de exakta fallen
+   för `GENERAL_ERROR` står under "Den allmänna felrutans egen text" nedan.
 7. **[paket 5]** Anropa `DELETE /api/entries/<id>` och uppdatera vyn.
 8. **[paket 6]** Visa tomläge när listan är tom: "Du har inga poster ännu. Lägg
    till din första utgift ovan." — inte en tom skärm.
+
+#### Hur `showErrors` letar upp fälten [paket 5]
+
+**`fieldErrors` bär alltid bara de fem formulärfälten** — `name`, `amountSek`,
+`interval`, `startDate`, `category` — och varje sådant fält har ett
+`#error-<fält>` i `index.html`. Kravet är bindande för `api.js`: ett `field`
+utanför den listan får aldrig lämna servern som ett `fieldError`, och det enda
+sjätte fält valideringen känner till, `id`, skickas som `500 { error }` utan
+`fieldErrors` (se "Statuskoden avgörs av felets ursprung" under "HTTP-API").
+
+Därför gäller: **`showErrors` går igenom de fem kända fälten och letar upp deras
+fel i svaret — aldrig tvärtom.** För varje fält i listan söks det första
+`fieldError` med det `field`, och finns det sätts texten vid fältet. Visades
+inget fältfel alls visas den allmänna texten enligt punkt 6: svarets `error` när
+den är en sträng, annars `GENERAL_ERROR`.
+
+Villkoret för den allmänna rutan är alltså "inget fältfel visades". För varje
+svar `api.js` kan ge sammanfaller det med formuleringen under "Den allmänna
+felrutans egen text" nedan, eftersom ett svar med `fieldErrors` alltid också bär
+en `error`-sträng — den är `fieldErrors[0].message`. De två villkoren kan bara
+skilja sig för ett svar som bryter mot HTTP-API-kontraktet, och då är
+`GENERAL_ERROR` rätt svar: något syns.
+
+Formuleringen är vald för att inte beordra en gren ingen indata kan nå. Den
+tidigare lydelsen krävde att `app.js` samlade upp "varje `fieldError` vars
+`field` saknar motsvarande formulärelement" och visade dem i den allmänna
+felrutan, men med kravet ovan kan ingen sådan post finnas: granskaren fann grenen
+onåbar, och det var den här punkten som beordrade den. Med uppslaget vänt
+försvinner både grenen och risken — ett okänt `field` kan varken hittas eller slå
+i en `null`-referens, det ignoreras bara, och den allmänna rutan visar då svarets
+`error` (som enligt "HTTP-API" är `fieldErrors[0].message`). Kravet "inget
+felsvar får leda till att ingenting syns" håller alltså även om `api.js` skulle
+bryta mot sitt eget kontrakt.
+
+`GENERAL_ERROR`-grenen inuti `showErrors` står kvar och är något annat än den
+strukna: den prövar `typeof body.error === 'string'` på ett värde som kommer ur
+`JSON.parse` av bytes appen inte har skrivit, och den nås av varje svar utan
+läsbar JSON-kropp — `readJson` svarar `{}` för en kropp som inte gick att tolka.
+Den indata som når grenen ska finnas som ett konkret testfall i
+`tests/app.test.js`, se kravlistan under "Teststrategi".
+
+#### Knappen spärras under ett pågående anrop [paket 5]
+
+Serverns korrekthet och gränssnittets spärr är två olika frågor, och båda ska
+byggas. Bindande: **den knapp som utlöste ett anrop sätts till `disabled`
+innan `fetch` startar och tillbaka i ett `finally` när svaret kommit eller
+anropet avvisats.** Det gäller Spara-knappen i formuläret och den Ta bort-knapp
+som klickades.
+
+**Ingen ny text mot användaren, men en ny regel i `style.css` — och den är
+bindande.** `button.primary` och `button.remove` sätter egen `background`, egen
+`color` och `cursor: pointer`, och de reglerna åsidosätter webbläsarens egen
+gråtoning av en avstängd knapp: utan en regel för det spärrade läget ser knappen
+oförändrad ut och visar handpekare medan den inte går att klicka på, alltså en
+spärr användaren inte kan se. `style.css` ska därför ha en regel som gäller både
+`button.primary:disabled` och `button.remove:disabled` och ger dem ett utseende
+som skiljer sig från det klickbara läget: en `cursor` som inte är `pointer` och
+en dämpning av knappen. Regeln ska stå bland knappreglerna, efter dem den
+åsidosätter, och gälla också under `:hover` — en spärrad knapp får inte lysa upp.
+Hur dämpningen görs (`opacity`, `filter`, färg) är byggarens val; kravet är att
+den spärrade knappen inte ser klickbar ut. Ingen sträng tillkommer: spärren syns,
+den skrivs inte.
+
+Spärren skyddar mot ett andra klick på **samma** knapp. Den skyddar inte mot två
+klick på olika Ta bort-knappar, och ska inte göra det: att ta bort två poster
+snabbt efter varandra är ett rimligt handgrepp, och det är serverns
+`updateEntries` som gör det korrekt. Att i stället spärra hela listan under varje
+anrop förkastades — det gör gränssnittet trögt för att dölja ett fel som är
+lagat på rätt ställe.
+
+Att en knapp som redan är borttagen ur DOM:en (listan renderas om efter ett
+lyckat `DELETE`) får `disabled = false` i sitt `finally` är ofarligt och kräver
+ingen extra kontroll.
+
+#### Den allmänna felrutans egen text [paket 5]
+
+Punkt 6 kräver att något alltid syns, men servern kan inte alltid skicka en
+text: `fetch` avvisas när servern inte svarar, och ett svar kan sakna både
+`error` och `fieldErrors`. För de fallen — och bara för dem — har `app.js` en
+egen sträng, och den är bindande ordagrant:
+
+```js
+const GENERAL_ERROR = 'Det gick inte att nå appens server. Försök igen.';
+```
+
+Den visas i formulärets allmänna felruta i exakt dessa fall:
+
+- `fetch` avvisas — vid sidladdningen, vid Spara och vid Ta bort.
+- Svaret har en annan statuskod än den lyckade (`200`, `201`, `204`) och
+  kroppen bär varken en `error`-sträng eller några `fieldErrors`; en kropp som
+  inte gick att tolka som JSON hör hit.
+
+Bär svaret en `error`-sträng visas **den**, ordagrant. `GENERAL_ERROR` får
+aldrig ersätta en text servern har skickat, och den får inte visas tillsammans
+med en sådan text.
+
+Strängen står här och inte bara i koden därför att all text mot användaren är
+svensk och bestäms i den här filen. Att den nämner servern och inte felet är
+avsiktligt: de två fallen ovan betyder båda att svaret inte gick att förstå,
+och användarens enda möjliga åtgärd är att försöka igen.
 
 `index.html` följer samma indelning: formulär och lista i paket 5, totalrutan i
 paket 6, listan över kommande dragningar i paket 7.
@@ -1913,6 +3417,33 @@ visas för användaren.
 ---
 
 ## Beslutslogg
+
+**Ingen reservation i den bindande texten (bindande för den här filen).** Filen
+innehåller inga påståenden märkta som ovissa, och markeringen "inte kört av
+arkitekten" finns inte längre. Tre regler ersätter den:
+
+1. Ett påstående om ett utfall — en statuskod, en exitkod, en sträng, ett
+   returvärde, ett felmeddelande — skrivs in i den bindande texten först när
+   någon har kört det, och skrivs då med vem som körde det ("byggarens körning",
+   "granskarens körning").
+2. Går utfallet inte att köra när beslutet fattas skrivs det **inte alls**.
+   Kravet formuleras i stället som något byggaren ska köra och redovisa: ett
+   testfall, en mutation, en inklistrad kryssrad. Ett krav behöver inget facit
+   för att vara bindande.
+3. En öppen fråga står som en punkt i den här loggen, aldrig som en reservation
+   mitt i ett krav. Loggen är det enda stället i filen där något får vara öppet.
+
+Skälet är mätt: markeringen stod på varje rad som
+`grep -n "inte kör\(t\|d\|da\) av arkitekten" ARKITEKTUR.md` träffade, fem av dem
+besvarade av en körning som ingen skrev in, och samma order stod på tre olika
+rader — den som rättade en av dem hade fortfarande fel på två. En bindande fil
+kan inte innehålla frågor. Samtliga markeringar är strukna: sökningen ovan ger
+efter rättningen en enda träff i filen, punkten
+`Mekanismen "inte kört av arkitekten" avskaffades` i beslutsloggen, som beskriver
+just att mekanismen är avskaffad. Det radbrutna omnämnandet i stycket ovan träffas
+inte av mönstret, eftersom raden bryter mitt i frasen; med den bredare sökningen
+`grep -n "inte kört\|inte körd\|inte körda\|ej kört" ARKITEKTUR.md` är träffarna
+två, och båda är sådana omnämnanden (arkitektens körning 2026-09-07).
 
 - **Node.js med inbyggd HTTP-server och webbläsaren som gränssnitt** — enda
   körsätt som ger ett grafiskt gränssnitt med noll beroenden och som är
@@ -2246,10 +3777,11 @@ visas för användaren.
   utan tolkning; utan dem träffar den tvåan i `divideRoundHalfUp` och de två `15`
   i `AMOUNT_PATTERN`. **Utfört i paket 3:** `src/core/entry.js` importerar
   `ORE_PER_SEK`, och alla fem literalerna i `canonicalAmountSek` och
-  `checkAmountSek` läser numera konstanten. **Kvar i paket 3:** de kommentarer i
-  `checkAmountSek` som citerar uttrycket med siffran (`v * 100` och
-  `Math.round(v * 100) / 100`) ska skrivas om till `ORE_PER_SEK`, så att
-  kommentar och kod inte pekar ut olika ägare. **Kvar i paket 7:** den andra
+  `checkAmountSek` läser numera konstanten. **Utfört i paket 3:** kommentarerna i
+  `checkAmountSek` som citerade uttrycket med siffran skrevs om till
+  `v * ORE_PER_SEK` respektive `Math.round(v * ORE_PER_SEK) / ORE_PER_SEK`, så
+  att kommentar och kod pekar ut samma ägare — granskarens körning 2026-09-04 av
+  `grep -n '\b100\b' src/core/entry.js` gav noll träffar. **Kvar i paket 7:** den andra
   träffen, `12` i rollen "högsta månadsnummer" i `dates.js` — månadsraden i
   `parseIsoDate` tas bort, gränsen ägs av `daysInMonth`; villkoret och de tre
   datumen som ska fortsätta ge `null` står i regeltexten under "Mappstruktur".
@@ -2315,16 +3847,23 @@ visas för användaren.
   tid varje skrivning tar. Kön lades därför till också, och facit skrevs ut i
   stället för att lämnas åt implementationen: anropsordningen avgör, båda
   löftena uppfylls och sista anropet vinner på disk. Två alternativ förkastades.
-  Ett fillås eller en `.lock`-fil löser inget problem i `PLAN.md`, kräver ett
-  eget svenskt felmeddelande och en egen upplåsning efter en krasch. Att låta
-  det andra anropet kasta förkastades därför att paket 5 gör en `POST` per
-  klick: två snabba klick på Spara ska spara, inte ge ett fel användaren inte
-  kan tolka. **Byggaren ska:** bygga namnet som
-  `` `${filePath}.${process.pid}.${randomUUID()}.tmp` ``, utöka `writeQueue`
-  synkront före funktionens första `await`, låta kedjan gå vidare även efter en
-  avvisning, och köra överlappningstestet med sin mutation. (påverkat av
-  lärdom: **ja**, `2026-09-02 — lagring: två överlappande saveEntries delar
-  samma .tmp-namn och förstör datafilen`)
+  Ett fillås eller en `.lock`-fil förkastades **för den här frågan**: kön löser
+  den inom processen, och ett lås hade krävt ett eget svenskt felmeddelande och
+  en egen upplåsning efter en krasch. Den avvägningen gällde två anrop i samma
+  process och gäller inte två processer — det beslutet är omprövat i paket 5, se
+  "Ett lås på datafilen" längst ned i loggen, och de två kostnaderna är då
+  betalda i stället för undvikna. Att låta det andra anropet kasta förkastades
+  därför att två snabba klick på Spara ska spara, inte ge ett fel användaren inte
+  kan tolka; klickvägen går sedan paket 5 genom `updateEntries`, som ärver kön
+  och samma facit. **Byggaren ska:** bygga namnet som
+  `` `${filePath}.${process.pid}.${randomUUID()}.tmp` ``, utöka den modullokala
+  löfteskedjan synkront före funktionens första `await`, låta kedjan gå vidare
+  även efter en avvisning, och köra överlappningstestet med sin mutation.
+  Kedjan hette `writeQueue` när det här beslutet skrevs och heter `ioQueue`
+  sedan beslutet om `loadEntries` längst ned i den här loggen; namnet står på
+  ett ställe, i det beslutet. (påverkat av lärdom: **ja**, `2026-09-02 —
+  lagring: två överlappande saveEntries delar samma .tmp-namn och förstör
+  datafilen`)
 - **Skrivvägen fick en egen tabell, "Beteende vid skrivning", med sju rader och
   en slutrad som fångar det oväntade** — grundorsaken till alla fyra
   underkännandena i paket 4 var att den här filen bara hade en tabell för
@@ -2375,12 +3914,14 @@ visas för användaren.
   trädet. Assertionen formulerades som "gamla listan eller nya listan, aldrig
   ett fel" därför att den är sann oavsett när `SIGKILL` landar — då kan testet
   vara deterministiskt utan att asserta på tid. Att fördelningen mellan de två
-  utfallen blir ett redovisningskrav och inte en assertion följer av
-  determinismkravet, precis som mätningen av snabbvägen i `checkName`. Att
+  utfallen blev ett redovisningskrav och inte en assertion **var fel och är
+  ändrat**: den lösningen lät mutationen överleva medan den ena grenen kördes
+  noll gånger. Facit står i punkten om det mätta tidsfönstret längre ned. Att
   temporärfilen ligger kvar efter ett `SIGKILL` skrevs in som ett utpekat
-  undantag i stället för att lösas med en sveprutin. **Byggaren ska:** följa de
-  sju punkterna under "Teststrategi" bokstavligt och klistra in mutationens
-  fallerande rad med filnamn och radnummer. (påverkat av lärdom: **ja**,
+  undantag i stället för att lösas med en sveprutin. **Byggaren ska:** följa
+  atomicitetstestets punkter under "Teststrategi" bokstavligt och klistra in
+  mutationens fallerande rad med filnamn och radnummer. (påverkat av lärdom:
+  **ja**,
   `2026-09-02 — test: atomicitetstestet avbryter aldrig en skrivning och bevisar
   ingenting`)
 - **Läsvägens sista sträng naglades fast, lästabellen numrerades, och en blank
@@ -2406,3 +3947,780 @@ visas för användaren.
   StorageError` för strängkravet, och `2026-09-02 — dokumentation:
   totalYearlyOre-tabellen numrerar spärrarna i en ordning koden inte följer` för
   tabellordningen)
+- **`loadEntries` lades i samma kö som `saveEntries`, kön bytte namn till
+  `ioQueue`, och omförsök på `EPERM`/`EBUSY` valdes bort** — meningen
+  "`loadEntries` köas inte" motiverades med vad läsaren ser, men det är inte den
+  riktningen som går sönder: granskarens 25 omgångar av
+  `Promise.allSettled([loadEntries(), saveEntries(liten)])` mot en fil på
+  37 577 818 byte gav 25 avvisade skrivningar med `cause=EPERM`. Paket 5 gör
+  `GET` och `POST` mot samma fil i samma process, så felet nås av ett klick på
+  Spara medan listan läses. `LARDOMAR.md` (2026-09-04) ger två vägar, och kön
+  valdes därför att den är den enda av dem som gör svaret bestämt: skrivningens
+  sluttid ändras inte, ingen ny felsträng behövs, ingen ny tidskonstant införs,
+  och facit går att skriva ut för båda anropsordningarna. Omförsök förkastades av
+  tre skäl. De gör skrivningens sluttid obestämd och kräver både en övre gräns
+  och ett eget svenskt meddelande när försöken tar slut, alltså en åttonde rad i
+  en tabell som redan har sju. Antalet försök och pausernas längd hade blivit tal
+  som ingen kört, vilket är precis det `LARDOMAR.md` förbjuder (2026-08-18,
+  testkommandot, och 2026-09-02, exakthetspåståendet). Och de hade gjort rad 6:s
+  befintliga provokation — datafilen hålls öppen med `fs.open` under skrivningen
+  — till ett testfall som måste vänta ut hela omförsökskedjan innan det får sitt
+  svar. Vad kön inte löser står utskrivet i stället för att lovas bort: en
+  handtagare utanför modulen (ett testfall, en annan process, ett virusskydd, en
+  filsynk) kan fortfarande ge `EPERM`, och svaret är då rad 6:s meddelande — ett
+  tydligt svenskt fel, inte en skadad fil. Visar sig den situationen i en körning
+  där ingen läsning i samma process pågår är det underlag för att ompröva
+  omförsöken; utan en sådan körning byggs de inte. **Byggaren ska:** döpa om
+  `writeQueue` till `ioQueue`, låta `loadEntries` läsa `getDataFilePath()`
+  synkront och utöka kedjan synkront före sitt första `await`, lägga hela
+  `fs.readFile`-arbetet inuti kedjan, och köra det nya överlappningstestet med
+  sin mutation. (påverkat av lärdom: **ja**, `2026-09-04 — lagring: en pågående
+  loadEntries får saveEntries att misslyckas med EPERM`)
+- **SIGKILL-testets tidsfönster härleds ur en mätning i testet självt, och båda
+  utfallen räknas i en assertion** — fönstret `i = 0 … 19` ms stod som ett
+  bindande tal i den här filen utan att någon hade mätt när barnet börjar skriva.
+  Granskarens mätning gav cirka 45 ms, så varje dödande landade före `rename`:
+  grenen `deepEqual(after, barnets lista)` kördes noll gånger, och mutationen som
+  tar bort atomiciteten passerade testet. Tre alternativ förkastades. Ett nytt
+  fast tal (40–90 ms) flyttar bara felet till nästa maskin. Att låta barnet
+  signalera när `rename` är nära gör testet beroende av just den kod det ska
+  pröva. Att behålla fördelningen som redovisningskrav var det som lät mutationen
+  överleva. Kvar blev att mäta `tKlar` i en ostörd omgång, lägga dödandena över
+  `0 … 2 × tKlar` och asserta att båda räknarna är minst 1. Den assertionen beror
+  på hur lång tid en skrivning tar, vilket är ett medvetet undantag: det står
+  utskrivet i punkt 7, det gäller bara det testet, och determinismkravet — inget
+  test beror på dagens datum — är oberört. Snedheten åtgärdas åt båda hållen
+  innan testet faller: för få avbrutna omgångar vidgar fönstret, för få hela
+  omgångar ökar barnets postantal, högst tre försök. Ett mutationsresultat är
+  dessutom inte godkänt förrän det fallerande testets namn jämförts med det
+  utpekade testet — förra gången lästes `exit 1` som ett godkännande fast raden
+  med kryss tillhörde två andra tester. **Byggaren ska:** mäta `tKlar`, klistra
+  in mätvärdet och de använda dödandetiderna, klistra in raden med kryss från
+  mutationskörningen, och redovisa båda räknarnas värden. (påverkat av lärdom:
+  **ja**, `2026-09-04 — test: SIGKILL-testet dödar barnet innan skrivningen har
+  börjat`)
+- **`error` i ett `400` med `fieldErrors` är `fieldErrors[0].message`, och ingen
+  ny sträng infördes** — filen krävde `{ "error": "<svensk text>" }` i varje
+  felsvar men skrev aldrig ut texten för det vanligaste felsvaret av alla, så
+  byggaren stod inför att antingen hitta på en sträng eller lämna kravet
+  ouppfyllt. Två svar var möjliga. En egen sträng ("kontrollera fälten" eller
+  liknande) förkastades av två skäl: varje text som beskriver ett ogiltigt fält
+  har redan en ägare i felmeddelandetabellen, och en ny text för samma sak vore
+  en andra formulering av något som redan är bindande; dessutom når den aldrig
+  användaren, eftersom `app.js` visar `fieldErrors` vid sina fält och bara
+  använder `error` när `fieldErrors` saknas. Kvar blev första fältfelets
+  meddelande, och då måste "första" ha ett svar: det är **fältens** ordning, den
+  som `validateEntryDraft` redan äger, inte regelkedjans ordning inom ett fält.
+  Regelkedjan avgör vilket meddelande ett fält får, fältordningen avgör vilket
+  fält som står först — två frågor, två ägare, ingen ny ordning. **Byggaren
+  ska:** låta `error` vara ordagrant `fieldErrors[0].message`, och lägga
+  facitexemplet under "HTTP-API" (tomt `name` plus `amountSek: 'abc'`) som
+  testfall i `tests/api.test.js`. (påverkat av lärdom: **ja**, `2026-08-23 —
+  dokumentation: två facit i samma fil ger olika svar för samma belopp`)
+- **`app.js` får en egen sträng, `Det gick inte att nå appens server. Försök
+  igen.`, och den står i den här filen** — punkt 6 i ansvarslistan krävde att
+  något alltid syns vid ett felsvar, men två fall kan inte ge någon text från
+  servern: ett `fetch` som avvisas, och ett svar utan både `error` och
+  `fieldErrors`. Byggarens sträng godkändes ordagrant i stället för att bytas
+  ut; den är svensk, den namnger det användaren kan göra, och den påstår inget
+  om vad som är fel — vilket är rätt, eftersom de två fallen bara har det
+  gemensamt att svaret inte gick att förstå. Att skriva in den här och inte bara
+  i koden följer av att all text mot användaren bestäms i den här filen. Punkt 6
+  skrevs samtidigt om från "`error`-texten från ett `500`-svar" till "svarets
+  `error`-text när svaret inte bär några `fieldErrors`": den gamla lydelsen
+  svarade inte på vad som händer med `error` i ett `400` utan `fieldErrors`, och
+  utan omskrivningen hade filen fått två svar på när `error` visas i den
+  allmänna felrutan. **Byggaren ska:** använda strängen ordagrant, bara i de två
+  uppräknade fallen, och aldrig i stället för en text servern har skickat.
+  (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation: två facit i samma
+  fil ger olika svar för samma belopp`)
+- **Förbudet mot millisekundtal gäller dödandetiden, och hängningsspärren är ett
+  utskrivet undantag** — den tidigare lydelsen förbjöd *varje* millisekundtal i
+  testkoden och i den här filen, samtidigt som `LARDOMAR.md` (2026-09-04,
+  storage-testet hänger för alltid) bokstavligt kräver en `AbortSignal.timeout`
+  när testet väntar på barnets första meddelande. Ett dokument som förbjuder det
+  teamets minne kräver är oanvändbart, och ordet `AbortSignal` fanns inte i
+  filen alls, så hängningsspärren var dessutom obyggd enligt bokstaven. De två
+  talen är olika saker: en dödandetid avgör var i barnets arbete avbrottet
+  landar och därmed vad omgången mäter, medan hängningsspärren aldrig kan
+  påverka utfallet av en omgång som blir av — den avgör bara att ett barn som
+  aldrig startar ger ett fallerat test i stället för en väntan utan exitkod. Det
+  är skälet till att den måste finnas: en hängning ger ingen exitkod alls, och
+  kravet i `CLAUDE.md` att kontrollera utgångskoden går då inte att uppfylla. I
+  samma svep rättades barnprocessens sökväg i punkt 2, som stod som en
+  cwd-relativ sträng — den form samma lärdom förbjuder. **Byggaren ska:** följa
+  punkt 8, hålla konstanten på minst 30 000 ms, och köra testet en gång med
+  barnets filnamn medvetet felstavat. (påverkat av lärdom: **ja**, `2026-09-04 —
+  test: storage-testet hänger för alltid i stället för att falla när
+  barnprocessen inte startar`)
+- **Kravet på SIGKILL-mutationen räknas i körningar, inte per körning** —
+  formuleringen "körningen ska ge exit 1 och det fallerande testet ska vara just
+  det här testet" gick inte att uppfylla: granskaren körde mutationen 12 gånger
+  och testet föll 6 gånger. Var ett dödande landar i förhållande till den
+  direkta skrivningen är inget testet kan styra, och ett krav som slumpen
+  avgör gör paketet omöjligt att lämna vidare. Att i stället skärpa testet till
+  en säker detektor prövades och förkastades i tre former. Fler omgångar per
+  körning förkastades **då** med skälet att det multiplicerar testets körtid för
+  en träffbild ingen hade mätt; träffbilden mättes senare, och det beslutet är
+  omprövat i posten om `N = 200` längre ned i den här loggen. En tät
+  `fs.readdir`-avsökning efter en temporärfil under skrivningen, och ett dödande
+  som utlöses av en `fs.watch`-händelse i stället för av en tid, är båda
+  fortfarande kapplöpningar — och att skriva in en okörd konstruktion som
+  bindande är precis det `LARDOMAR.md` straffar (2026-08-18 testkommandot,
+  2026-08-23 flyttalsgränsen, 2026-09-02 exakthetspåståendet). Kvar blev att
+  skriva ut vad kravet faktiskt ska bevisa: att testet inte är tomt. Det gamla
+  testet föll i noll körningar med atomiciteten borttagen, och skillnaden mellan
+  noll av tio och sex av tolv är det kravet ska fånga. Kravet att det fallerande
+  testets namn jämförs med det utpekade testet gäller oförändrat; det som ändras
+  är att tio körningar räknas och att minst en av dem ska falla på testet, samt
+  att motsatsen skrivs ut — på ostörd kod ska testet passera varje gång, och ett
+  enda fall där det inte gör det lämnas tillbaka. **Byggaren ska:** köra
+  mutationen tio gånger, redovisa hur många av dem som föll på testet, klistra
+  in kryssraden från en av dem, och redovisa tre ostörda körningar med `fail 0`
+  och exit 0. (påverkat av lärdom: **ja**, `2026-09-04 — test: SIGKILL-testet
+  dödar barnet innan skrivningen har börjat`)
+- **`Buffer`-läsningen ströks ur atomicitetstestets punkt 1, och utgångslistan
+  fick i stället ett krav på att inte vara tom** — kravet att läsa filens byte
+  med `fs.readFile(filePath)` var kvar från det gamla testet, där byte-
+  jämförelsen *var* assertionen. Punkt 4 ställer numera en annan fråga: listan
+  ska vara den gamla **eller** barnets, och barnets byte är varken kända före
+  omgången eller intressanta efter den. Ett krav som inget assertionsställe
+  använder är en uppgift byggaren inte kan uppfylla utan att hitta på vad den
+  ska bevisa. Det ersattes av det krav som verkligen behövs på samma ställe:
+  utgångslistan får inte vara tom, eftersom en tom fil läses som `[]` (rad 3 i
+  "Beteende vid läsning") och en tom utgångslista därför skulle räkna en
+  avbruten, tömd datafil som "den gamla listan". Byte-jämförelsen står kvar där
+  den har en fråga att svara på — testerna av skrivvägens validering, där kravet
+  är att filen är oförändrad. **Byggaren ska:** skapa utgångsläget med en
+  icke-tom lista vars längd skiljer sig från barnets. (påverkat av lärdom:
+  **ja**, `2026-09-02 — test: atomicitetstestet avbryter aldrig en skrivning och
+  bevisar ingenting`)
+- **En okänd statisk sökväg svarar `404` utan kropp; JSON-formen gäller bara
+  `/api/*`** — den statiska tabellens rad `övrigt` angav varken kropp eller
+  `Content-Type`, medan kravet "alla felsvar har `{ error }`" stod i
+  HTTP-API-avsnittet. Byggarens läsning bekräftas: strängen `Okänd adress.` ägs
+  av `api.js`, och en kopia i `server.js` vore en andra text för samma sak. Att
+  det statiska svaret saknar svensk text är inget undantag från språkregeln — en
+  okänd statisk sökväg är webbläsarens begäran om en fil som inte finns, och
+  svaret visas aldrig i gränssnittet. Meningen "`charset=utf-8` är obligatoriskt
+  på alla svar" skrevs samtidigt om till "på varje svar som har en kropp", med
+  de två kroppslösa svaren uppräknade: annars hade filen krävt en `Content-Type`
+  på ett svar som per samma beslut inte har någon. Av samma skäl avgränsades
+  meningen som inleder HTTP-API-avsnittet ("Alla svar är `application/json …`.
+  Alla felsvar har formen `{ "error": … }`") till `/api/*` och till svar som har
+  en kropp — den var det ställe granskaren läste som ett krav på en `error`-text
+  i det statiska `404`-svaret, och `204` från `DELETE` bröt mot den redan innan.
+  **Byggaren ska:** låta båda
+  `404`-formerna stå som testfall i `tests/server.test.js`. (påverkat av lärdom:
+  **ja**, `2026-08-23 — dokumentation: två facit i samma fil ger olika svar för
+  samma belopp`)
+- **Paket 5 får två testfiler, `tests/api.test.js` och `tests/server.test.js`,
+  och den manuella genomgången krymper till det som körs i webbläsaren** —
+  filträdet saknade testfiler för paket 5, och teststrategin lämnade hela paket
+  5 till manuell genomgång. Det gick att förena med `CLAUDE.md` så länge paket 5
+  antogs vara "gränssnitt", men `api.js` och `server.js` tar emot användarinput
+  och körs utan webbläsare. Undantaget för manuell genomgång finns för att en
+  webbläsarautomatisering vore projektets största beroende; det skälet gäller
+  `index.html`, `style.css` och `app.js`, inte servern. (`app.js` fick senare en
+  egen testfil utan webbläsare — se beslutet längre ned i loggen; undantaget
+  gäller sedan dess bara det en webbläsare måste visa.) `server.js` får en egen
+  fil och inte en rad i `api.test.js`, därför att dess enda egna validering av
+  användarinput — filtret `/^[a-z0-9-]+\.js$/` framför `path.join` — är det som
+  hindrar att en sökväg från klienten pekar ut en fil utanför `src/core/`, och
+  ett filter som ingen automatisk körning prövar går att refaktorera sönder utan
+  att sviten märker det. En verifiering mot en manuellt startad server räknas
+  inte: den körs inte av `npm test`. `tests/server.test.js` lyssnar på port `0`
+  eller på en port kärnan redan tilldelat, aldrig på `3000`, så att en körning
+  inte krockar med en app som redan är igång;
+  `tests/api.test.js` startar ingen server alls, eftersom `handleApiRequest` tar
+  `req`, `res` och `pathname` som argument och går att anropa direkt.
+  **Byggaren ska:** skriva `tests/server.test.js` med de uppräknade fallen under
+  "Teststrategi", köra mutationen som tar bort mönsterkontrollen, och redovisa
+  `npm test` med `fail 0` och exit 0. (påverkat av lärdom: **ja**, `2026-08-18 —
+  test: ny modul i src/core levererades utan egen testfil`)
+- **`N` i SIGKILL-testet är 200, och kostnaden är utskriven** — punkt 3 sa `N`
+  är minst 20, punkt 6 kräver att mutationen fäller testet i minst 1 av 10
+  körningar, och de två gick inte ihop: byggarens mätning gav 1 av 30 med
+  `N = 20` (tre serier om tio: 0, 1, 0) mot 9 av 10 med `N = 200`. Orsaken är
+  mätt och inte gissad — dödandet måste träffa tiden mellan filens trunkering
+  och dess sista byte, cirka 0,2 ms av ett fönster på cirka 120 ms. Att hålet är
+  verkligt och att punkt 4:s assertion fångar det är kontrollmätt var för sig:
+  en rå `fs.writeFile` av 38 MB som dödades lämnade en partiell fil i 7 av 24
+  omgångar (200 MB: 4 av 24), och ett barn som skrev i 200 block gav
+  `Datafilen är skadad och kunde inte läsas` i 5 av 10 omgångar. Avvägningen:
+  `N = 200` kostar cirka 33 s för SIGKILL-testet i stället för cirka 3,5 s, och
+  cirka 37 s för hela sviten i stället för cirka 7 s. Det accepteras. Alternativet
+  var att sänka kravet i punkt 6 till ungefär "minst 1 av 30 körningar", och det
+  förkastades: med `N = 20` hade två av byggarens tre serier om tio gett noll
+  träffar, så kravet hade avgjorts av slumpen i just den mätning det ska ersätta.
+  Hela skälet till att kravet finns är att skilja ett test som faller sällan från
+  det gamla testet, som föll i **noll** körningar, och ett krav som två serier av
+  tre missar kan inte göra den skillnaden. En halv minut per svit är ett pris som
+  går att betala; ett krav som slumpen avgör är det inte. Talet stod bara som en
+  kommentar i testfilen — ett tal som styr ett bindande krav hör hemma här.
+  Posten längre upp, "Kravet på SIGKILL-mutationen räknas i körningar, inte per
+  körning", förkastade fler omgångar med skälet att träffbilden inte var mätt;
+  det skälet gäller inte längre och den meningen är omskriven. **Byggaren ska:**
+  hålla `N` på 200, redovisa `tKlar`, de använda dödandetiderna, båda räknarnas
+  värden och hur många av de tio mutationskörningarna som föll på testet.
+  (påverkat av lärdom: **ja**, `2026-09-07 — test: atomicitetsmutationen fäller
+  det utpekade testet i bara hälften av körningarna`)
+- **Portvalet och autostartvillkoret får var sin exporterad funktion,
+  `resolvePort` och `isDirectRun`, i stället för att skrivas som medvetet
+  otestade** — byggaren mutationsprövade varje villkor i `src/server/server.js`;
+  nio föll och två överlevde med `pass 200` och exit 0. Båda nås bara via
+  `start()` utan argument respektive via att filen körs direkt, och testfilen är
+  bunden till port `0`, aldrig `3000`. `PORT=0` löser det inte, eftersom `0` är
+  falskt och uttrycket därför ger `3000`. Det fanns alltså ingen indata som nådde
+  vare sig default-uttrycket eller autostartgrenen utan att en fast port bands.
+  Att skriva in de två som medvetet otestade förkastades: de är inte grenar som
+  ingen indata når — autostarten körs av varje `npm start`, alltså av användarens
+  enda sätt att starta appen — och skiljer sig därmed från de två grenarna i
+  `storage.js`, som togs bort just för att ingen indata alls kunde nå dem. Det som
+  gjorde dem oprövbara var att ett *beslut* satt ihop med en *effekt*: uttrycket
+  som väljer port gick bara att köra genom att binda en port, och villkoret som
+  avgör om filen körs direkt gick bara att köra genom att starta servern. Beslutet
+  bryts därför ut till en ren funktion vardera, som ett test kan anropa direkt
+  utan att något lyssnar — samma form som `handleApiRequest(req, res, pathname)`
+  redan har och av samma skäl. Kvar blir tre rader som ingen ren funktion kan
+  fånga: `start()`, `server.address()` och utskriften. De prövas med en `spawn`
+  av `node <server.js>` med `PORT` satt till en port testet först fått av kärnan,
+  och det är samtidigt projektets enda automatiska prov av `npm start`.
+  Barnprocessen bär hela hängningsspärren från atomicitetstestets punkt 8: en
+  `spawn` utan den är en hängning utan exitkod som väntar på att inträffa. Ingen
+  ny export byggs i förtid — båda har en användare i `server.js` från första
+  raden de finns. **Byggaren ska:** flytta portuttrycket oförändrat till
+  `resolvePort(env)`, flytta autostartvillkoret till
+  `isDirectRun(argv1, moduleUrl)`, låta `start` ha `resolvePort(process.env)` som
+  defaultvärde, köra facittabellen under "Gränssnitt" rad för rad och klistra in
+  utfallet, samt köra de fem mutationerna under "Teststrategi" och jämföra namnet
+  på det fallerande testet med det utpekade. (påverkat av lärdom: **ja**,
+  `2026-09-04 — test: två konstruktioner i storage.js körs aldrig och överlever
+  mutation`)
+- **Servern i ett test stängs i en `after`-hook, aldrig i ett `finally`, och
+  `closeAllConnections()` körs före `close()`** — filen erbjöd de två städsätten
+  som likvärdiga ("i ett `finally` eller en `after`"), och byggarens mätning
+  visar att de inte är det. Avbryts ett testfall av ett ohanterat kast någon
+  annanstans i processen körs `finally` aldrig: lyssnaren blir kvar och `npm test`
+  avslutas aldrig. Två av mutationskörningarna orsakade just ett sådant kast i
+  serverns handler och slutade med `EXIT=124` från en yttre `timeout 120`; med
+  `t.after()` ger samma två mutationer `exit 1`. En hängning utan exitkod är det
+  tillstånd `LARDOMAR.md` (2026-09-04, storage-testet hänger för alltid) pekar ut
+  som värre än ett fel, och `CLAUDE.md` kräver att utgångskoden kontrolleras — ett
+  dokument som tillåter det städsätt som tar bort exitkoden är ett dokument som
+  tillåter att kravet inte går att uppfylla. Byggarens andra iakttagelse skrivs in
+  av samma skäl: `server.close()` väntar på varje öppen anslutning, och en
+  keep-alive-socket stängs inte av sig själv, så `closeAllConnections()` måste
+  köras först och varje förfrågan i testfilen göras med `agent: false`. Det är
+  samma hängning en gång till, och den hör hemma i filen och inte bara i en
+  kodkommentar. `finally` står kvar där det gäller något annat — städningen av
+  temporärfilen i `storage.js` under "Skrivvägen" — och rör inte det här beslutet.
+  **Byggaren ska:** registrera varje serverstängning som `t.after()`, köra
+  `closeAllConnections()` före `close()` och använda `agent: false` i varje
+  förfrågan. (påverkat av lärdom: **ja**, `2026-09-04 — test: storage-testet
+  hänger för alltid i stället för att falla när barnprocessen inte startar`)
+- **Läs–ändra–skriv blev ett steg i `ioQueue` genom en ny export,
+  `updateEntries(mutera)` — inte en kö i `api.js` och inte en villkorad
+  skrivning** — kön i `storage.js` gör varje enskild operation odelbar, och det
+  facit som skrevs för den ("sista anropet vinner") är precis det som gör ett
+  *par* av operationer osäkert: anrop två läser före anrop ett har skrivit.
+  Granskarens mätning: 20 av 20 omgångar tappade en post vid två samtidiga
+  `POST`, 19 av 20 tappade en borttagning vid två samtidiga `DELETE`, och båda
+  anropen svarade att det gick bra. Tre mekanismer vägdes.
+  *En kö i `api.js`* förkastades: den lägger en andra kö bredvid den som redan
+  finns, alltså två ägare till samma begrepp — just det ägarregeln under
+  "Mappstruktur" förbjuder — och den skyddar bara de anrop som råkar gå genom
+  `api.js`, medan `storage.js` är den modul som äger filen. Den hade dessutom
+  inte hjälpt någon annan framtida anropare, som ärvt ett krav som inte syns i
+  någon signatur.
+  *En villkorad skrivning* (jämför en version eller en hash mot den lästa och
+  vägra skriva om filen ändrats) förkastades av tre skäl: den kräver ett nytt
+  fält i datafilen eller ett nytt tillstånd i modulminnet, alltså en ändring av
+  lagringsformatet eller en cache som filen på disk annars är ensam sanning för;
+  den kräver ett nytt svenskt felmeddelande och ett svar till användaren på
+  "någon annan hann före", vilket i en app för en person på en enhet är ett fel
+  utan mening; och den gör inte ändringen av — den avvisar den, medan kravet är
+  att två snabba klick ska spara båda.
+  Kvar blev callbacken innanför köplatsen, som är den form `LARDOMAR.md`
+  bokstavligt anger. Kontraktet valdes så att `DELETE` inte behöver en andra
+  läsning: `mutera` svarar `null` för "skriv inte", och `updateEntries` uppfyller
+  sig då med `null`, vilket blir `404`. Det ger ett bestämt facit också när samma
+  `id` tas bort två gånger samtidigt — ett `204` och ett `404`. Att `mutera` inte
+  får anropa `loadEntries` eller `saveEntries` skrevs ut, eftersom en sådan rad
+  är en låsning som inget felmeddelande beskriver. Att skrivtabellens rad 1–3
+  prövas inuti köplatsen här, till skillnad från i `saveEntries`, skrevs också ut
+  — annars hade filen två svar på när valideringen sker. **Byggaren ska:** lägga
+  `updateEntries` i `storage.js` med den pseudokod som står under "Läs–ändra–
+  skriv i ett steg", byta `handleCreate` och `handleDelete` till ett anrop var,
+  och köra de tre samtidighetstestfallen med sin mutation. (påverkat av lärdom:
+  **ja**, `2026-09-07 — api: två snabba klick tappar en post eller en
+  borttagning`)
+- **Knappen som utlöste anropet spärras under anropet, men bara den knappen** —
+  serverns korrekthet och gränssnittets spärr är två frågor, och båda behövs:
+  `grep -n "disabled" src/web/*.js src/web/*.html` gav noll träffar, så ett
+  dubbelklick på Spara skickade två `POST`. Spärren är `disabled = true` före
+  `fetch` och tillbaka i ett `finally`; ingen ny text, men en ny regel i
+  `style.css` för det spärrade läget — se avsnittet "Knappen spärras under ett
+  pågående anrop", som är facit. Att
+  spärra hela listan eller hela formuläret under varje anrop förkastades: det
+  gör gränssnittet trögt för att dölja ett fel som `updateEntries` lagar på rätt
+  ställe, och två klick på **olika** Ta bort-knappar är ett rimligt handgrepp som
+  ska fungera, inte hindras. Att `app.js` då bara hade manuell genomgång gjorde
+  bevisbördan större, inte mindre, så spärren fick ett eget körfall mot en
+  DOM-attrapp; sedan `tests/app.test.js` tillkom är det två testfall i den filen,
+  ett för samma knapp och ett för två olika. **Byggaren ska:** sätta `disabled`
+  på den klickade knappen före `fetch` och återställa den i ett `finally` i både
+  `submitForm` och `removeEntry`. (påverkat av lärdom:
+  **ja**, samma post som ovan)
+- **Ett trasigt anrop får inte döda appen: `new URL` innanför `try`/`catch` ger
+  `400`, och `createServer` fångar varje avvisning och svarar `500`** — kravet
+  "servern får aldrig krascha på ett trasigt lager" hade ingen motsvarighet för
+  ett trasigt **anrop**, och det som inte står i en tabell blev inte byggt, precis
+  som med skrivvägens OS-fel. Fem av sex prövade förfrågningsrader dödade
+  processen. Spärren ligger i `createServer` och inte inuti `handleRequest`, därför
+  att den ska täcka varje väg och inte bara `new URL`; en spärr per gren hade
+  blivit en ny kopia vid varje ny gren. En `unhandledRejection`-lyssnare
+  förkastades — granskaren mätte att den byter kraschen mot en evig hängning med
+  sockeln öppen, alltså ett svar som aldrig kommer. Två statuskoder och inte en:
+  en oläsbar förfrågningsrad är klientens fel (`400`), ett kast i en hanterare är
+  appens (`500`). `400`-raden återanvänder `Kunde inte tolka anropet.` från
+  `api.js` i stället för att införa en andra text — strängen säger "anropet", inte
+  "kroppen", och en ny sträng för samma sak är det ägarregeln förbjuder.
+  `500`-raden fick en ny sträng, `Ett oväntat fel inträffade. Försök igen.`, och
+  felets eget meddelande når aldrig användaren: det kan vara engelsk OS-text eller
+  bära en sökväg, samma skäl som skrivtabellens rad 7 har. Att JSON-formen därmed
+  gäller utanför `/api/*` skrevs in som ett avgränsat undantag i "Statiska filer",
+  eftersom rad S2 kan inträffa på vilken väg som helst — `/api/*` inräknad — och
+  ett annat format där hade gett två format för samma svar. `createServer` fick
+  `handler` som argument med `handleRequest` som defaultvärde: annars finns ingen
+  indata som når spärren, och en gren ingen indata når är enligt projektets egen
+  regel ingen spärr utan en osann uppgift. Det är samma seam som
+  `handleApiRequest(req, res, pathname)` och `resolvePort(env)` redan har, av
+  samma skäl. Ingen loggning till `stderr` infördes: svaret är hela hanteringen.
+  **Byggaren ska:** lägga `new URL` innanför `try`/`catch` med rad S1 som svar,
+  skriva `handler(req, res).catch(...)` i `createServer`, bygga
+  `sendUnexpectedError` med `res.headersSent`-grenen, exportera
+  `UNPARSABLE_MESSAGE` från `api.js`, och köra de två mutationerna under
+  "Teststrategi" med namnet på det fallerande testet inklistrat. Den
+  instruktionen täckte bara avvisningen; det synkrona kastet avgörs i beslutet
+  längre ned i loggen, och mutationerna är sedan dess tre.
+  (påverkat av lärdom: **ja**, `2026-09-07 — server: ett enda HTTP-anrop dödar
+  hela appen`)
+- **`npm start` på en upptagen port svarar på svenska och avslutas med exitkod 1;
+  `EADDRINUSE`, `EACCES` och övrigt fick var sin rad** — `listen` rapporterar sitt
+  fel som en händelse, så `await new Promise((resolve) => server.listen(...))`
+  fångar ingenting och Node kastar händelsen: tolv rader engelskt stackspår från
+  användarens enda sätt att starta appen. Rättningen är `server.once('error',
+  reject)` i samma `new Promise`. `EACCES` fick en egen text och inte den
+  gemensamma, därför att åtgärden är en annan: appen kör inte redan, och texten
+  ska inte be användaren leta efter ett fönster som inte finns. Vilka portnummer
+  som ger `EACCES` skrivs inte ut — det vore ett påstående om operativsystemet som
+  ingen har kört. Rad 3 finns för att invarianten "`start` avvisar alltid med
+  `ServerStartError`" ska vara sann också för ett fel ingen har sett; utan den
+  hade ett rått OS-fel gått rakt till `stderr` på engelska. `<port>` är argumentet
+  till `start` och inte `server.address()`, som är `null` när `listen`
+  misslyckats. Översättningen bröts ut till en exporterad `asStartError(port,
+  error)` av samma skäl som `resolvePort` bröts ut: rad 2 och 3 går inte att
+  provocera deterministiskt i den här miljön, och en rad utan testfall är antingen
+  otestad kod eller en rad som måste tas bort. `process.stderr.write` valdes
+  framför `console.error`, eftersom `LARDOMAR.md` (2026-09-07,
+  felsökningsutskrifter) gör `console.error` i `src/` till ett stoppkriterium i
+  diffgranskningen och startfelet inte är en felsökningsutskrift; `console.log` på
+  den lyckade raden är oförändrad och berörs inte, eftersom den kontrollen läser
+  diffens rader. Byggarens körning av `npm start` mot en upptagen port gav
+  exitkod `1` och rad 1:s sträng på `stderr`, och granskaren bekräftade den.
+  (påverkat av lärdom:
+  **ja**, `2026-09-07 — server: npm start på en upptagen port ger tolv rader
+  engelskt stackspår`)
+- **HTTP-API-tabellen räknar upp lagringens `500` på alla tre vägarna, och
+  avgränsningen i `POST`-raden gäller bara den ena av dess två `500`** — tabellen
+  var ett facit som koden och två testfall motsade: `GET` kan ge `500` från
+  lagringen, `DELETE` likaså, och `POST`-radens "vid internt fel från
+  `createEntry`" läste som en fullständig uppräkning och uteslöt aktivt lagringens
+  `500`. En tabell som ser fullständig ut men inte är det blir ett andra facit,
+  precis som `totalYearlyOre`-tabellen blev. Den mekaniska kontrollen skrevs in i
+  avsnittet i stället för att lämnas som en vana: `grep -n "sendJson(res, "` och
+  `grep -n "writeHead("`, och varje statuskod som kan komma ut ur en väg ska stå
+  på den vägens rad. Serverskiktets `500` fördes in som en mening under tabellen
+  och inte som en fjärde kolumn: den kan träffa varje väg, och en rad per väg hade
+  upprepat samma sak fyra gånger. **Byggaren ska:** köra de två `grep`-kommandona
+  efter varje ändring i `api.js` och jämföra utfallet mot tabellen, och klistra in
+  utdatan i redovisningen för paket 5. (påverkat av lärdom: **ja**, `2026-09-07 —
+  dokumentation: HTTP-API-tabellen utesluter tre av kodens statuskoder`)
+- **Den fjärde hängningsspärren skrevs in, och undantagslistan blev en tabell med
+  en rad per spärr** — `tests/api.test.js` byggde en spärr som filen krävde en
+  egen rad för, och raden fanns inte; talet stod dessutom som literalen `5000`
+  medan de andra spärrarna ska vara namngivna konstanter på minst 30 000 ms. Att
+  låta just den se annorlunda ut prövades och förkastades: skälet till 30 000 ms
+  är att en långsam maskin inte ska kunna göra spärren till ett falskt fel, och
+  det skälet gäller ett anrop i samma process lika mycket som ett barn i en annan
+  — ett anrop som svarar, svarar på millisekunder. Uppräkningen av tre namngivna
+  undantag byttes mot en tabell, eftersom paket 5 tillför fler spärrar och en
+  uppräkning som måste skrivas om vid varje ny rad är samma sorts fälla som
+  "samtliga fyra funktioner" — hur många spärrar paketet till slut tillförde
+  behövde tabellen därmed inte veta. Konstantnamnen är två, ett per roll:
+  `CHILD_START_TIMEOUT_MS` för väntan på en barnprocess, `RESPONSE_TIMEOUT_MS` för
+  väntan på ett svar. Priset skrevs ut i stället för att döljas: en
+  mutationskörning där spärren fäller testet tar en halv minut innan den ger exit
+  1, vilket är billigare än en körning utan exitkod. **Byggaren ska:** ersätta
+  literalen `5000` i `tests/api.test.js` med `RESPONSE_TIMEOUT_MS` på minst
+  30 000 ms, lägga in samma konstant i `tests/server.test.js`, och köra
+  `grep -n "setTimeout\|AbortSignal.timeout\|Promise.race\|performance.now"` mot
+  varje testfil paketet rör innan det lämnas vidare. (påverkat av lärdom: **ja**,
+  `2026-09-07 — test: en fjärde hängningsspärr byggdes utan den rad ARKITEKTUR.md
+  kräver för den`)
+- **Punkt 6 i `app.js`-listan vändes: `showErrors` letar upp de fem kända fältens
+  fel i svaret, i stället för att leta upp varje fels fält i formuläret** —
+  punkten beordrade en gren som inget serversvar kan nå, eftersom `fieldErrors`
+  bara innehåller de fem formulärfälten och `id`-felet skickas som `500` utan
+  `fieldErrors`. Två utvägar fanns. Att låta `id`-felet komma som ett `fieldError`
+  förkastades: beslutet att det ska ge `500` står sedan paket 2 och är riktigt —
+  anropet var korrekt och felet ligger i appen. Kvar blev att vända uppslaget, och
+  det löser mer än det onåbara: ett okänt `field` kan då varken hittas eller slå i
+  en `null`-referens, det ignoreras, och den allmänna rutan visar svarets `error`
+  — så kravet "inget felsvar får leda till att ingenting syns" håller även om
+  `api.js` skulle bryta mot sitt eget kontrakt. Att `fieldErrors` bär exakt de fem
+  fälten skrevs samtidigt in som ett bindande krav på `api.js`, eftersom en gren
+  som tas bort med hänvisning till ett kontrakt kräver att kontraktet står
+  skrivet. `GENERAL_ERROR`-grenen i samma funktion står kvar och är inte samma
+  sak: den prövar ett värde ur `JSON.parse` av bytes appen inte har skrivit, den
+  nås av varje svar utan läsbar JSON-kropp, och `readJson` svarar `{}` för just
+  det — den konkreta indata som når den är ett krav på ett testfall (punkt 3 i
+  kravlistan för `tests/app.test.js` under "Teststrategi"). **Byggaren ska:**
+  vända uppslaget i `showErrors` så att den går igenom `FORM_FIELDS` och söker upp
+  varje fälts fel i svaret, och ta bort `withoutField` och dess `return`.
+  (påverkat av
+  lärdom: **ja**, `2026-09-07 — gränssnitt: withoutField-grenen i app.js kan
+  inget serversvar nå`)
+- **Den falska meningen om `isValidEntryId` ströks, och sökningen kördes över hela
+  filen** — meningen "I dagens `src/core/entry.js` står villkoret skrivet för hand
+  på båda ställena; de två raderna ska ersättas av två anrop till
+  `isValidEntryId`" var en instruktion skriven i presens, utförd sedan commit
+  `10fe469`, och den överlevde paket 3, 4 och 5. Den ersattes av kravet i sig plus
+  granskarens körning som visar att kravet är uppfyllt. Sökningen som lärdomen
+  föreskriver kördes över hela filen — `I dagens`, `ska ersättas`, `skrivet för
+  hand`, `Kvar i paket` — och gav inga fler falska träffar: `Kvar i paket 7` pekar
+  på ett paket som ännu inte är påbörjat och är därmed en öppen uppgift och inte
+  ett påstående om koden. (påverkat av lärdom: **ja**, `2026-09-07 —
+  dokumentation: rättningen av "beskriver kod som inte längre ser ut så" gjordes
+  till hälften`)
+- **Autostartens felgren fick en egen punkt i teststrategin och en egen rad i
+  hängningsspärrtabellen** — mutationskravet tvingade fram ett automatiskt prov
+  av `catch`-grenen som skriver felet och sätter `process.exitCode = 1`, och det
+  provet väntar på barnets **exit**, inte på en utskriven rad. Den befintliga
+  raden för `tests/server.test.js` beskriver väntan på barnets utskrivna rad och
+  täcker därför inte den nya väntan: två väntanden med olika vinstvillkor är två
+  spärrar, och filen kräver en rad per spärr. Byggarens förslag till rad togs med
+  två förtydliganden: kolumn 3 pekar ut punkt 5 under "Paket 5", så att raden har
+  ett ställe att peka på, och kolumn 4 skriver ut varför spärren behövs — ett
+  barn vars `listen` lyckas fortsätter lyssna och avslutas aldrig, alltså en
+  väntan utan exitkod. Punkt 5 skrevs in i samma svep med kraven på exitkod, tomt
+  `stdout` och rad 1:s sträng ordagrant på `stderr`, och mutationslistan fick
+  raden "ta bort `try`/`catch` runt `start()` i autostarten". Räkningen som
+  lärdomen om "samtliga fyra funktioner" varnar för kontrollerades i hela filen:
+  `De två sista raderna kom till i paket 5` ströks, eftersom den pekade ut fel
+  rader så snart en femte tillkom, och `paket 5 tillför två spärrar till` i
+  beslutsloggen skrevs om till `fler spärrar`. Rubriken `Den fjärde
+  hängningsspärren skrevs in` står kvar: den beskriver vad som gjordes då, i
+  dåtid, och räknar inte spärrarna i dag. Att stycket under "Beteende vid start"
+  sade att exitkod `1` bara var arkitektens läsning skrevs om, eftersom kravet nu
+  har ett testfall; att koden är `1` är sedan dess kört av byggaren och
+  bekräftat av granskaren. (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation: två
+  facit i samma fil ger olika svar för samma belopp`, och `2026-09-07 — test: en
+  fjärde hängningsspärr byggdes utan den rad ARKITEKTUR.md kräver för den`)
+- **`createServer` behåller båda konstruktionerna: `try`/`catch` runt anropet och
+  `.catch(...)` på löftet** — föreskriften `handler(req, res).catch(...)` räckte
+  inte för teststrategins egen rad S2, som kräver `500` också för
+  `createServer(() => { throw new Error('trasig'); })`: ett synkront kast sker
+  innan löftet finns, så `.catch` kan inte nå det, och utan `try`/`catch` dör
+  processen — precis det som lärdomen om det enda HTTP-anropet handlar om. De två
+  fångar alltså olika indata, och ingen av dem är en dubblering av den andra.
+  Konsekvensen byggaren pekade på skrevs ut i stället för att lämnas outtalad: en
+  hanterare som inte returnerar ett löfte får `.catch` att kasta `TypeError`, som
+  fångas av samma `try` och besvaras som rad S2 (eller rad S3 om huvudena redan
+  är skrivna). Det behålls. Alternativet
+  `Promise.resolve(handler(req, res)).catch(...)` prövades och förkastades:
+  produktionsvägen har exakt en hanterare och den är `async`, ett brutet kontrakt
+  är ett fel i appen, och `500` med svensk text är rätt svar på ett fel i appen —
+  en normalisering hade i stället tyst tagit emot en andra sorts hanterare som
+  ingen kod i projektet skickar in, alltså byggt för en framtid som inte står i
+  planen. Kontraktet "`handler` ska returnera ett löfte" skrevs därför in vid
+  signaturen och under "Ett trasigt anrop får inte döda appen", och en gren utan
+  indata får inte stå obevisad: kontraktsbrottet ska ha ett eget testfall,
+  `createServer(() => undefined)` med `500` på ett anrop. Att just det svaret
+  blir rad S2 är kört av byggaren och bekräftat av granskaren. Kravet skrevs
+  först som `500` "på två anrop i rad" och rättades i paket 5, se beslutet
+  `"På två anrop i rad" ströks ur kontraktsfallet` längst ned i loggen.
+  Mutationen av `createServer` delades i två — ta bort den ena konstruktionen och
+  behåll den andra — eftersom en enda mutation inte kan visa att båda behövs. **Byggaren ska:** lägga till testfallet
+  `createServer(() => undefined)`, köra de tre mutationerna under "Teststrategi"
+  var för sig och klistra in kryssraderna — eller kraschutdatan, om en mutation
+  dödar testprocessen. (påverkat av lärdom: **ja**, `2026-09-04 — test: två
+  konstruktioner i storage.js körs aldrig och överlever mutation`)
+- **Provokationshanteraren kastar på sitt första anrop och svarar som en okänd
+  statisk sökväg därefter** — kravet "servern ska svara `404` utan kropp på ett
+  andra, vanligt anrop efteråt" motsade sig självt: med en hanterare som alltid
+  kastar ger det andra anropet `500`, aldrig `404`. Kravet skrevs om till vad
+  hanteraren ska **göra** i stället för till vad servern ska svara oavsett
+  hanterare, med den icke-kastande vägen utskriven som `res.writeHead(404)` följt
+  av `res.end()`. Att det andra anropets svar är beviset att processen lever står
+  kvar; det är hela skälet till att det andra anropet finns. Att den synkrona
+  varianten returnerar `Promise.resolve()` på sin icke-kastande väg skrevs ut i
+  samma stycke, eftersom det följer av kontraktet ovan och annars ser ut som en
+  godtycklighet i testkoden. (påverkat av lärdom: **ja**, `2026-08-23 —
+  dokumentation: två facit i samma fil ger olika svar för samma belopp`)
+- **Ett lås på datafilen: en instans i taget, och `addressInUse`-texten slutade
+  be om en andra** — `ioQueue` och `updateEntries` gjorde varje läs-ändra-skriv
+  odelbar inom processen, och felet flyttade då ett lager ut: två serverprocesser
+  mot samma datafil gav i den körning som underkände paket 5
+  `omgångar där en post tappades: 20 av 20`,
+  `svar med 500: 16` och `poster på disk till slut: 20 (förväntat 40)`, medan
+  appens eget startfel uppmanade användaren på svenska att göra just det ("Sätt
+  PORT till ett annat portnummer om du vill starta en till"). Tre mekanismer
+  vägdes mot varandra.
+  *Att bara skriva om `addressInUse`-texten* förkastades som ensam åtgärd: den tar
+  bort uppmaningen men inte möjligheten. `PORT` står kvar i `resolvePort`, i
+  facittabellen och i `EACCES`-radens egen text, så en användare som behöver en
+  annan port hittar dit ändå, och då är datan lika oskyddad som förut. En
+  uppmaning som tas bort är inte en spärr.
+  *Att härleda datafilens sökväg så att två instanser inte kan dela den* — till
+  exempel en fil per port — förkastades av två skäl. Det byter en synlig krasch
+  mot en tyst: användaren startar på en annan port, ser en tom lista, lägger in
+  sina poster igen och har därefter två halva register utan att något fel
+  visats. Och det löser inte fallet: `HEMOCHEKONOMI_DATA_FILE` pekar fortfarande
+  på samma fil för båda, och porten är dessutom fel nyckel — det är datafilen som
+  är resursen, inte porten.
+  Kvar blev *ett lås vid start*, och det är beslutet: `start()` tar ett lås på
+  `` `${getDataFilePath()}.lock` `` innan porten binds, och instans två avslutas
+  med exitkod `1` och rad L1:s svenska text. De två kostnader som fällde ett lås i
+  paket 4 är betalda i stället för undvikna: felmeddelandena är utskrivna med
+  varje sträng ordagrant i tabellen under "Låset på datafilen", och upplåsningen
+  efter en krasch är löst med
+  pid i låsfilen plus `process.kill(pid, 0)` — ett lås släpps bara på beviset
+  `ESRCH`, aldrig på en gissning, så ett fel faller åt hållet "appen startar inte
+  och säger varför" i stället för åt hållet "två instanser skriver över
+  varandra". Att låset hör till datafilen och inte till processen eller porten är
+  det som gör att tester och två olika datafiler fortfarande fungerar. Ordningen
+  lås före `listen` är också ett beslut: den gör "Hemochekonomi kör redan" till
+  rad L1:s svar och `EADDRINUSE` till svaret "porten är upptagen av något annat",
+  alltså ett facit per fråga. Meningen under "Skrivvägen" som svarade att "en av
+  dem vinner hela filen, och ingen fil blir en blandning" är rättad: den var sann
+  om filens integritet och falsk om användarens data, och den användes som skäl
+  att inte införa något lås. **Byggaren ska:** bygga `src/server/lock.js` och
+  `getLockFilePath` enligt "Låset på datafilen", lägga låset i `start` med rad 0
+  i `asStartError`, skriva `tests/lock.test.js` med fallen och mutationerna under
+  "Paket 5: två instanser mot samma datafil" i teststrategin, och köra
+  `npm start` två gånger mot samma datafil och klistra in
+  båda utskrifterna och exitkoderna. (påverkat av lärdom: **ja**, `2026-09-02 —
+  lagring: två överlappande saveEntries delar samma .tmp-namn`, och `2026-09-07 —
+  api: två snabba klick tappar en post`)
+- **Mekanismen "inte kört av arkitekten" avskaffades** — markeringen stod på varje
+  rad som `grep -n "inte kör\(t\|d\|da\) av arkitekten" ARKITEKTUR.md` träffade.
+  Fem var besvarade av en körning och stod ändå kvar, och tre av dem bar
+  samma order på tre olika rader, så den som rättade en rad trodde sig klar och
+  hade fel på två. Att behålla mekanismen och skriva ut vem som stänger en
+  markering prövades och förkastades: en stängningsrutin är ännu en uppgift som
+  måste utföras vid rätt tillfälle av rätt agent, och exakt den sortens uppgift
+  har den här filen redan misslyckats med fem gånger (`Kvar i paket 3` stod kvar i
+  två paket efter att den var utförd). Ett dokument som är bindande ska inte
+  innehålla frågor. Reglerna som ersätter den står som preambel överst i den här
+  loggen: kört utfall skrivs in med vem som körde det, ett utfall som ingen har
+  kört skrivs inte alls utan formuleras som ett krav byggaren ska köra och
+  redovisa, och öppna frågor står som punkter i loggen. Samtliga markeringar är
+  strukna och de körda utfallen inskrivna som konstateranden; hur många de var
+  står inte utskrivet, eftersom antalet ärvdes ur en sökning på singularformen
+  och därför var för lågt — påståendet om *noll kvar* går att kontrollera med
+  sökningen ovan, påståendet om *hur många det var* gör det inte. (påverkat av
+  lärdom: **ja**, `2026-09-02 — dokumentation: ARKITEKTUR.md pekar ut en
+  kvarvarande uppgift i paket 3 som redan är utförd`, `2026-09-04 —
+  dokumentation: "Kvar i paket 3" står kvar i ARKITEKTUR.md`, och `2026-09-07 —
+  dokumentation: antalet avskaffade "inte kört av arkitekten"-markörer räknades
+  utan alla böjningsformer`)
+- **"På två anrop i rad" ströks ur kontraktsfallet `createServer(() =>
+  undefined)`** — kravet var skrivet för rad S2:s provokationshanterare, som
+  kastar bara på sitt *första* anrop och därför gör det andra anropets `404` utan
+  kropp till ett bevis. Det kopierades till ett fall där hanteraren beter sig
+  likadant varje gång, och där bevisar det andra varvet ingenting: granskarens
+  körning med bara ett varv gav `tests 22, pass 22, fail 0`, och båda de
+  föreskrivna mutationerna gav identiskt utfall med och utan det. Ett krav som
+  tillverkar ett test utan innehåll är värre än inget krav — det ser ut som
+  täckning. Kravet är nu ett anrop, och skälet till att provokationshanteraren
+  ändå kräver två står kvar på sitt ställe. Regeln bakom: ett krav på ett andra
+  anrop ska motiveras med vad det andra anropet asserterar som det första inte
+  gör, och den motiveringen ska stå utskriven där kravet står. (påverkat av
+  lärdom: **ja**, `2026-09-02 — test: summaspärren efter varje addition överlever
+  mutation`)
+- **`saveEntries` stannar som export, med en skriven regel och ett test som
+  upprätthåller den** — `grep -rn "saveEntries" src/` gav 2026-09-07 tio träffar:
+  nio kommentarer och definitionen. Exporten har alltså ingen anropare i `src/`
+  sedan `api.js` gick över till `updateEntries`, och den enda spärren mot att
+  paket 6 eller 7 återinför `loadEntries` följt av `saveEntries` var en mening i
+  det här dokumentet. Att ta bort exporten prövades och förkastades: `updateEntries`
+  läser innan den skriver, så den kan varken skriva över en fil som läsvägens
+  tabell underkänner eller sätta ett känt utgångsläge, och testernas arrange-steg
+  skulle då falla på läsvägen i stället för att pröva det de handlar om.
+  `saveEntries` är den enda vägen till "filen ska innehålla exakt det här".
+  Regeln är därför skriven i klartext under `src/server/storage.js` — en känd
+  lista, aldrig en lista som kommer ur en läsning av samma fil — och den fick en
+  automatisk spärr i stället för ett löfte: `tests/api.test.js` läser `api.js`
+  som text och kräver att importsatsen från `./storage.js` finns på exakt ett
+  ställe, är namngiven och inte innehåller `saveEntries`. Vilka mutationer som ska
+  fälla just det testet står under "Paket 5: `api.js` importerar inte
+  `saveEntries`" i teststrategin och är facit — den här punkten föreskrev från
+  början bara en av dem, och den stavningen var den enda spärren råkade fånga. En
+  regel som inget test upprätthåller är en mening, och meningar överlever inte tre
+  paket.
+  (påverkat av lärdom: **ja**, `2026-09-02 — test: kopplingen mellan INTERVALS
+  och PAYMENTS_PER_YEAR skyddas inte av något test`)
+- **Låsets ägarskap: en post per låssökväg, och ett andra samtidigt anrop mot
+  samma datafil avvisas med rad L5** — granskarens körning visade att ett andra
+  `start()` som föll på `listen` städade bort det *första* `start()`:s lås
+  (`låsfil efter att start 2 misslyckades: ENOENT` medan `server 1 lever
+  fortfarande: 200`, därefter `ANNAN PROCESS TOG LASET pid 32500`), och att
+  `heldLockPath` som en enda variabel lämnade `a.json.lock` kvar för alltid när
+  ett andra lås togs mot `b.json`. Grundorsaken är att ägarskapet bokfördes som
+  "en sökväg plus en pid", en bokföring som varken kan säga *hur många* eller
+  *vilka* innehavare låset har.
+  Tre modeller vägdes mot varandra.
+  *En räknare per låssökväg* — `acquireDataFileLock` räknar upp också i grenen
+  "pid:en är vår egen", `releaseDataFileLock` räknar ned och tar bort filen först
+  vid noll — förkastades. Den lagar symtomet men behåller frågan "vem är den
+  andra innehavaren?" obesvarad, och den kräver att varje uppfyllt anrop
+  motsvaras av exakt ett släpp: ett släpp för mycket räknar ned för en innehavare
+  som fortfarande kör, alltså samma hål en gång till, och ett släpp för lite
+  lämnar låsfilen kvar. Den har dessutom ett eget hål som bara en kö stänger:
+  räknaren kan gå `1 → 0` i ett släpp vars `fs.unlink` ännu inte körts, medan ett
+  överlappande anrop räknar `0 → 1` och uppfyller sig — och när unlink sedan körs
+  står räknaren på `1` utan låsfil, alltså en instans som tror sig ha låset och en
+  datafil vilken process som helst kan ta. Den löser inte heller den andra halvan
+  av fyndet: en
+  räknare per sökväg kräver ändå en `Map`, och med `Map`:en på plats är räknaren
+  det enda som är kvar att motivera. Framför allt gör den delningen till en
+  funktion som ska fungera, och den funktionen finns inte: två `start()` i samma
+  process mot samma datafil är två instanser mot en datafil, precis det läge
+  låset byggdes för att omöjliggöra, och `PLAN.md` beslut 3 (*en person, en
+  enhet*) har det inte.
+  *Att förbjuda varje andra `start()` i samma process* förkastades också: ett
+  andra anrop **efter** att den första servern stängts är helt riktigt — det är
+  vad `tests/server.test.js` gör när det startar om efter ett misslyckat
+  `listen`, och det är hur paket 6 och 7 kommer att skriva sina testfall. Ett
+  förbud som inte skiljer "samtidigt" från "efter" byter ett hål mot ett stopp.
+  Kvar blev *en `Map` från låssökväg till märkning, plus rad L5 för ett andra
+  samtidigt anrop mot en sökväg processen redan håller*. Den svarar på båda
+  halvorna av fyndet: flera datafiler kan hållas samtidigt och släpps var för sig
+  (`releaseDataFileLock(lockPath)` tar sökvägen som argument i stället för att
+  gissa), och frågan "vem är den andra innehavaren?" uppstår aldrig, eftersom det
+  aldrig finns en andra. Att `start` misslyckas på `listen` och släpper sitt lås
+  är därmed alltid rätt: hade någon annan hållit låset hade `start` inte kommit
+  till `listen`. Två följdbeslut hör till: låsfilens innehåll är en **märkning**
+  (`` `${process.pid}:${randomUUID()}` ``), så att ett släpp kan skilja vårt gamla
+  lås från vårt nya, och båda funktionerna ligger i en modullokal löfteskedja
+  `lockQueue`, så att bokföringen och filen inte kan komma ur takt mellan två
+  överlappande anrop. **Byggaren ska:** skriva om `src/server/lock.js` efter
+  pseudokoden och punkterna under "Låset på datafilen", byta `start` till att
+  hålla låssökvägen i en lokal variabel och skicka den till varje
+  `releaseDataFileLock`, lägga fall 5–10 och 12 i `tests/lock.test.js` och köra
+  mutationerna (a)–(f) med kryssraden inklistrad, mutation (e) tio gånger med
+  antalet fällda körningar utskrivet. (påverkat av lärdom: **ja**, `2026-09-07 —
+  lås: ett misslyckat andra start() i samma process tar bort ett lås som
+  fortfarande används`, och `2026-09-07 — test: atomicitetsmutationen fäller det
+  utpekade testet i bara hälften av körningarna`)
+- **Alla tre onåbara grenarna ströks ur låsets pseudokod: `ENOENT` efter ett
+  `EEXIST`, unlink-svaljningen och kastet efter det andra skrivförsöket** —
+  byggarens instrumentering över hela sviten gav noll träffar för var och en av
+  dem. `ENOENT`-grenen ("låset släpptes emellan: nästa varv") och kastet i
+  `försök 2` kan båda nås bara av en **annan** process som rör låsfilen i ett
+  fönster på några mikrosekunder mellan två av våra egna anrop, och sådana fönster
+  kan inget testfall träffa deterministiskt. `ENOENT` ströks först; de två andra
+  behölls en runda till, med kravet att byggaren skulle avgöra saken med en
+  körning i stället för med ett resonemang — "ingen indata **når** grenen" och
+  "inget test **konstruerar** den" är två olika påståenden. Byggarens körning gav
+  `unlink LYCKADES med oppet handtag`, `filen finns efterat: false`,
+  `writeFile wx LYCKADES` och ett uppfyllt `acquireDataFileLock`: den enda
+  konstruktion som fanns — en märkning med en död pid plus ett öppet handtag på
+  låsfilen — når inte grenen i den här miljön, och den utlovade återlämningen
+  gäller därför. Bevisen som avgjorde: `GREN unlink-catch: 0` och
+  `GREN forsok2-catch: 0` över hela sviten, och båda mutationerna ("ta bort
+  `try`/`catch` runt andra skrivförsöket", "kasta vidare i stället för att svälja
+  unlink-felet") gav `pass 18, fail 0, EXIT=0`. Priset för strykningen är skrivet
+  där det märks: ett fel från `fs.unlink` eller från `försök 2`:s `fs.writeFile`
+  lämnar `acquireDataFileLock` rått, går genom `start`:s `try`/`catch` och blir
+  rad 3 under "Beteende vid start" — svensk text och `cause` satt, men med portens
+  namn i stället för låsfilens. Det priset är billigare än en `catch` som ingen
+  indata når: en sådan gren är enligt filens egen regel inte ett skydd utan en
+  osann uppgift om vad koden hanterar. Rad L4 påverkas inte, den nås av `mkdir`
+  och av `försök 1`, och båda vägarna har testfall. Fall 11 är därmed struket och
+  numret återanvänds aldrig. (påverkat av lärdom: **ja**, `2026-09-04 — test: två
+  konstruktioner i storage.js körs aldrig och överlever mutation`)
+- **`src/web/app.js` fick en automatisk testfil, och kravet på fem redovisade
+  körningar mot en slängd attrapp är avskaffat** — beslutet "ingen automatisk
+  testfil, men fem redovisade körningar" lade bevisbördan på en mätapparat som
+  inte fanns i projektet, och den bevisbördan höll inte: granskarens mutation
+  (`const trasig = ( ;` plus ett importnamn som inte finns) gav
+  `tests 241, pass 241, fail 0` och `EXIT=0`. Beslutet "ingen
+  webbläsarautomatisering" står kvar oförändrat — det motiverar att `click` och
+  `submit` inte prövas i en webbläsare, aldrig att filen inte laddas. Två fällor
+  följde med tillägget, och båda är stängda i regeltexten i stället för lämnade åt
+  paket 6 och 7. Den första: en attrapp som svarar `null` på det den inte förstår
+  låter `app.js` gå sönder tyst — därför ska den kasta. Den andra: en attrapp som
+  växer efter vad ett testfall råkar behöva blir en halv webbläsare — därför får
+  den bara ha det `index.html` och `app.js` verkligen använder, och därför är
+  id-jämförelsen mot `index.html` ett eget testfall. Att filen ligger under
+  `tests/helpers/` och är incheckad är samma beslut som för
+  `interrupted-save.js`: en mätapparat som kastas bort gör mätningen omöjlig att
+  göra om. Ingen server och inga timers i `tests/app.test.js` — allt `app.js` gör
+  där är löften utan I/O, och det är också skälet till att filen inte har någon
+  rad i tabellen över hängningsspärrar. Tillägget är prövat med den mutation som
+  avslöjade hålet: byggarens körning av samma syntaxfel ger nu `EXIT=1` med
+  `pass 1, fail 10`. (påverkat av lärdom: **ja**, `2026-09-07 —
+  test: src/web/app.js kan göras syntaktiskt trasig utan att npm test faller`)
+- **Textspärren mot `saveEntries` föreskriver tre stavningar, och "release rör
+  inte disken" mäts i filoperationer** — två fynd av samma slag: en regel som
+  prövas med den stavning eller det mätsätt regeln själv råkar använda prövar
+  ingenting. Spärren i `tests/api.test.js` delade importlistan på `,` och jämförde
+  hela elementet, så `saveEntries as spara` gick förbi med `✔` och `EXIT=0` i
+  granskarens körning; regeln gäller
+  **bindningen** och inte strängen, listan normaliseras därför med
+  `del.split(/\s+as\s+/)[0].trim()`, och mutationslistan räknar upp alla tre
+  stavningarna språket tillåter — rakt namn, alias och `import * as`. Att
+  textspärren inte är det enda skyddet skrivs ut i stället för att antas: samma
+  återinföring fäller de tre samtidighetsfallen, och de ska köras och redovisas.
+  Byggaren har kört alla tre stavningarna mot den normaliserade spärren och fått
+  `EXIT=1` på samma kryssrad.
+  På samma sätt lät kravet "låsfilen är oförändrad" villkoret `token === undefined`
+  överleva mutation, eftersom en läsning som jämför med `undefined` också lämnar
+  filen i fred. Kravet är därför omskrivet till noll filoperationer, mätt genom
+  att räkna anropen till `fs.readFile` med originalet återlagt i en `after`-hook,
+  och det fick ett eget nummer (fall 12) och en egen mutation (f). Regeln bakom
+  båda: ett krav ska formuleras som det som skiljer den rätta koden från den
+  trasiga, inte som det som råkar vara sant för båda. (påverkat av lärdom: **ja**,
+  `2026-09-07 — test: textspärren mot saveEntries i api.js går förbi med ett
+  alias`, och `2026-09-04 — test: två konstruktioner i storage.js körs aldrig och
+  överlever mutation`)
+- **Den spärrade knappen får en egen regel i `style.css`, och "ingen ny stil"
+  ströks** — avsnittet "Knappen spärras under ett pågående anrop" skrev "Ingen ny
+  text och ingen ny stil krävs" medan beslutsloggen skrev "ingen ny text och
+  ingen ny stil". Den första meningen går att läsa som "behövs inte" och den
+  andra som "får inte", alltså två svar på samma fråga. Facit är nu att regeln
+  **ska** finnas, och skälet är sakligt: `button.primary` och `button.remove`
+  sätter egen `background` och `cursor: pointer`, vilket åsidosätter webbläsarens
+  gråtoning, så utan regeln är `disabled` en spärr användaren inte kan se — och
+  en osynlig spärr ser ut som en app som inte svarar. Kravet är skrivet som
+  utseende och inte som CSS-rader (`cursor` som inte är `pointer`, en dämpning,
+  och samma sak under `:hover`), eftersom `style.css` inte har något automatiskt
+  test och ett krav på exakta värden bara flyttar granskningen till fel fråga.
+  (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation: två facit i samma fil
+  ger olika svar för samma belopp`)
+- **`lock.js` får importera `getDataFilePath`, och `LOCK_RELEASE_TIMEOUT_MS` fick
+  sin rad i hängningsspärrtabellen** — två fynd av samma slag: dokumentet krävde
+  något och listade sedan inte det som krävdes. Beroendelistan för `lock.js`
+  namngav bara `getLockFilePath`, men rad L1 (och nu rad L5) namnger
+  **datafilen**, så modulen måste kunna fråga efter den — ett ord saknades, och en
+  byggare som följer listan bokstavligt kan inte skriva rad L1:s sträng.
+  `LOCK_RELEASE_TIMEOUT_MS` fanns i `tests/lock.test.js` utan rad i tabellen över
+  hängningsspärrar, trots att tabellen är uttömmande och en spärr utan rad ska
+  stoppa paketet. Den fick en rad i stället för att tas bort: väntan pekar på en
+  fil och inte på ett meddelande eller ett svar, eftersom släppandet i
+  `close`-hanteraren är ett löfte ingen anropare kan invänta, och det är en tredje
+  roll. (påverkat av lärdom: **ja**, `2026-09-07 — test: en fjärde hängningsspärr
+  byggdes utan den rad ARKITEKTUR.md kräver för den`)
