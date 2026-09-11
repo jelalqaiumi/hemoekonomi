@@ -152,6 +152,22 @@ export function createDom() {
   const list = new FakeElement('ul', 'entry-list');
   registry.set('entry-list', list);
 
+  // Paket 6: tomläget och totalrutans två beloppselement. Hela utökningen av
+  // attrappen är tre FakeElement till under just de id:n — ingen ny metod och
+  // ingen ny egenskap. Elementen slås upp med falt(), som bara är ett uppslag i
+  // registret.
+  const emptyState = new FakeElement('p', 'empty-state');
+  emptyState.className = 'empty-state';
+  registry.set('empty-state', emptyState);
+
+  const totalMonthly = new FakeElement('span', 'total-monthly');
+  totalMonthly.className = 'total-amount';
+  registry.set('total-monthly', totalMonthly);
+
+  const totalYearly = new FakeElement('span', 'total-yearly');
+  totalYearly.className = 'total-amount';
+  registry.set('total-yearly', totalYearly);
+
   const document = {
     querySelector(selector) {
       assert.equal(selector.startsWith('#'), true, `DOM-attrappen stöder inte selektorn ${selector}`);

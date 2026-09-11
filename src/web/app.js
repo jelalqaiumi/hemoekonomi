@@ -2,19 +2,35 @@
 // src/core/, som servern levererar under /core/.
 //
 // Paket 5 bygger punkt 1, 2 (utan kostnader per post), 5, 6 och 7 i
-// ARKITEKTUR.md:s ansvarslista. Punkt 3 (totaler), punkt 4 (kommande
-// dragningar) och punkt 8 (tomläge) hör till paket 6 och 7 och finns inte här.
+// ARKITEKTUR.md:s ansvarslista. Paket 6 bygger resten av punkt 2 (kostnaden per
+// post), punkt 3 (totalerna) och punkt 8 (tomläget). Punkt 4 (kommande
+// dragningar) hör till paket 7 och finns inte här.
+import { monthlyOre, totalMonthlyOre, totalYearlyOre, yearlyOre } from '/core/cost.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { formatSek, sekToOre } from '/core/money.js';
 
-// Enda strängen i den här filen som inte kommer från servern eller från
-// src/core/. Den visas bara när ett svar varken bär error eller fieldErrors,
-// till exempel när servern inte svarar alls.
+// Text mot användaren som varken kommer från servern eller från src/core/ står
+// ordagrant i ARKITEKTUR.md och får inte skrivas om. Det gäller konstanterna
+// här nedanför och de strängar renderEntries skriver på plats: knappens Ta bort
+// och etiketterna framför kostnaden per post. Uppräkningen står utan antal —
+// ett krav utan siffra blir inte falskt av nästa tillägg (LARDOMAR.md
+// 2026-09-10, kommentaren i app.js räknar upp två av filens fem strängar).
+//
+// GENERAL_ERROR visas bara när ett svar varken bär error eller fieldErrors, till
+// exempel när servern inte svarar alls.
 const GENERAL_ERROR = 'Det gick inte att nå appens server. Försök igen.';
+const EMPTY_STATE = 'Du har inga poster ännu. Lägg till din första utgift ovan.';
+// U+2013 EN DASH, inte bindestreck (U+002D) och inte tankstreck (U+2014).
+// Står i båda totalerna när en hämtning misslyckades: vyn visar aldrig ett tal
+// appen inte vet är sant, och 0,00 kr vore ett tal appen inte har räknat fram.
+const UNKNOWN_TOTAL = '\u2013';
 
 const FORM = document.querySelector('#entry-form');
 const LIST = document.querySelector('#entry-list');
 const FORM_ERROR = document.querySelector('#form-error');
+const EMPTY_STATE_ELEMENT = document.querySelector('#empty-state');
+const TOTAL_MONTHLY = document.querySelector('#total-monthly');
+const TOTAL_YEARLY = document.querySelector('#total-yearly');
 const SUBMIT_BUTTON = FORM.querySelector('button[type="submit"]');
 
 // Fälten i formuläret, i samma ordning som validateEntryDraft rapporterar dem.
@@ -67,16 +83,52 @@ function renderEntries(entries) {
       void removeEntry(entry.id, remove);
     });
 
+    // entry-amount är beloppet PER BETALNING; de två sista cellerna är
+    // omräkningar och bär därför var sin etikett, annars visar raden tre belopp
+    // utan att något skiljer dem åt. Talen kommer ur src/core/cost.js — inget
+    // räknas här.
     item.append(
       cell('entry-name', entry.name),
       cell('entry-category', CATEGORY_LABELS[entry.category]),
       cell('entry-amount', formatSek(sekToOre(entry.amountSek))),
       cell('entry-interval', INTERVAL_LABELS[entry.interval]),
+      cell('entry-monthly', `Per månad: ${formatSek(monthlyOre(entry))}`),
+      cell('entry-yearly', `Per år: ${formatSek(yearlyOre(entry))}`),
       remove
     );
 
     LIST.append(item);
   }
+
+  // Totalerna kommer ur totalMonthlyOre och totalYearlyOre, som får hela listan.
+  // Kolumnen summeras aldrig här: totalen avrundas en gång ur den exakta
+  // årssumman medan varje rad avrundas för sig, så de kan skilja sig med ören —
+  // och den korrekta totalen är den som visas. Skillnaden förklaras inte för
+  // användaren; den är i stället testad i tests/app.test.js.
+  TOTAL_MONTHLY.textContent = formatSek(totalMonthlyOre(entries));
+  TOTAL_YEARLY.textContent = formatSek(totalYearlyOre(entries));
+
+  // Tomläget. Totalrutan döljs aldrig: en tom lista ger 0,00 kr på båda raderna.
+  if (entries.length === 0) {
+    EMPTY_STATE_ELEMENT.textContent = EMPTY_STATE;
+  } else {
+    EMPTY_STATE_ELEMENT.textContent = '';
+  }
+}
+
+// Vyn när en hämtning misslyckas (ARKITEKTUR.md, "Vyn när en hämtning
+// misslyckas"). renderEntries är enda skrivaren av de fyra elementen och nås
+// bara efter ett 200, så utan den här funktionen står förra svarets lista kvar i
+// vyn — med totaler som räknar med en post som redan är borta ur datafilen.
+//
+// Tomlägets text är ett påstående om datafilen. Appen vet inte om den är tom;
+// den vet bara att den inte kunde läsas. Därför den tomma strängen och inte
+// EMPTY_STATE.
+function clearView() {
+  LIST.replaceChildren();
+  EMPTY_STATE_ELEMENT.textContent = '';
+  TOTAL_MONTHLY.textContent = UNKNOWN_TOTAL;
+  TOTAL_YEARLY.textContent = UNKNOWN_TOTAL;
 }
 
 async function readJson(response) {
@@ -114,17 +166,29 @@ function showErrors(body) {
   }
 }
 
+// Varje misslyckad hämtning nollställer vyn: både ett avvisat fetch och varje
+// status som inte är 200.
+//
+// Ordningen mellan clearView och feltexten är fri i båda grenarna, inte
+// bindande: clearView skriver bara till #entry-list, #empty-state,
+// #total-monthly och #total-yearly, medan FORM_ERROR i den avvisade grenen och
+// showErrors i grenen för status ≠ 200 bara skriver till #form-error och
+// #error-<fält>. Mängderna är disjunkta. Mätt i en kopia av trädet: mutation:
+// satsparet i den avvisade grenen och satsparet i grenen för status ≠ 200, båda
+// i omvänd ordning samtidigt -> ger EXIT=0 med fail 0, och inget test faller.
 async function loadAndRender() {
   let response;
   try {
     response = await fetch('/api/entries');
   } catch {
+    clearView();
     FORM_ERROR.textContent = GENERAL_ERROR;
     return;
   }
 
   const body = await readJson(response);
   if (response.status !== 200) {
+    clearView();
     showErrors(body);
     return;
   }

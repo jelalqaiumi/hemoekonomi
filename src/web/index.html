@@ -13,8 +13,8 @@
     </header>
 
     <main>
-      <!-- Paket 5: formulär och lista. Totalrutan byggs i paket 6 och listan
-           över kommande dragningar i paket 7. -->
+      <!-- Paket 5: formulär och lista. Paket 6: kostnad per post, totalrutan
+           och tomläget. Listan över kommande dragningar byggs i paket 7. -->
       <section class="card">
         <h2>Lägg till en utgift</h2>
 
@@ -60,6 +60,24 @@
       <section class="card">
         <h2>Dina poster</h2>
         <ul id="entry-list" class="entry-list"></ul>
+        <!-- Tomläget. Texten skrivs av app.js och töms när listan har poster;
+             ett tomt textContent syns inte, samma teknik som #form-error. -->
+        <p class="empty-state" id="empty-state"></p>
+      </section>
+
+      <!-- Totalrutan står efter listan: den sammanfattar den och läses efter
+           den. Etiketterna är statisk text och skrivs aldrig av app.js, som bara
+           sätter textContent på de två beloppselementen. -->
+      <section class="card">
+        <h2>Summa</h2>
+        <p class="total-row">
+          <span class="total-label">Totalt per månad</span>
+          <span class="total-amount" id="total-monthly"></span>
+        </p>
+        <p class="total-row">
+          <span class="total-label">Totalt per år</span>
+          <span class="total-amount" id="total-yearly"></span>
+        </p>
       </section>
     </main>
 

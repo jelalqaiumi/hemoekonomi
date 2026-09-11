@@ -1698,3 +1698,416 @@ med den utdatan inklistrad. Går antalet inte att verifiera när det skrivs ska
 meningen formuleras som "samtliga förekomster av mönstret `<mönster>` är strukna;
 `grep -c` ger nu 0" — påståendet om *noll kvar* går att kontrollera, påståendet om
 *hur många det var* gör det inte.
+
+### 2026-09-10 — test: två av tre fall i den bindande uppräkningen för GENERAL_ERROR körs av inget test
+**Vad gick fel:** `ARKITEKTUR.md` rad 3530–3533 räknar upp exakt när
+`GENERAL_ERROR` visas och namnger tre fall — "`fetch` avvisas — vid
+sidladdningen, vid Spara och vid Ta bort" — men bara Spara körs av sviten.
+Instrumenterat i en kopia (alla tre `FORM_ERROR.textContent = GENERAL_ERROR;` i
+`src/web/app.js` rad 151, 197 och 229 fick var sin `console.log`) och kört
+`node --test "tests/*.test.js"` över hela sviten: utfallet är `1 MARK-GE-2` och
+noll rader för `MARK-GE-1` (sidladdningen) och `MARK-GE-3` (Ta bort). Båda
+grenarna överlever mutation: `loadAndRender`s try/catch runt
+`await fetch('/api/entries')` ersatt av ett rakt `const response = await
+fetch('/api/entries');` ger `tests 16, pass 16, fail 0` och `EXIT=0`, och
+`FORM_ERROR.textContent = GENERAL_ERROR;` struken ur `removeEntry`s catch ger
+samma sak. Utan de raderna blir ett avvisat `fetch` vid sidladdning en ohanterad
+avvisning från modulens toppnivås `await loadAndRender()` och användaren ser en
+tom skärm utan ett ord.
+**Varför:** Kravlistan för `tests/app.test.js` (`ARKITEKTUR.md` rad 2044–2083) är
+skriven som en lista över *scenarier* — "ett fetch som kastar visar den allmänna
+texten och lämnar knappen påslagen" — medan uppräkningen av `GENERAL_ERROR`-fallen
+står i ett helt annat avsnitt och aldrig översattes till en rad per fall. När ett
+av tre scenarier fick ett testfall såg kravet uppfyllt ut: testet heter något som
+låter allmänt ("ett fetch som kastar"), fast det bara prövar POST-vägen. Paket 6
+lade till fyra testfall i samma fil utan att uppräkningen lästes om, trots att
+paketets egen totalruta är beroende av just laddningsvägen.
+**Regel framåt:** En uppräkning i `ARKITEKTUR.md` som säger "i exakt dessa fall"
+eller räknar upp platser ("vid sidladdningen, vid Spara och vid Ta bort") ska ha
+ett eget testfall per uppräknad plats, och testets namn ska innehålla platsen
+("vid sidladdning", "vid Ta bort") — aldrig ett namn som täcker alla tre men bara
+kör en. Kontrollen körs innan paketet lämnas vidare: instrumentera varje
+kodställe som uppräkningen pekar ut med en `console.log` i en kopia av trädet, kör
+hela sviten och kräv minst en rad per ställe. Skrivs ett ställe noll gånger är
+kravet inte byggt färdigt, oavsett hur många tester filen har.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-10 — gränssnitt: totalrutan och tomläget har ett tredje tillstånd som specen inte nämner — helt tomma rutor
+**Vad gick fel:** `ARKITEKTUR.md` rad 3410–3416 slår fast "**Totalrutan visas
+alltid, också när listan är tom.** Den döljs inte" och motiverar det med att "en
+ruta som försvinner och kommer tillbaka är oroligare att läsa än två nollor", men
+`renderEntries` i `src/web/app.js` rad 100–108 är det enda stället som skriver
+`#total-monthly`, `#total-yearly` och `#empty-state`, och den anropas bara efter
+ett `200`. Mätt med den incheckade DOM-attrappen: ett `fetch` som avvisas vid
+sidladdningen ger `empty-state="" total-monthly="" total-yearly=""
+form-error="Det gick inte att nå appens server. Försök igen." rader=0`, och ett
+`500` med lagringens svenska text ger `empty-state="" total-monthly=""
+total-yearly="" form-error="Datafilen är skadad och kunde inte läsas: X"
+rader=0`. Användaren får alltså kortet Summa med etiketterna `Totalt per månad`
+och `Totalt per år` och **inget belopp alls** — varken de utlovade två nollorna
+eller en dold ruta. Samma mätning visar ett fjärde, lika ospecificerat läge: efter
+ett lyckat `DELETE` (`204`) vars omladdning avvisas står raden kvar i vyn och
+totalerna kvar på det gamla beloppet för en post som redan är borta ur datafilen.
+**Varför:** Facit för paket 6 är skrivet som två tillstånd — "tom lista" och
+"lista med poster" — och båda förutsätter att en lista har kommit. Tillståndet
+"ingen lista kom" tillhör felvägen, som beskrivs i ett annat avsnitt
+("Den allmänna felrutans egen text"), och det avsnittet talar bara om felrutans
+text, aldrig om vad de övriga elementen ska visa. Ingen mening i filen binder ihop
+de två, så byggaren byggde två av tre tillstånd och sviten prövade samma två:
+laddningsvägens felgren körs av inget testfall alls (se posten ovan).
+**Regel framåt:** När ett element bara skrivs på lyckoväg ska specen ha en rad för
+varje väg där det *inte* skrivs, med den text elementet ska bära då. För paket 6
+betyder det en rad i totalruteavsnittet för "laddningen misslyckades" och en för
+"en omladdning efter en lyckad ändring misslyckades", med beslutet utskrivet —
+antingen `0,00 kr` i båda, eller den senast kända summan med en text som säger att
+den är gammal. Kontrollen är mekanisk och körs i samma paket: för varje element
+`app.js` sätter, kör `grep -n "textContent" src/web/app.js`, räkna upp varje
+funktion som *inte* passerar den raden på sin väg ut, och skriv ett testfall per
+sådan väg som asserterar elementets värde.
+
+### 2026-09-10 — dokumentation: kravlistan för paket 6 skriver formatSek-utdata med vanligt mellanslag
+**Vad gick fel:** `ARKITEKTUR.md` rad 2073, 2074 och 2077 är den bindande
+kravlistan för `tests/app.test.js` och anger de strängar testet ska asserta:
+`141,66 kr`, `141,67 kr` och `0,00 kr` — alla tre skrivna med U+0020 före `kr`.
+Körd: `formatSek(14166)` ger kodpunkterna
+`U+0031 U+0034 U+0031 U+002C U+0036 U+0036 U+00A0 U+006B U+0072`, och
+jämförelsen mot `141,66 kr` skriven med U+0020 är `false`; samma sak för
+`0,00 kr` mot `formatSek(0)`. En byggare som följer kravlistan ordagrant skriver
+alltså ett test som aldrig kan passera. Samma stycke gör motsatt fel på rad 3412:
+meningen "formatSek(0) ger 0,00 kr — en tom lista visar alltså 0,00 kr på båda
+raderna" har U+00A0 i den första strängen och U+0020 i den andra, i samma mening.
+Rad 3388 och 3412 skriver dessutom det hårda blanksteget som ett osynligt U+00A0 i
+källtexten, medan rad 866, 912 och 2478 i samma fil skriver samma tecken som
+escapesekvensen — filen har två skrivsätt för samma tecken, och det ena går inte
+att se.
+**Varför:** Lärdomen 2026-09-02 om `formatSek`-strängen kräver att en exempelsträng
+skrivs med kodpunkterna utskrivna "så snart den innehåller andra blanktecken än
+U+0020". Regeln följdes i brödtexten om kvartalsposten, där skillnaden var poängen,
+men inte i kravlistan under "Teststrategi", som skrevs i ett annat stycke och lästes
+som en uppräkning av testfall snarare än som exempelsträngar. Att byggaren ändå
+skrev testet rätt (`tests/app.test.js` rad 433, 438, 443 och 458–460 har U+00A0)
+döljer felet: sviten är grön, och bara nästa läsare av dokumentet går på det.
+**Regel framåt:** Ett hårt blanksteg får aldrig stå som ett osynligt U+00A0 i
+`ARKITEKTUR.md` — varje sträng som en funktion producerar skrivs med
+escapesekvensen `\u00a0`, oavsett om den står i brödtext, i en tabell eller i en
+kravlista. Kontrollen körs när ett avsnitt med belopp skrivs: kör funktionen och
+skriv ut kodpunkterna för varje sträng avsnittet påstår, och kör dessutom
+`grep -nP "\x{00A0}" ARKITEKTUR.md` — varje träff ska antingen bytas mot `\u00a0`
+eller motiveras på raden. En kravlista räknas som exempelsträngar, inte som prosa.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-10 — dokumentation: "Två nya id:n" i samma stycke som kräver tre FakeElement
+**Vad gick fel:** `ARKITEKTUR.md` rad 3430 inleder ett fetstilt krav med
+"**Två nya id:n betyder två tillägg i DOM-attrappen.**" och fortsätter tre ord
+senare "`index.html` får `total-monthly`, `total-yearly` och `empty-state` … faller
+tills `createDom()` … registrerar samma tre. Attrappen ska alltså få tre
+`FakeElement` till". Det är tre nya id:n och tre tillägg, inte två. Körd mot det
+frysta trädet: `grep -o ' id="[^"]*"' src/web/index.html` ger 16 id:n mot 13 i
+commit `ced5661`, alltså tre nya, och `tests/helpers/dom.js` rad 159–169 lägger
+till tre `FakeElement`. Stycket ger alltså två svar på frågan "hur många".
+**Varför:** Meningen skrevs först om totalrutans två beloppselement, som var
+avsnittets ämne, och tomläget lades till i uppräkningen efteråt utan att den
+fetstilta ingressen räknades om. En fetstilt ingress läses som facit och kopieras
+vidare; siffran i den kontrollerades aldrig mot uppräkningen på nästa rad. Tredje
+gången ett antal i `ARKITEKTUR.md` är fel (2026-09-07, "nio" markörer som var elva,
+och posten om grep-antalet nedan).
+**Regel framåt:** Skriv aldrig ett antal i en rubrik eller en fetstilt ingress när
+uppräkningen står i samma stycke — skriv "Varje nytt id betyder ett tillägg i
+DOM-attrappen" och låt uppräkningen bära antalet. Måste ett antal stå ska det
+skrivas tillsammans med kommandot som ger det, och kommandot ska köras efter att
+stycket är färdigskrivet: här `grep -c ' id="' src/web/index.html` före och efter,
+med båda talen inklistrade.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-10 — test: förbudet mot att summera kolumnen skyddas bara för månadstotalen
+**Vad gick fel:** `ARKITEKTUR.md` rad 3369–3371 är bindande: "`app.js` får aldrig
+summera kolumnen själv. Totalerna kommer alltid ur `totalMonthlyOre` och
+`totalYearlyOre`", och punkt (14) i kravlistan motiverar sitt testfall med "så att
+ingen senare byggare kan byta `totalMonthlyOre` mot en kolumnsumma utan att ett
+test faller". Skyddet gäller bara halva förbudet. Kört i en kopia:
+`TOTAL_YEARLY.textContent = formatSek(totalYearlyOre(entries))` bytt mot
+`formatSek(entries.reduce((s, e) => s + yearlyOre(e), 0))` ger
+`tests 264, pass 264, fail 0` och `EXIT=0` på hela sviten. Motsvarande mutation för
+månadstotalen fälls som utlovat (`✖ totalrutan visar totalMonthlyOre och
+totalYearlyOre för hela listan`, `✖ kolumnen och totalen skiljer sig med ett öre
+för de tre posterna`, `EXIT=1`).
+**Varför:** Testfallet bygger på en öres skillnad mellan kolumn och total, och den
+skillnaden finns bara för månadstotalen: `totalYearlyOre` i `src/core/cost.js` rad
+85–102 *är* summan av `yearlyOre` per post, så inget visat värde kan skilja en
+kolumnsumma från totalen. `ARKITEKTUR.md` rad 3363–3364 skriver till och med ut
+att "Årskolumnen summerar till 170000 öre och `totalYearlyOre` ger 170000 öre,
+alltså ingen skillnad där" utan att dra slutsatsen att förbudets andra hälft
+därmed står oskyddad. Skillnaden mellan de två skrivsätten är inte värdet utan
+spärrarna: `totalYearlyOre` avvisar en icke-array och kastar `RangeError` när
+summan lämnar det säkra heltalsområdet, medan en `reduce` i `app.js` svarar tyst.
+**Regel framåt:** Ett förbud som gäller flera anrop ("totalerna kommer alltid ur
+X och Y") ska ha en mutation per anrop, och mutationerna räknas upp skriftligt i
+paketets redovisning med sin exitkod. Ger en mutation samma värde som originalet
+för varje möjlig indata går den inte att fälla på värdet — då ska skyddet skrivas
+som en kontroll av källtexten i stället, på samma sätt som testet
+`src/server/api.js importerar från ./storage.js … utan saveEntries`: läs
+`src/web/app.js` och kräv att `reduce` och `for` inte förekommer i samma sats
+som `TOTAL_MONTHLY` eller `TOTAL_YEARLY`, och pröva den spärren med varje stavning
+språket tillåter.
+
+### 2026-09-10 — dokumentation: sökmönstret skrevs in i filen det söker i, och antalet blev fel
+**Vad gick fel:** `ARKITEKTUR.md` rad 3578–3581 påstår att den bredare sökningen
+efter markören "inte kört av arkitekten" ger två träffar, "och båda är sådana
+omnämnanden". Körd på det frysta trädet ger samma kommando `6`, och en av
+träffarna är rad 3580 — meningen som skriver ut mönstret matchar sitt eget
+mönster. Träffarna är rad 3557, 3577, 3580, 4652, 4672 och 4727. Felet finns även
+i commit `ced5661` (samma kommando mot `git show HEAD:ARKITEKTUR.md` ger `6`), så
+det är inte paket 6 som infört det, men paket 6 lämnades vidare med det.
+**Varför:** Rättningen av lärdomen 2026-09-07 (antalet markörer räknades utan alla
+böjningsformer) följde regeln "skriv antalet tillsammans med det kommando som gav
+antalet, ordagrant och körbart" — och det är just det som gör antalet fel: så snart
+mönstret står ordagrant i filen matchar filen sig själv, och antalet ändras av
+rättningen som skriver ned det. Kommandot kördes före meningen skrevs, aldrig
+efter.
+**Regel framåt:** Ett grep-antal om en fil får bara skrivas ned i samma fil om
+kommandot körs **efter** att meningen är skriven och utfallet klistras in från just
+den körningen. Räknar meningen bara kvarvarande verkliga förekomster ska raden som
+dokumenterar mönstret uteslutas explicit och uteslutningen skrivas ut i kommandot.
+Ett antal som ändras av att man skriver ned det ska ersättas med ett påstående som
+inte gör det: "varje kvarvarande träff är ett omnämnande av mekanismen, ingen är en
+markör".
+
+### 2026-09-10 — kod: kommentaren i app.js räknar upp två av filens fem användarvända strängar
+**Vad gick fel:** `src/web/app.js` rad 12–13 lyder "De strängar i den här filen som
+varken kommer från servern eller från `src/core/`. Båda står ordagrant i
+`ARKITEKTUR.md` och får inte skrivas om." och följs av `GENERAL_ERROR` och
+`EMPTY_STATE`. Filen har fem sådana strängar, inte två: `Ta bort` på rad 73 samt
+etiketterna `Per månad: ` på rad 87 och `Per år: ` på rad 88, varav de två sista
+lades till i samma paket som gjorde kommentaren till plural. Körd: en sökning efter
+strängliteraler med svenska ord i `src/web/app.js` ger rad 17, 18, 73, 87 och 88.
+**Varför:** Kommentaren skrevs om från "Enda strängen i den här filen…" till "De
+strängar…" när `EMPTY_STATE` tillkom, alltså i samma ändring som lade till två nya
+användarvända strängar en skärmhöjd längre ned. Omskrivningen såg ut som en ren
+pluralböjning och prövades bara mot de två konstanter som stod direkt under den;
+ingen sökte i filen efter övriga strängar. Följden är att den enda mening i filen
+som markerar en sträng som "får inte skrivas om" utesluter tre av fem.
+**Regel framåt:** En kommentar som räknar upp något i sin egen fil ("de enda", "de
+strängar", "båda", "alla tre") ska verifieras med en sökning i filen i samma
+ändring, och sökningen skrivs ut i redovisningen. Går uppräkningen inte att hålla
+uppdaterad ska den formuleras utan antal ("Strängar mot användaren som varken
+kommer från servern eller från `src/core/` står ordagrant i `ARKITEKTUR.md` och får
+inte skrivas om") — ett krav utan siffra blir inte falskt av nästa tillägg.
+
+### 2026-09-10 — kod: uppräkningen "enda strängen" rättades i app.js och lämnades kvar i tests/app.test.js
+**Vad gick fel:** Rättningen av posten `2026-09-10 — kod: kommentaren i app.js
+räknar upp två av filens fem användarvända strängar` skrev om `src/web/app.js`
+rad 12–17 till en uppräkning utan antal, men samma påstående står kvar i
+`tests/app.test.js` rad 24: `// Enda strängen i app.js som varken kommer från
+servern eller från src/core/.` — och den filen ändrades i samma runda. Körd mot
+det frysta trädet: `src/web/app.js` har sex sådana strängar (rad 21
+`GENERAL_ERROR`, rad 22 `EMPTY_STATE`, rad 26 `UNKNOWN_TOTAL`, rad 81 `'Ta bort'`,
+rad 95 `Per månad: `, rad 96 `Per år: `), och fyra av dem skrivs ut i testfilen
+själv — rad 388, 392, 453, 477 och rad 493, där `const UNKNOWN_TOTAL` med värdet
+`\u2013` lades till i den här rundan, 469 rader under meningen som säger att den
+inte finns.
+**Varför:** Lärdomens "Vad gick fel" namngav `src/web/app.js` rad 12–13, och
+rättningen gjordes mot den adressen i stället för mot påståendet. Meningen i
+testfilen är ordagrant samma fel med samma ord, men den stod inte i posten och
+söktes därför aldrig upp: `grep -rn "Enda strängen" src tests` var en körning som
+ingen gjorde. Andra gången samma rättning görs på ett av två ställen
+(`2026-09-07 — dokumentation: rättningen av "beskriver kod som inte längre ser ut
+så" gjordes till hälften`).
+**Regel framåt:** Rätta ett felaktigt påstående genom att söka på påståendets egna
+ord i hela trädet, aldrig bara på den adress lärdomen råkar namnge: kör
+`grep -rn "<fem ord ur den falska meningen>" src tests ARKITEKTUR.md` före
+rättningen och igen efteråt, och klistra in båda utfallen. Antalet träffar ska
+vara noll i den andra körningen. Lägger samma paket till ett nytt exemplar av det
+uppräknade (här `UNKNOWN_TOTAL` i testfilen) räknas rättningen som ogjord.
+
+### 2026-09-10 — dokumentation: det hårda blanksteget rättades till ett osynligt U+00A0, som filen själv förbjuder
+**Vad gick fel:** Rättningen av posten `2026-09-10 — dokumentation: kravlistan för
+paket 6 skriver formatSek-utdata med vanligt mellanslag` bytte U+0020 mot ett rått
+U+00A0 i `ARKITEKTUR.md` rad 2073, 2074 och 2077 i stället för mot escapen
+`\u00a0`. Antalet råa förekomster i filen gick därmed **upp** från `2` till `5`:
+kommandot `grep -cP` med mönstret för U+00A0 gav `2` i runda 1 och ger `5` nu, med
+träffar på rad 2073, 2074, 2077, 3407 och 3431. Filen förbjuder det själv på rad
+2488–2489: "Varje jämförelse mot `formatSek`, i kod eller i test, skrivs därför
+med escapen `\u00a0`, aldrig med ett vanligt mellanslag", och rad 3483 — skriven i
+samma runda, i det nya avsnittet "Vyn när en hämtning misslyckas" — skriver samma
+sträng rätt, med escapen. Samma sträng har alltså två skrivsätt i ändringar från
+samma paket.
+**Varför:** Posten formulerade felet som "strängen matchar inte det `formatSek`
+ger", och rättningen löste just det: strängarna är nu rätt som *innehåll*. Postens
+"Regel framåt" gällde *skrivsättet* ("får aldrig stå som ett osynligt U+00A0") och
+den halvan lästes inte, eftersom ett rått U+00A0 ser exakt ut som ett vanligt
+mellanslag i editorn — rättningen syns inte i en genomläsning och kan bara
+upptäckas av kommandot posten skrev ut. Kommandot kördes aldrig efter rättningen.
+**Regel framåt:** En rättning som gäller ett osynligt tecken redovisas med samma
+mätning före och efter, aldrig med en genomläsning: kör `grep -cP` med mönstren
+för U+00A0 och U+2212 mot `ARKITEKTUR.md` före ändringen och efter, och klistra in
+båda talen. Talet efter ska vara lägre eller lika; blir det högre är rättningen
+felaktig oavsett hur strängen läser. Skriv aldrig ett tecken utanför ASCII i en
+sträng som en funktion producerar — använd escapen (`\u00a0`, `\u2212`, `\u2013`)
+och låt brödtexten intill namnge kodpunkten.
+
+### 2026-09-10 — test: raden som tömmer #empty-state i clearView överlever mutation, och mutationskravet träffar bara den andra kopian
+**Vad gick fel:** `src/web/app.js` rad 129, som sätter `#empty-state` till den
+tomma strängen i den nya `clearView`, kan tas bort utan att något test faller:
+`npm test` ger `tests 267, pass 267, fail 0` och `EXIT=0`. Instrumenterad med en
+utskrift först i `clearView` körs funktionen exakt två gånger i hela sviten, och
+båda gångerna är `#empty-state` redan tomt — raden skriver alltså aldrig över
+något. Den indata som når raden i verksam form är konstruerad och körd: tom lista
+vid start (tomläget skrivs), `POST` som ger `201`, omhämtningen ger `500`. Med
+raden ger vyn `empty-state = ""`; utan raden ger den
+`empty-state = "Du har inga poster ännu. Lägg till din första utgift ovan."`
+samtidigt som båda totalerna visar `\u2013`, alltså två motsägande påståenden på
+skärmen — precis det `ARKITEKTUR.md` rad 3482 gör bindande ("`#empty-state` | den
+tomma strängen | ... ett **påstående om datafilen**"). Mutationskravet (b) i
+kravlistan, rad 2086–2088, lyder "ta bort **raden** som sätter `#empty-state` till
+den tomma strängen" i singular, men efter paket 6 finns två sådana rader (rad 115
+i `renderEntries` och rad 129 i `clearView`); den mutationen fäller
+`✖ en lista med en post tömmer tomläget` och lämnar rad 129 oprövad.
+**Varför:** De två nya testfallen prövar `#empty-state` med en likhet mot tomma
+strängen i lägen där elementet redan är tomt: i punkt (17) har det aldrig
+skrivits, i punkt (18) har `renderEntries` just satt det till tomt i sin
+`else`-gren. Assertionen är alltså sann av sig själv och kan bara fälla en
+mutation som skriver *fel* text — mutationen "sätt `EMPTY_STATE` i stället" fäller
+båda testfallen, men "ta bort raden" gör det inte. Mutationslistan hämtades ur
+`ARKITEKTUR.md`, som skrevs innan den andra kopian av raden fanns, i stället för
+ur den ändrade filen. Sjunde gången ett delvillkor i projektet visar sig oskyddat
+av något test.
+**Regel framåt:** En assertion som kräver att ett element är tomt räknas inte som
+skydd för raden som tömmer det förrän testet har försatt elementet i ett
+**icke-tomt** läge först. Skriv testfallet så att det synliga tillståndet före
+anropet är det motsatta av det förväntade efter, och kör mutationen "ta bort
+raden" — inte bara "skriv fel värde". Ett mutationskrav i `ARKITEKTUR.md` som
+säger "raden" i bestämd form singular ska verifieras med en `grep` efter radens
+text i filen i samma paket; ger sökningen fler än en träff skrivs kravet om till
+en mutation per träff, med en kryssrad för var och en.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-10 — kod: kommentaren i loadAndRender påstår att ordningen är bindande och namnger fel gren
+**Vad gick fel:** `src/web/app.js` rad 169–172 lyder "Ordningen är bindande i den
+avvisade grenen — `clearView` rör inte felrutan, men `showErrors` börjar med
+`clearErrors`, så feltexten måste skrivas efteråt." Båda leden är motbevisade av
+en körning. (1) Ordningen är inte bindande: satsparet i `catch`-grenen bytt till
+omvänd ordning **och** satsparet i grenen för status ≠ 200 bytt till omvänd
+ordning, båda samtidigt, ger `tests 267, pass 267, fail 0` och `EXIT=0` på hela
+sviten. (2) Meningen namnger fel gren: "den avvisade grenen" är `catch`-grenen på
+rad 177–181, och där finns ingen `showErrors` — den står i grenen för status ≠ 200
+på rad 184–188. `clearView` skriver bara till `#entry-list`, `#empty-state`,
+`#total-monthly` och `#total-yearly`, medan `showErrors` och `FORM_ERROR` skriver
+till `#form-error` och `#error-<fält>`; mängderna är disjunkta, så ordningen kan
+inte spela roll i någondera grenen. Uppmätt med DOM-attrappen: ett fältfel och en
+allmän text satta för hand före en borttagning vars omhämtning ger `500` gav
+efteråt `form-error = "SERVERTEXT"` och tomt fältfel för `name` — och det är
+`removeEntry`s eget `clearErrors()` som tömde fältfelet, inte `clearView`.
+**Varför:** Kommentaren skrevs för att motivera var `clearView()`-anropen
+placerades, och motiveringen lånades från den gren där `clearErrors` finns till
+den gren där den inte finns. Ordet "bindande" skrevs utan att ordningen kastades
+om och kördes — samma grundorsak som `2026-09-07 — dokumentation: en kodkommentar
+i server.js påstår "uppmätt" något som en mutationskörning motsäger`. En kommentar
+som säger "bindande" läses av nästa byggare som att ett test skyddar ordningen;
+inget gör det.
+**Regel framåt:** Ordet "bindande" i en kodkommentar i `src/` kräver den
+mutationskörning som visar det: skriv ut mutationen och utfallet på formen
+`mutation: <gammalt> -> <nytt> ger EXIT=<kod>, faller <testnamn>`. Passerar sviten
+ska ordet strykas och kommentaren skrivas om till vad ordningen faktiskt gör.
+Namnger en kommentar en gren ("den avvisade grenen", "grenen för status ≠ 200")
+ska den konstruktion motiveringen bygger på (`clearErrors`, `showErrors`) finnas i
+just den grenen — kontrollen är att läsa grenens rader och räkna upp vilka element
+varje sats skriver till.
+
+### 2026-09-10 — dokumentation: "det är punkt (13) som är dess test" prövades inte med den mutation punkt (14) prövades med
+**Vad gick fel:** `ARKITEKTUR.md` rad 3390–3392, skriven för att rätta lärdomen
+`2026-09-10 — test: förbudet mot att summera kolumnen skyddas bara för
+månadstotalen`, avslutar "Kravet på `app.js` står kvar oförändrat — totalerna
+hämtas ur de två exporterna — men det är punkt (13), inte punkt (14), som är dess
+test." Punkt (13) fäller inte mutationen heller. Körd på det frysta trädet:
+årstotalens uttryck bytt mot en `reduce` över `yearlyOre` per post ger
+`tests 267, pass 267, fail 0` och `EXIT=0`, utan en enda kryssrad — punkt (13):s
+testfall `totalrutan visar totalMonthlyOre och totalYearlyOre för hela listan`
+jämför mot ett anrop av `totalYearlyOre`, och de två uttrycken ger samma tal.
+Kravets årshalva har alltså fortfarande inget test, och dokumentet påstår nu att
+den har ett.
+**Varför:** Stycket redovisar korrekt *varför* punkt (14):s form inte går att
+skriva för årshalvan, och drog därefter slutsatsen att en annan befintlig punkt
+måste vara skyddet — utan att köra samma mutation mot den. Den ursprungliga
+lärdomens "Regel framåt" pekade ut ett annat svar ("då ska skyddet skrivas som en
+kontroll av källtexten i stället ... läs `src/web/app.js` och kräv att `reduce`
+och `for` inte förekommer i samma sats som `TOTAL_MONTHLY` eller `TOTAL_YEARLY`"),
+och det alternativet varken byggdes eller avfärdades skriftligt. Ett falskt
+påstående ersattes alltså av ett annat falskt påstående om samma krav.
+**Regel framåt:** Flyttas ett skydd från en testpunkt till en annan i
+`ARKITEKTUR.md` ska den mutation som avslöjade luckan köras mot den nya punkten i
+samma ändring, och kryssraden klistras in. Ger körningen `fail 0` får meningen
+"det är punkt N som är dess test" inte skrivas — skriv i stället ut att kravet
+saknar test och vilken form skyddet ska ta. En lärdoms "Regel framåt" som
+föreskriver en konkret konstruktion ska antingen byggas eller avfärdas med skäl i
+beslutsloggen; att lämna den obesvarad räknas som att lärdomen inte är åtgärdad.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-10 — process: git checkout -- kastade paket 6:s ospårade arbete på en radslutsdiagnos som är falsk
+**Vad gick fel:** Byggaren körde mitt i paket 6 `git checkout -- src/web/app.js` i
+tron att `git diff HEAD` visade en skillnad som berodde på radslut. Kommandot
+återställde filen till paket 5-versionen i `ced5661` och kastade paket 6:s
+ändringar utan fråga och utan möjlighet att ångra — filen var ospårat ändrad, så
+varken `git stash` eller `git reflog` kunde nå den. Diagnosen är motbevisad på den
+här maskinen: `core.autocrlf` är `true` och `.gitattributes` saknas, arbetsträdets
+`src/web/app.js` har enbart LF medan HEAD-versionen checkas ut med CRLF, och ändå
+ger `git diff HEAD -- src/server/api.js` — en fil i exakt samma läge men utan
+innehållsändring — `0` rader. Git normaliserar radsluten före jämförelsen, så
+radslut kan aldrig ensamma ge en diff. Den diff byggaren såg var 70 rader (60
+tillagda, 5 borttagna), alltså paket 6:s verkliga arbete. Det enda som verkligen
+rörde radslut var varningen `warning: in the working copy of 'src/web/app.js', LF
+will be replaced by CRLF the next time Git touches it`, som gäller en framtida
+skrivning och inte den visade diffen. Utfallet blev den här gången ingen förlust:
+granskarens jämförelse av `src/web/app.js` mot runda 1-kopian (verifierad mot
+`granskning-fore.sha256`) ger 31 tillagda rader och exakt två borttagna, och de
+två är den kommentar som skulle skrivas om.
+**Varför:** `git checkout --` skiljer inte på "återställ en spårad ändring jag inte
+vill ha" och "kasta arbete som aldrig blivit incheckat", och paket 6:s filer var
+ändrade utan commit sedan paket 5. Varningen om CRLF står i utdatan från samma
+kommandon som visar diffen, så den läses som en förklaring till diffen i stället
+för som en upplysning om nästa skrivning. Att byggaren hade en fryst kopia var en
+tillfällighet som räddade paketet, inte en del av arbetsgången.
+**Regel framåt:** Kör aldrig `git checkout --`, `git restore` eller
+`git reset --hard` mot en fil som har ospårade ändringar från det pågående
+paketet. Ska en ändring undersökas: kopiera först filen till scratchpad-katalogen
+och redovisa kopians `sha256sum`, och gör därefter jämförelsen mot kopian.
+Misstänks radslut ligga bakom en diff är kontrollen att jämföra antalet `+`- och
+`-`-rader från `git diff HEAD -- <fil>` med samma antal från `git diff -w HEAD --
+<fil>`: är talen lika beror diffen inte på blanktecken, och `warning: LF will be
+replaced by CRLF` är då inte förklaringen. Varje paket som ändrar filer utan att
+committa dem tar en kopia av de ändrade filerna innan något git-kommando som
+skriver i arbetsträdet körs.
+
+### 2026-09-11 — dokumentation: det osynliga blanksteget rättades i dokumentet och lämnades kvar i testfilen
+**Vad gick fel:** Rättningen av lärdomen 2026-09-10 (det hårda blanksteget
+skrevs som ett osynligt U+00A0) kördes bara mot `ARKITEKTUR.md`. Efteråt gav en
+sökning över hela trädet noll råa U+00A0 i dokumentet men **elva** i
+`tests/app.test.js` — rad 269, 405, 406, 437, 442, 447 och 462–464, bland dem
+`assert.equal(celltext(rad, 'entry-amount'), '1 234,50 kr');` med två osynliga
+tecken i källan. `ARKITEKTUR.md` rad 2507 säger att tecknet "i dokument eller i
+test, skrivs därför med escapen `\u00a0`", så regeln pekade ut testfilen lika
+uttryckligen som dokumentet.
+**Varför:** Fyndet var formulerat som "rad 2073, 2074, 2077 i `ARKITEKTUR.md`",
+och rättningen kördes mot den fil raderna låg i. Ett sökande efter samma tecken i
+de andra filer regeln nämner gjordes aldrig, eftersom fyndets ordalydelse — inte
+regelns — styrde rättningens omfång. Det är samma grundorsak som posten
+2026-09-07 ("rättningen av 'beskriver kod som inte längre ser ut så' gjordes till
+hälften"): en post som räknar upp ett ställe åtgärdas på det stället, och
+ingenting i arbetsgången tvingar fram en sökning efter de övriga. Tredje gången
+samma tecken är fel i den här filen på tio dagar: 2026-09-02 (U+0020 där
+`formatSek` ger U+00A0), 2026-09-10 (rått U+00A0 där escapen krävs), och nu.
+**Regel framåt:** Rätta efter **regeln**, inte efter fyndets radnummer. En regel
+som nämner fler än en fil ska rättas med en sökning över samtliga filer den
+nämner, och sökningen klistras in i redovisningen — här
+`grep -rn $'\xc2\xa0' ARKITEKTUR.md LARDOMAR.md CLAUDE.md src tests`, som ska ge
+noll träffar. Ett tecken utanför ASCII i en strängliteral eller i ett dokument
+skrivs alltid med escapen; är tecknet en del av det som prövas ska kodpunkten
+dessutom stå utskriven intill.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+**Efterskrift 2026-09-11:** posten ovan skrevs med två råa U+00A0 i sin egen
+text — ett i citatet av regeln, ett i det föreskrivna sökkommandot — och fyndet
+inträffade alltså en fjärde gång i den mening som förbjuder det. Kommandot var
+dessutom oanvändbart: `grep -rnP '\xc2\xa0'` ger `exit 1` och noll träffar på
+den här maskinen, medan `grep -rn $'\xc2\xa0'` ger `exit 0` och de två
+raderna. Båda är rättade. Det är själva skälet till att regeln behöver ett test:
+ett tecken som inte syns går inte att läsa sig till, inte ens av den som just
+skrivit ned att det inte går att läsa sig till.

@@ -2061,6 +2061,50 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     **andra** ger två `DELETE` och tömmer listan — granskarens underkännande av
     paket 5, som ska visas grönt och inte antas; (11) en borttagning som ger `404`
     visar serverns text och lämnar raden kvar i vyn.
+  - **`tests/app.test.js` täcker dessutom, från paket 6:** (12) tre poster med
+    var sitt intervall (`monthly`, `quarterly`, `yearly`) ger sex celler per rad,
+    och `entry-monthly` och `entry-yearly` bär de exakta strängarna med etikett
+    och `formatSek`-belopp — minst en av dem skriven med `\u00a0` för blanktecknet
+    före `kr`, aldrig med vanligt mellanslag; (13) totalrutans `#total-monthly`
+    och `#total-yearly` bär `formatSek(totalMonthlyOre(entries))` respektive
+    `formatSek(totalYearlyOre(entries))`, jämförda mot ett anrop av de två
+    exporterna i testet och inte mot en inskriven sträng; (14) **kolumnen och
+    totalen skiljer sig med ett öre för just de tre posterna** — testet
+    asserterar både att raderna summerar till `141,66\u00a0kr` och att
+    `#total-monthly` visar `141,67\u00a0kr`, så att ingen senare byggare kan byta
+    `totalMonthlyOre` mot en kolumnsumma utan att ett test faller; (15) en tom
+    lista ger `#empty-state` med texten ur punkt 8, en tom `#entry-list` och
+    `0,00\u00a0kr` i **båda** totalelementen — totalrutan döljs alltså inte; (16) en
+    lista med minst en post ger `#empty-state` den tomma strängen.
+  - **Paket 6 lade till (19) och (20):** (19) en tom lista vid sidladdningen,
+    följd av ett `POST` som ger `201` och en omhämtning som ger `500`, lämnar
+    `#empty-state` tomt — utgångsläget är alltså det motsatta av det förväntade,
+    och utan nollställningen i `clearView` står "Du har inga poster ännu"
+    samtidigt som båda totalerna visar `–`, två motsägande påståenden på samma
+    skärm; (20) ett svar med status `200` **utan läsbar JSON-kropp** ger en tom
+    vy och inget kast. Punkt (20) prövar `Array.isArray(body.entries)`-skyddet i
+    `loadAndRender`, som byggarens körning i paket 6 visade är nåbart: `readJson`
+    svarar `{}` för en kropp som inte går att tolka, och utan skyddet ger
+    `renderEntries` `TypeError: entries is not iterable` — en trasig vy helt utan
+    felmeddelande. Appens egen serverkod kan inte producera ett sådant svar
+    (`sendJson` skriver alltid en fullständig kropp), men ett `200` som kapas
+    efter huvudena kan: serverprocessen dör mitt i svaret, eller nätet bryter.
+  - **Punkt (17) och (18) står inte här utan under "Vyn när en hämtning
+    misslyckas" i avsnittet om `src/web/app.js`**, tillsammans med den regel de
+    prövar och den mutation de ska fälla. De räknas till den här listan och är
+    lika obligatoriska som (12)–(16); de står där för att en regel och dess
+    testfall ska ha exakt ett hem.
+  - **Mutationer som paket 6 ska köra, utöver syntaxfelsmutationen nedan:**
+    (a) byt `totalMonthlyOre(entries)` i `app.js` mot en kolumnsumma över
+    `monthlyOre` → punkt (14) ska falla med `EXIT=1`; (b) **varje** rad som sätter `#empty-state` till den tomma strängen tas bort,
+    en i taget, med en egen körning och en egen kryssrad per rad. Efter paket 6
+    finns två sådana rader — `else`-grenen i `renderEntries` och nollställningen
+    i `clearView` — och den första fälls av punkt (16), den andra av punkt (19).
+    Kravet är skrivet som "varje rad" och inte som ett antal, så att en tredje
+    förekomst inte gör det falskt: kör `grep -n "empty-state" src/web/app.js`,
+    räkna träffarna som skriver den tomma strängen, och redovisa lika många
+    mutationskörningar med `EXIT=1`. Byggaren klistrar in kryssraden för var och en. Överlever en
+    mutation är punkten inte ett skydd, och paketet lämnas tillbaka.
   - **Mutation som ska köras innan filen räknas som testad:** stoppa in ett
     syntaxfel i `src/web/app.js` (`const trasig = ( ;`) → `npm test` ska ge
     `EXIT=1`, och byggaren klistrar in kryssraderna. Paket 6 och 7 kör om samma
@@ -3308,6 +3352,225 @@ Ingen ny logik. Varje punkt är märkt med det paket där den byggs:
 8. **[paket 6]** Visa tomläge när listan är tom: "Du har inga poster ännu. Lägg
    till din första utgift ovan." — inte en tom skärm.
 
+#### Totalrutan, kostnaden per post och tomläget [paket 6]
+
+Punkt 2, 3 och 8 ovan är sammanfattningen. Det här avsnittet är facit för dem:
+elementens id:n, de svenska strängarna och beräkningsvägen. Ingen sträng mot
+användaren får hittas på av byggaren, och inget tal får räknas fram i `app.js`.
+
+**Beräkningsvägen — bindande.** Fyra tal visas, och vart och ett kommer ur en
+egen export i `src/core/cost.js`:
+
+| Tal på skärmen | Anrop | Var |
+|---|---|---|
+| Månadskostnad för en post | `monthlyOre(entry)` | en cell i postens rad |
+| Årskostnad för en post | `yearlyOre(entry)` | en cell i postens rad |
+| Totalt per månad | `totalMonthlyOre(entries)` | totalrutan |
+| Totalt per år | `totalYearlyOre(entries)` | totalrutan |
+
+`app.js` får aldrig summera kolumnen själv. Totalerna kommer alltid ur
+`totalMonthlyOre` och `totalYearlyOre`, som får hela listan.
+
+**Kolumnen och totalen kan skilja sig med ören, och det är avsiktligt.** Det
+följer av beslutet "Totalen avrundas en gång, ur den exakta årssumman" i
+beslutsloggen: totalen avrundas en gång ur den exakta årssumman, medan varje rad
+avrundas för sig. Arkitektens körning av `src/core/cost.js` på Node v24.19.0, tre
+poster à 100,00 kr:
+
+| Post | `interval` | `monthlyOre` | `yearlyOre` |
+|---|---|---|---|
+| Hyra | `monthly` | 10000 öre | 120000 öre |
+| Försäkring | `quarterly` | 3333 öre | 40000 öre |
+| Domän | `yearly` | 833 öre | 10000 öre |
+
+Kolumnsumman för månad blir 14166 öre, medan `totalMonthlyOre` ger **14167**
+öre — en öres skillnad, synlig på skärmen med tre helt vanliga poster.
+Årskolumnen summerar till 170000 öre och `totalYearlyOre` ger 170000 öre, alltså
+ingen skillnad där.
+
+**Skillnaden förklaras inte för användaren.** Ingen fotnot, ingen asterisk, ingen
+extra sträng. Skälet: en förklaring gör en öres avrundning till något användaren
+måste förstå för att lita på appen, och den korrekta totalen är den som visas.
+Kravet är i stället att skillnaden är **testad**, så att en senare byggare inte
+"lagar" den genom att summera kolumnen — se punkt (14) i kravlistan för
+`tests/app.test.js` under "Teststrategi".
+
+**Punkt (14):s testform går inte att skriva för årshalvan, och det är avsiktligt.**
+Granskarens körning i paket 6: mutationen `formatSek(totalYearlyOre(entries))` →
+`formatSek(entries.reduce((s, e) => s + yearlyOre(e), 0))` ger `tests 264,
+pass 264, fail 0` och `EXIT=0`, medan samma mutation för månadstotalen fäller två
+testfall. Skälet är att `totalYearlyOre` **är** kolumnsumman: årsbeloppet per post
+avrundas inte, så ingen indata kan skilja de två uttrycken åt på värdet. Ett test
+som påstår sig skydda årshalvan på samma sätt som punkt (14) skyddar månadshalvan
+vore alltså ett test utan indata som kan fälla det, och det får inte skrivas.
+Det som ändå går förlorat med en kolumnsumma är `totalYearlyOre`:s egna spärrar
+(`Array.isArray` på listan och `Number.isSafeInteger` efter varje addition), och
+de prövas av `tests/cost.test.js`, inte härifrån.
+
+**Inget testfall i `tests/app.test.js` kan fälla den mutationen, och punkt (13)
+gör det inte heller.** Granskarens körning i runda 2: årstotalen bytt mot en
+`reduce` ger `tests 267, pass 267, fail 0` och `EXIT=0`, utan en enda kryssrad.
+Det är en mätt egenskap hos värdena, inte ett hål någon glömt att täppa: de två
+uttrycken ger samma tal för varje indata, och ett test som skiljer dem åt går
+därför inte att skriva. Kravet på `app.js` står kvar oförändrat — totalerna
+hämtas ur de två exporterna — och det som skyddar årshalvan är i stället en
+textspärr av samma slag som den mot `saveEntries` i `api.js`: ett testfall som
+läser `src/web/app.js` och kräver att `totalYearlyOre` anropas där och att
+ingen `reduce` förekommer. **En textspärr räknas aldrig som ensamt skydd, och
+här finns inget beteendetest bakom den** — därför prövades den mot varje
+stavning språket tillåter innan den räknades som skriven.
+
+Byggd i paket 6 som `app.js hämtar båda totalerna ur cost.js och räknar inte ut
+dem själv` i `tests/app.test.js`. Spärren prövar **bindningen**, inte strängen:
+varje element i importlistan normaliseras till sitt exportnamn, och anropet
+prövas under det namn filen faktiskt använder — aliaset om det finns. Tre
+mutationer kördes, alla med `EXIT=1` och `fail 1` på just det testfallet:
+
+| Stavning | Utfall |
+|---|---|
+| `totalYearlyOre(entries)` → `reduce`, oförändrad import | `EXIT=1` |
+| `totalYearlyOre as arsTotal` i importlistan → `reduce` | `EXIT=1` |
+| `import * as cost` → `cost.yearlyOre` i en `reduce` | `EXIT=1` |
+
+Spärren förbjuder `.reduce(` men **inte** `for`-loopar: `renderEntries` behöver
+en, och ett förbud som är bredare än sitt skäl gör nästa granskare oförmögen
+att avgöra om en konstruktion är ett fel eller en nödvändighet. Det bredare
+förbudet prövades och föll på `renderEntries` egen loop.
+
+**Kostnaden per post.** Postens rad har efter paket 6 sex celler i den här
+ordningen: `entry-name`, `entry-category`, `entry-amount`, `entry-interval`,
+`entry-monthly`, `entry-yearly`, följt av Ta bort-knappen. De två nya cellerna
+bär sin egen etikett i texten, eftersom raden annars visar tre belopp utan att
+något skiljer dem åt — `entry-amount` är beloppet **per betalning** och de två
+nya är omräkningar. Strängarna är bindande och byggs så här:
+
+```js
+cell('entry-monthly', `Per månad: ${formatSek(monthlyOre(entry))}`)
+cell('entry-yearly', `Per år: ${formatSek(yearlyOre(entry))}`)
+```
+
+Arkitektens körning gav för kvartalsposten ovan cellerna
+`"Per månad: 33,33\u00a0kr"` och `"Per år: 400,00\u00a0kr"`. Blanktecknet före
+`kr` är U+00A0 och kommer ur `formatSek`; etikettens kolon följs av ett vanligt
+mellanslag, U+0020. Ett test som jämför mot `'Per månad: 33,33 kr'` skrivet med
+vanligt mellanslag före `kr` fallerar — det är en inträffad lärdom, se
+`LARDOMAR.md` 2026-09-02 om `formatSek`-strängen.
+
+**Totalrutan.** En egen `<section class="card">` i `<main>` i `index.html`,
+placerad **efter** kortet "Dina poster": rutan sammanfattar listan och läses
+efter den. Rubriken är `<h2>Summa</h2>`. Rutan innehåller två rader, var och en
+med en etikett i klartext och ett belopp i ett eget element:
+
+| Etikett i `index.html` | Elementets id | Fylls med |
+|---|---|---|
+| `Totalt per månad` | `total-monthly` | `formatSek(totalMonthlyOre(entries))` |
+| `Totalt per år` | `total-yearly` | `formatSek(totalYearlyOre(entries))` |
+
+Etiketterna står som statisk text i `index.html` och skrivs aldrig av `app.js`;
+`app.js` sätter bara `textContent` på de två elementen. Klassnamnen för raden och
+etiketten väljer byggaren, men beloppselementen ska ha klassen `total-amount`, så
+att `style.css` kan ge dem samma `font-variant-numeric: tabular-nums` som
+`entry-amount` har.
+
+**Totalrutan visas alltid, också när listan är tom.** Den döljs inte. Arkitektens
+körning: `totalMonthlyOre([])` och `totalYearlyOre([])` ger båda `0`, och
+`formatSek(0)` ger `"0,00\u00a0kr"` — en tom lista visar alltså `0,00\u00a0kr`
+på båda raderna. Alternativet, att dölja rutan, förkastades av två skäl: det kräver
+en mekanism DOM-attrappen i `tests/helpers/dom.js` inte har (varken `hidden`,
+`style` eller `classList`), och en ruta som försvinner och kommer tillbaka är
+oroligare att läsa än två nollor.
+
+**Tomläget.** Ett eget element i kortet "Dina poster", efter `<ul id="entry-list">`:
+
+```html
+<p class="empty-state" id="empty-state"></p>
+```
+
+`app.js` sätter dess `textContent` till `Du har inga poster ännu. Lägg till din
+första utgift ovan.` när listan är tom och till den tomma strängen annars. Det är
+samma teknik som `#form-error` redan använder — ett tomt `textContent` syns inte —
+och den kräver ingen ny förmåga hos attrappen. Texten står ordagrant i punkt 8
+ovan och får inte skrivas om.
+
+**Tre nya id:n betyder tre tillägg i DOM-attrappen.** `index.html` får `total-monthly`,
+`total-yearly` och `empty-state`, och testfallet som jämför attrappens id:n med
+`index.html`:s id:n (punkt (6) i kravlistan) faller tills `createDom()` i
+`tests/helpers/dom.js` registrerar samma tre. Attrappen ska alltså få tre
+`FakeElement` till, registrerade under just de id:n — ingen ny metod, ingen ny
+egenskap. Det är hela utökningen av attrappen i paket 6.
+
+**`style.css` — krav, inte kod.** Två regler tillkommer: `total-amount` ska ha
+`font-variant-numeric: tabular-nums` som `entry-amount`, så att siffrorna står i
+kolumn, och `.entry` ska klara sina två nya celler — dagens
+`grid-template-columns: 1fr auto auto auto auto` räcker inte för sju barn.
+Hur rutnätet skrivs om, och hur `empty-state` dämpas, är byggarens val; kravet är
+att de sex cellerna och knappen får plats utan att raden bryts sönder, och att
+regeln för smal skärm (`@media (max-width: 34rem)`) fortfarande ger en läsbar rad.
+Ingen ny text mot användaren tillkommer i `style.css`.
+
+#### Villkoret för en misslyckad hämtning är `!== 200`, inte `>= 500` [paket 6]
+
+Byggarens körning i paket 6 sonderade `GET /api/entries` mot en riktig server i
+fyra tillstånd och fick bara två statuskoder: `200` för saknad, tom och giltig
+datafil, och `500` för skadad datafil och för en ogiltig post. `handleList`
+skickar heller inga andra: `405` kräver en annan metod, `404` en annan sökväg
+och serverskiktets `400` en förfrågningsrad som inte går att tolka, och `app.js`
+skickar alltid `GET /api/entries`. Mutationen `!== 200` → `>= 500` ger därför
+`tests 268, pass 268, fail 0` och `EXIT=0`.
+
+**Villkoret ska ändå vara `!== 200`, och det är ett beslut och inte en
+förbiseelse.** De två uttrycken skiljer sig först vid en status i intervallet
+300–499, som i dag kräver en mellanhand mellan webbläsaren och servern. Det
+bredare villkoret är det som stämmer med regeln nedan — vyn visar aldrig ett tal
+appen inte vet är sant — medan `>= 500` skulle låta ett framtida `404` eller
+`409` på GET-vägen rendera som om svaret varit lyckat. Att en mutation överlever
+är alltså väntat här och gör inte villkoret till död kod: **grenen körs**, av
+varje `500`, och den prövas av punkt (13). Det otestbara är gränsen, inte
+grenen. Får GET-vägen någon gång en status mellan `300` och `499` ska den få ett
+testfall i samma paket.
+
+#### Vyn när en hämtning misslyckas [paket 6]
+
+`renderEntries` är enda skrivaren av `#entry-list`, `#empty-state`,
+`#total-monthly` och `#total-yearly`, och den nås bara när `GET /api/entries` gav
+`200`. Utan en regel för det misslyckade fallet får användaren kortet **Summa**
+med två etiketter och inga belopp — inte de två nollor stycket ovan lovar — och
+efter en borttagning som inte kunde följas av en omhämtning står en post kvar i
+vyn som redan är borta ur datafilen, med totaler som räknar med den. Båda
+tillstånden är uppmätta av granskaren i paket 6 mot den incheckade DOM-attrappen.
+
+**Regeln är bindande: vyn visar aldrig ett tal appen inte vet är sant.**
+Misslyckas en hämtning — `fetch` avvisas, eller svaret har någon annan status än
+`200` — ska `app.js` göra tre saker utöver att visa feltexten enligt punkt 6:
+
+| Element | Vad det sätts till | Varför inte något annat |
+|---|---|---|
+| `#entry-list` | tömd | En kvarstående lista är förra svarets data och kan innehålla en post användaren just tagit bort. |
+| `#empty-state` | den tomma strängen | Texten "Du har inga poster ännu" är ett **påstående om datafilen**. Appen vet inte om den är tom; den vet bara att den inte kunde läsa den. |
+| `#total-monthly`, `#total-yearly` | `UNKNOWN_TOTAL` | `0,00\u00a0kr` vore ett tal appen inte har räknat fram. |
+
+`UNKNOWN_TOTAL` är `app.js`:s tredje egna sträng och bindande ordagrant:
+
+```js
+const UNKNOWN_TOTAL = '–';
+```
+
+Tecknet är U+2013 EN DASH, inte bindestreck (U+002D) och inte tankstreck
+(U+2014). **Det skrivs med escapen `–` i koden, aldrig som det råa
+tecknet** — ett tecken utanför ASCII som står rått i en sträng går inte att
+skilja från sina grannar vid läsning, och den här filen har redan brutit mot
+det en gång med ett osynligt U+00A0 (`LARDOMAR.md` 2026-09-10). Det står ensamt: feltexten i den allmänna felrutan säger redan vad som
+gick fel, och en andra förklaring intill varje belopp vore samma besked två
+gånger. En egen svensk mening här förkastades av det skälet.
+
+**Testfallen är obligatoriska** och läggs till kravlistan för `tests/app.test.js`
+som (17): ett avvisat `fetch` vid sidladdning ger tömd lista, tomt
+`#empty-state`, `–` i båda totalelementen och `GENERAL_ERROR` i felrutan; och
+(18): en lista renderad ur ett `200`, följd av en borttagning vars omhämtning
+misslyckas, lämnar inget av den gamla listans innehåll i vyn. Mutationen som ska
+fällas av (17) är "ta bort anropet som nollställer vyn i den misslyckade grenen"
+→ `EXIT=1`.
+
 #### Hur `showErrors` letar upp fälten [paket 5]
 
 **`fieldErrors` bär alltid bara de fem formulärfälten** — `name`, `amountSek`,
@@ -3438,12 +3701,23 @@ Skälet är mätt: markeringen stod på varje rad som
 besvarade av en körning som ingen skrev in, och samma order stod på tre olika
 rader — den som rättade en av dem hade fortfarande fel på två. En bindande fil
 kan inte innehålla frågor. Samtliga markeringar är strukna: sökningen ovan ger
-efter rättningen en enda träff i filen, punkten
-`Mekanismen "inte kört av arkitekten" avskaffades` i beslutsloggen, som beskriver
-just att mekanismen är avskaffad. Det radbrutna omnämnandet i stycket ovan träffas
-inte av mönstret, eftersom raden bryter mitt i frasen; med den bredare sökningen
-`grep -n "inte kört\|inte körd\|inte körda\|ej kört" ARKITEKTUR.md` är träffarna
-två, och båda är sådana omnämnanden (arkitektens körning 2026-09-07).
+efter rättningen inga markeringar alls — varje kvarvarande träff är ett
+omnämnande av att mekanismen är avskaffad, inte en markering.
+
+Antalen nedan är körda i paket 6 och gäller den här filen som den ser ut nu.
+De räknar **omnämnanden**, och ett av dem är den här textens egna sökmönster,
+som matchar sig självt — ett mönster som skrivs in i den fil det söker i höjer
+sitt eget antal, och det är skälet till att antalet inte går att skriva en gång
+för alla:
+
+```
+grep -c "inte kör\(t\|d\|da\) av arkitekten" ARKITEKTUR.md   -> 3
+grep -c "inte kört\|inte körd\|inte körda\|ej kört" ARKITEKTUR.md -> 6
+```
+
+Det bindande påståendet är inte ett antal utan detta: **ingen träff är en
+markering på ett krav**. Den kontrollen görs genom att läsa träffarna, inte
+genom att jämföra en siffra.
 
 - **Node.js med inbyggd HTTP-server och webbläsaren som gränssnitt** — enda
   körsätt som ger ett grafiskt gränssnitt med noll beroenden och som är
