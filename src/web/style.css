@@ -190,6 +190,49 @@ button.primary:hover {
   white-space: nowrap;
 }
 
+/* Kommande dragningar. Punktmarkörerna bort, precis som i .entry-list. */
+.upcoming-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Tre barn: namn, datum och dagar kvar. Samma slags rutnät som .entry — namnet
+   tar det utrymme som blir över, datumet och dagarna är innehållsbreda och
+   högerställda, så att de två högra kolumnerna står i linje rad för rad. */
+.upcoming {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.upcoming:last-child {
+  border-bottom: none;
+}
+
+.upcoming-name {
+  font-weight: 600;
+}
+
+/* Samma siffersättning som beloppen: utan tabular-nums hoppar datumen i sidled
+   mellan raderna och går inte att läsa som en kolumn. */
+.upcoming-date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.upcoming-days {
+  color: var(--muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
 button.remove {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--line);
@@ -233,6 +276,13 @@ button.remove:disabled:hover {
    läsbar rad i stället för sju hoptryckta kolumner. */
 @media (max-width: 34rem) {
   .entry {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.25rem;
+  }
+
+  /* Dragningsraden bryts i två kolumner: namn/datum på första raden och dagar
+     kvar på den andra, i stället för tre hoptryckta kolumner. */
+  .upcoming {
     grid-template-columns: 1fr auto;
     row-gap: 0.25rem;
   }

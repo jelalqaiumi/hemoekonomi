@@ -14,12 +14,38 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import { setFrozenDay, snapshotFrozenDay } from './frozen-dates.js';
+
 const APP_PATH = fileURLToPath(new URL('../../src/web/app.js', import.meta.url));
 const INDEX_PATH = fileURLToPath(new URL('../../src/web/index.html', import.meta.url));
 // Webbläsaren hämtar src/core/ under /core/; i en Node-körning finns ingen
 // server, så specifikationerna pekas om till filerna på disk.
 const CORE_DIR = new URL('../../src/core/', import.meta.url).href;
 const CORE_SPECIFIER = "'/core/";
+// Den modul app.js läser dagens datum ur. Adressen byggs ur import.meta.url och
+// aldrig ur process.cwd() (LARDOMAR.md 2026-09-04), och ompekningen görs efter
+// den allmänna /core/-ompekningen ovan — specifikationen är då redan en
+// file:-adress.
+const CORE_DAY_SPECIFIER = `'${CORE_DIR}dates.js'`;
+const FROZEN_DAY_SPECIFIER = `'${new URL('./frozen-dates.js', import.meta.url).href}'`;
+
+// Om en instans av src/web/app.js lever just nu. Villkoret är högst en levande
+// instans åt gången, i hela processen (ARKITEKTUR.md, krav 8): två
+// modulinstanser delar globalThis.fetch och laddarens dag, så den andra skriver
+// över den förstas omvärld medan båda lever vidare med var sin lyssnare på
+// attrappens element. node:test kör dessutom after-hookar i
+// registreringsordning, så den sist registrerade hooken lägger tillbaka en
+// ögonblicksbild som redan var det första anropets värde — och då återställs
+// ingenting.
+//
+// Flaggan nycklas på processen och inte på testkontexten. Den tidigare lydelsen
+// höll en WeakSet över de testkontexter som redan laddat, och ett underordnat
+// test har en egen kontext: granskarens körning visade att ett loadApp inuti ett
+// t.test passerade spärren, att båda instanserna levde samtidigt och att
+// förälderns formulärsubmit hamnade i barnets fetch-attrapp (LARDOMAR.md
+// 2026-09-22). Villkoret är därför skrivet om det som är farligt — två levande
+// instanser — och inte om den nyckel som råkade ligga närmast.
+let appLaddad = false;
 
 class FakeElement {
   constructor(tagName, id = '') {
@@ -168,6 +194,16 @@ export function createDom() {
   totalYearly.className = 'total-amount';
   registry.set('total-yearly', totalYearly);
 
+  // Paket 7: kortet med kommande dragningar. Två FakeElement till under just de
+  // id:n index.html skriver ut — ingen ny metod och ingen ny egenskap.
+  const upcomingList = new FakeElement('ul', 'upcoming-list');
+  upcomingList.className = 'upcoming-list';
+  registry.set('upcoming-list', upcomingList);
+
+  const upcomingEmpty = new FakeElement('p', 'upcoming-empty');
+  upcomingEmpty.className = 'empty-state';
+  registry.set('upcoming-empty', upcomingEmpty);
+
   const document = {
     querySelector(selector) {
       assert.equal(selector.startsWith('#'), true, `DOM-attrappen stöder inte selektorn ${selector}`);
@@ -254,9 +290,27 @@ export async function flush(varv = 50) {
 }
 
 // Laddar src/web/app.js med /core/-specifikationerna ompekade mot src/core/ och
-// document och fetch satta på globalThis. Källan läses från disk vid varje
-// anrop, så en ändring i filen — också ett syntaxfel — når den här körningen.
-export async function loadApp(t, { document, fetch }) {
+// document, fetch och dagens datum satta av laddaren. Källan läses från disk vid
+// varje anrop, så en ändring i filen — också ett syntaxfel — når den här
+// körningen.
+//
+// idag är en sträng på formen ÅÅÅÅ-MM-DD. Laddaren äger dagen precis som den
+// äger document och fetch: app.js läser den själv vid varje rendering, och en
+// attrapp utan ställbar dag kan varken pröva en annan dag än den som råkar vara
+// i dag eller undgå att bli röd när dygnet byts mitt i ett prov (ARKITEKTUR.md,
+// "Klockan som app.js läser är injicerad, inte verklig").
+//
+// Returvärdet bär modulen och bytDag, den väg ett testfall sätter en annan dag
+// mitt i ett fall utan att självt importera hjälpfilen.
+export async function loadApp(t, { document, fetch, idag }) {
+  // Prövas innan något tillstånd rörs: varken globalThis, laddarens dag eller
+  // en after-hook får hinna ändras av ett anrop som ska avvisas.
+  if (appLaddad) {
+    throw new Error(
+      'loadApp har redan en levande instans av src/web/app.js: ett andra anrop ger två instanser som delar globalThis och laddarens dag. Ett underordnat test har en egen testkontext men samma process.'
+    );
+  }
+
   const kalla = await fs.readFile(APP_PATH, 'utf8');
   const antal = kalla.split(CORE_SPECIFIER).length - 1;
   assert.notEqual(
@@ -264,20 +318,45 @@ export async function loadApp(t, { document, fetch }) {
     0,
     `src/web/app.js importerar inte längre något under ${CORE_SPECIFIER}… — ompekningen träffar ingenting`
   );
+
+  const medCore = kalla.replaceAll(CORE_SPECIFIER, `'${CORE_DIR}`);
+  // Exakt ett utbyte, inte minst ett: slutar app.js läsa dagens datum ur
+  // /core/dates.js ska laddningen falla i stället för att tyst sluta mäta —
+  // samma skäl som assertionen ovan.
+  const antalDagar = medCore.split(CORE_DAY_SPECIFIER).length - 1;
+  assert.equal(
+    antalDagar,
+    1,
+    `src/web/app.js ska importera dagens datum från /core/dates.js på exakt ett ställe, hittade ${antalDagar}`
+  );
+
   // Ett unikt tillägg per anrop: två identiska data:-adresser är samma modul för
   // laddaren, och app.js har modullokalt tillstånd som inte får följa med till
   // nästa fall.
-  const omskriven = `${kalla.replaceAll(CORE_SPECIFIER, `'${CORE_DIR}`)}\n// ${randomUUID()}\n`;
+  const omskriven = `${medCore.replaceAll(CORE_DAY_SPECIFIER, FROZEN_DAY_SPECIFIER)}\n// ${randomUUID()}\n`;
 
   const tidigareDocument = globalThis.document;
   const tidigareFetch = globalThis.fetch;
+  const aterstallDag = snapshotFrozenDay();
+  // Ordningen är bindande (ARKITEKTUR.md, krav 8): flaggan prövas först, hooken
+  // registreras därefter, och flaggan sätts sist. En flagga som sätts före
+  // hooken blir kvar när import() avvisar — och det gör den så snart app.js har
+  // ett syntaxfel, varpå resten av filen låses av en spärr som ingen hook kan
+  // nollställa. Hooken är därför registrerad före importen.
   t.after(() => {
+    appLaddad = false;
     globalThis.document = tidigareDocument;
     globalThis.fetch = tidigareFetch;
+    aterstallDag();
   });
+  appLaddad = true;
   globalThis.document = document;
   globalThis.fetch = fetch;
+  // Dagen sätts före importen: app.js har ett await på toppnivå som renderar
+  // kortet redan under laddningen.
+  setFrozenDay(idag);
 
   const url = `data:text/javascript;base64,${Buffer.from(omskriven, 'utf8').toString('base64')}`;
-  return import(url);
+  const modul = await import(url);
+  return { modul, bytDag: setFrozenDay };
 }

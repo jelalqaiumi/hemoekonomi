@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { monthlyOre, totalMonthlyOre, totalYearlyOre, yearlyOre } from '../src/core/cost.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
 import { formatSek, sekToOre } from '../src/core/money.js';
+import { upcoming } from '../src/core/schedule.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
 // Text mot användaren som app.js skriver själv, alltså varken hämtar ur svaret
@@ -29,6 +30,17 @@ import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './help
 // nästa tillägg (LARDOMAR.md 2026-09-10, uppräkningen "enda strängen" rättades i
 // app.js och lämnades kvar i tests/app.test.js).
 const GENERAL_ERROR = 'Det gick inte att nå appens server. Försök igen.';
+
+// Värdet globalThis.fetch bär innan något testfall har körts, läst på modulnivå.
+// Punkt (33):s tredje fall jämför mot det i stället för mot undefined: Node har
+// en inbyggd fetch men ingen DOM, så laddaren sparar den inbyggda funktionen i
+// sitt tidigareFetch och lägger tillbaka den — rätt beteende, men värdet är då
+// en funktion och blir aldrig undefined (ARKITEKTUR.md, "Verifierad miljö").
+// Jämförelsen är samma påstående som undefined hade varit i en miljö utan
+// inbyggd fetch: att attrappen inte står kvar. En assertion om att fetch bara
+// inte är attrappen vore svagare — den passerar också om återställningen lägger
+// tillbaka något tredje.
+const FETCH_FORE_TESTERNA = globalThis.fetch;
 
 const POST_ETT = Object.freeze({
   id: '11111111-1111-4111-8111-111111111111',
@@ -80,9 +92,20 @@ const TRE_POSTER = Object.freeze([
   })
 ]);
 
-// Startar app.js med en plan för fetch-attrappen och lämnar tillbaka både
-// attrappen och anropslistan.
-async function starta(t, plan) {
+// Den dag app.js får av laddaren. Testfilen läser ingen klocka: den dag app.js
+// ser är injicerad, så varje fall prövar en känd dag och kan aldrig bli rött av
+// att dygnet byts mitt i provet (ARKITEKTUR.md, "Klockan som app.js läser är
+// injicerad, inte verklig"). Värdet ligger mitt i en månad med 31 dagar, så att
+// en post som startar i dag, i morgon eller i övermorgon ligger i samma månad
+// och dagtexterna går att nå utan datumaritmetik i den här filen.
+const FRYST_IDAG = '2026-03-15';
+// Den andra dagen punkt (27) behöver, skriven och inte uträknad.
+const FRYST_NASTA_DAG = '2026-03-16';
+
+// Startar app.js med en plan för fetch-attrappen och lämnar tillbaka attrappen,
+// anropslistan och bytDag — laddarens väg att sätta en annan dag mitt i ett
+// fall.
+async function starta(t, plan, idag = FRYST_IDAG) {
   const dom = createDom();
   // Det första anropet måste besvaras med en gång: app.js har ett await på
   // toppnivå, så modulen laddas inte färdigt förrän listan är hämtad. En plan
@@ -97,8 +120,8 @@ async function starta(t, plan) {
     return svar;
   };
   const { fetch, anrop } = createFetch(forstaSvaretMasteKomma);
-  await loadApp(t, { document: dom.document, fetch });
-  return { dom, anrop };
+  const { bytDag } = await loadApp(t, { document: dom.document, fetch, idag });
+  return { dom, anrop, bytDag };
 }
 
 // En plan som svarar 200 med en lista på varje GET och låter testet svara på
@@ -711,5 +734,512 @@ test('app.js hämtar båda totalerna ur cost.js och räknar inte ut dem själv',
     kalla.includes('.reduce('),
     false,
     'app.js innehåller .reduce( — totalerna hämtas ur cost.js, de summeras inte här'
+  );
+});
+
+// ---------------------------------------- paket 7: kommande dragningar
+
+// Dagen app.js ser är FRYST_IDAG, satt av laddaren. Posternas startdatum är
+// därför skrivna som strängar och inte uträknade ur en klocka: FRYST_IDAG,
+// dagen efter och dagen därpå ligger alla i mars, som har 31 dagar.
+function dragningspost(id, name, startDate) {
+  return { id, name, amountSek: 100, interval: 'monthly', startDate, category: 'housing' };
+}
+
+// Tre poster som ligger i en ordning som varken är datumordning (Ström, Hyra,
+// Bredband) eller bokstavsordning (Bredband, Hyra, Ström). Ett app.js som
+// renderar i inmatningsordningen, eller som sorterar själv, faller därför.
+function dragningsposter() {
+  return [
+    dragningspost('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Bredband', '2026-03-17'),
+    dragningspost('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'Ström', '2026-03-15'),
+    dragningspost('ffffffff-ffff-4fff-8fff-ffffffffffff', 'Hyra', '2026-03-16')
+  ];
+}
+
+// (21)
+test('tre poster renderas i upcoming-ordningen med namn, datum och dagar kvar', async (t) => {
+  const poster = dragningsposter();
+  const { dom } = await starta(t, planMedListor(() => poster));
+
+  const lista = dom.falt('upcoming-list');
+  assert.equal(lista.children.length, 3);
+
+  // Cellerna per rad, i den ordning ARKITEKTUR.md anger.
+  assert.deepEqual(
+    lista.children[0].children.map((barn) => barn.className),
+    ['upcoming-name', 'upcoming-date', 'upcoming-days']
+  );
+
+  const cellerna = (klass) => lista.children.map((rad) => celltext(rad, klass));
+  assert.deepEqual(cellerna('upcoming-name'), ['Ström', 'Hyra', 'Bredband']);
+  // Datumet ordagrant, som ÅÅÅÅ-MM-DD och utan omskrivning.
+  assert.deepEqual(cellerna('upcoming-date'), ['2026-03-15', '2026-03-16', '2026-03-17']);
+  assert.deepEqual(cellerna('upcoming-days'), ['Idag', 'Om 1 dag', 'Om 2 dagar']);
+
+  // Samma ordning som upcoming() ger: app.js sorterar ingenting själv, så
+  // ändras sorteringen i src/core/schedule.js följer det här testet med.
+  assert.deepEqual(
+    cellerna('upcoming-name'),
+    upcoming(poster, FRYST_IDAG).map((item) => item.entry.name)
+  );
+
+  // Tomtexten står inte kvar när kortet har rader.
+  assert.equal(dom.falt('upcoming-empty').textContent, '');
+});
+
+// (22) Gränsen mellan singular och plural har ett fall på var sida: daysUntil 1
+// ger "Om 1 dag" och daysUntil 2 ger "Om 2 dagar".
+test('dagtexterna är Idag, Om 1 dag och Om 2 dagar för daysUntil 0, 1 och 2', async (t) => {
+  const poster = dragningsposter();
+  const { dom } = await starta(t, planMedListor(() => poster));
+
+  // Att de tre posterna verkligen ger 0, 1 och 2 avgörs av schedule.js och inte
+  // av app.js. Utan den här raden kan texterna nedan prövas mot fel värden.
+  assert.deepEqual(upcoming(poster, FRYST_IDAG).map((item) => item.daysUntil), [0, 1, 2]);
+
+  const dagtext = (index) => celltext(dom.falt('upcoming-list').children[index], 'upcoming-days');
+  assert.equal(dagtext(0), 'Idag');
+  assert.equal(dagtext(1), 'Om 1 dag');
+  assert.equal(dagtext(2), 'Om 2 dagar');
+});
+
+// (23) Tomläget i kortet, och de två raderna i clearView.
+test('en tom lista ger tomt #upcoming-list och texten i #upcoming-empty', async (t) => {
+  const { dom } = await starta(t, () => TOMT_SVAR);
+
+  assert.equal(dom.falt('upcoming-list').children.length, 0);
+  assert.equal(dom.falt('upcoming-empty').textContent, 'Inga kommande dragningar ännu.');
+});
+
+// Raden i clearView som tömmer #upcoming-empty prövas här. Utgångsläget är det
+// motsatta av det förväntade: listan är tom vid sidladdningen, så tomtexten står
+// på skärmen när omhämtningen misslyckas och raden måste skriva över den. En
+// assertion mot ett element som redan är tomt är sann av sig själv och faller
+// inte om raden tas bort (LARDOMAR.md 2026-09-10).
+test('en sparning vars omhämtning ger 500 tömmer texten ur #upcoming-empty', async (t) => {
+  const felsvar = { status: 500, json: { error: 'Datafilen är skadad och kunde inte läsas: X' } };
+  let hamtningar = 0;
+  const { dom } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return hamtningar === 1 ? TOMT_SVAR : felsvar;
+    }
+    return { status: 201, json: POST_ETT };
+  });
+
+  assert.equal(dom.falt('upcoming-empty').textContent, 'Inga kommande dragningar ännu.');
+
+  fyllFormularet(dom);
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter sparningen');
+  assert.equal(
+    dom.falt('upcoming-empty').textContent,
+    '',
+    'kortet påstår att det inte finns några kommande dragningar trots att listan aldrig kom'
+  );
+});
+
+// Raden i clearView som tömmer #upcoming-list prövas här: kortet har tre rader
+// när omhämtningen misslyckas. Utan raden beskriver de en datafil appen inte
+// kunde läsa, och en av posterna är dessutom redan borttagen.
+test('en borttagning vars omhämtning ger 500 lämnar inga rader i #upcoming-list', async (t) => {
+  const poster = dragningsposter();
+  const felsvar = { status: 500, json: { error: 'Datafilen är skadad och kunde inte läsas: X' } };
+  let hamtningar = 0;
+  const { dom } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return hamtningar === 1 ? { status: 200, json: { entries: poster } } : felsvar;
+    }
+    return { status: 204 };
+  });
+
+  assert.equal(dom.falt('upcoming-list').children.length, 3);
+  assert.equal(dom.falt('upcoming-empty').textContent, '');
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter borttagningen');
+  assert.equal(
+    dom.falt('upcoming-list').children.length,
+    0,
+    'dragningar för en lista appen inte kunde läsa står kvar i vyn'
+  );
+  assert.equal(dom.falt('upcoming-empty').textContent, '');
+});
+
+// De två nollställningarna i renderUpcoming prövas här, en i vart sitt fall.
+// Gemensamt för dem: renderUpcoming anropas två gånger med olika listor, och
+// utgångsläget före det andra anropet är det motsatta av det förväntade
+// resultatet. Varje fall ovan renderar kortet en enda gång från ett orört
+// utgångsläge, och en assertion mot ett element som aldrig har skrivits är sann
+// av sig själv (LARDOMAR.md 2026-09-10 och 2026-09-12).
+
+// (24) UPCOMING_LIST.replaceChildren(): en kortare lista efter en längre.
+test('en borttagning med lyckad omhämtning lämnar bara de kvarvarande posternas dragningar', async (t) => {
+  const poster = dragningsposter();
+  // Listan renderas i serverns ordning, så den första Ta bort-knappen hör till
+  // den första posten i svaret.
+  const borttagen = poster[0];
+  const kvar = poster.slice(1);
+  let hamtningar = 0;
+  const { dom, anrop } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return { status: 200, json: { entries: hamtningar === 1 ? poster : kvar } };
+    }
+    return { status: 204 };
+  });
+
+  // Utgångsläget är det motsatta av det förväntade: tre rader ska bli två.
+  assert.equal(dom.falt('upcoming-list').children.length, 3);
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter borttagningen');
+  assert.equal(anrop[1].method, 'DELETE');
+  assert.equal(anrop[1].url, `/api/entries/${borttagen.id}`);
+
+  const lista = dom.falt('upcoming-list');
+  const namnen = lista.children.map((rad) => celltext(rad, 'upcoming-name'));
+  assert.equal(
+    lista.children.length,
+    2,
+    'kortet har fler rader än listan har poster: förra svarets dragningar står kvar'
+  );
+  assert.deepEqual(namnen, upcoming(kvar, FRYST_IDAG).map((item) => item.entry.name));
+  assert.equal(
+    namnen.includes(borttagen.name),
+    false,
+    'en dragning för posten som just togs bort står kvar i kortet'
+  );
+  // Samma antal som postlistan: de två korten beskriver samma datafil.
+  assert.equal(dom.list.children.length, 2);
+});
+
+// (25) else-grenen UPCOMING_EMPTY.textContent = '': en icke-tom lista efter en
+// tom.
+test('en sparning med lyckad omhämtning tar bort tomtexten ur #upcoming-empty', async (t) => {
+  const skapad = dragningspost('99999999-9999-4999-8999-999999999999', 'Hyra', FRYST_IDAG);
+  let hamtningar = 0;
+  const { dom } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return { status: 200, json: { entries: hamtningar === 1 ? [] : [skapad] } };
+    }
+    return { status: 201, json: skapad };
+  });
+
+  // Utgångsläget är det motsatta av det förväntade: tomtexten står på skärmen
+  // och ska vara borta när kortet har en rad.
+  assert.equal(dom.falt('upcoming-empty').textContent, 'Inga kommande dragningar ännu.');
+
+  fyllFormularet(dom);
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter sparningen');
+  assert.equal(dom.falt('upcoming-list').children.length, 1);
+  // Den andra renderingens datum, ordagrant: posten startar den dag app.js fick
+  // av laddaren och dras därför den dagen.
+  const raden = dom.falt('upcoming-list').children[0];
+  assert.equal(celltext(raden, 'upcoming-date'), FRYST_IDAG);
+  assert.equal(celltext(raden, 'upcoming-days'), 'Idag');
+  assert.equal(
+    dom.falt('upcoming-empty').textContent,
+    '',
+    'kortet visar en rad och texten om att det inte finns några dragningar samtidigt'
+  );
+});
+
+// (26) Datumcellen läser item.nextDueDate och inte item.entry.startDate.
+// Kravet ligger i testdatan, inte i assertionens form: varje annan post i den
+// här filen startar den frusna dagen eller de närmaste dagarna, och för en post
+// som startar i framtiden är nästa dragning startdatumet självt. De två fälten
+// bär då samma sträng, och en assertion på det renderade värdet kan inte se
+// vilket av dem koden läser (LARDOMAR.md 2026-09-16). Posten nedan startar
+// flera år tillbaka och skiljer dem åt.
+test('datumkolumnen visar nästa dragning och inte startdatumet', async (t) => {
+  const gammal = {
+    id: '77777777-7777-4777-8777-777777777777',
+    name: 'Hemförsäkring',
+    amountSek: 100,
+    interval: 'quarterly',
+    startDate: '2020-03-31',
+    category: 'housing'
+  };
+  const poster = [
+    gammal,
+    dragningspost('88888888-8888-4888-8888-888888888888', 'Ström', FRYST_IDAG)
+  ];
+  const { dom } = await starta(t, planMedListor(() => poster));
+
+  const rader = upcoming(poster, FRYST_IDAG);
+  // Provet är bara ett prov om de två fälten skiljer sig åt. Raden faller om
+  // testdatan någon gång skrivs om så att de sammanfaller.
+  assert.notEqual(
+    rader.find((item) => item.entry.id === gammal.id).nextDueDate,
+    gammal.startDate,
+    'testdatan gör inte nextDueDate och startDate olika: cellen prövar då inte vilket fält koden läser'
+  );
+
+  const lista = dom.falt('upcoming-list');
+  assert.equal(lista.children.length, 2);
+  // Datumen jämförs mot upcoming() och aldrig mot en inskriven datumsträng:
+  // facit kommer ur ägaren till frågan, schedule.js, och följer med när
+  // algoritmen ändras.
+  assert.deepEqual(
+    lista.children.map((rad) => celltext(rad, 'upcoming-date')),
+    rader.map((item) => item.nextDueDate)
+  );
+});
+
+// (27) Dagen läses vid varje rendering och inte vid sidladdningen. Kortet
+// renderas två gånger med samma lista och olika dag: laddaren sätter FRYST_IDAG
+// före den första renderingen, testet byter till FRYST_NASTA_DAG före den
+// andra, och den andra renderingen utlöses av en sparning vars omhämtning ger
+// 200 med samma lista.
+//
+// Kravet stod utan prov så länge testfilen läste den verkliga klockan: den står
+// still under en körning, så en läsning flyttad till modulens toppnivå gav
+// samma svar i varje fall. Laddarens dag går att flytta, och det är det den här
+// punkten gör.
+test('dagarna räknas om mot den nya dagen när listan hämtas om', async (t) => {
+  // En monthly-post som startar FRYST_IDAG: den första renderingen ger Idag,
+  // den andra nästa månads dragning.
+  const poster = [dragningspost('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', 'Ström', FRYST_IDAG)];
+  let hamtningar = 0;
+  const { dom, bytDag } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return { status: 200, json: { entries: poster } };
+    }
+    return { status: 201, json: poster[0] };
+  });
+
+  const lista = dom.falt('upcoming-list');
+  const cellerna = (klass) => lista.children.map((rad) => celltext(rad, klass));
+
+  // Första renderingen, mot den dag laddaren satte. Facit kommer ur upcoming()
+  // och aldrig ur en inskriven dagtext, som vore ett andra facit.
+  const forstaDatum = cellerna('upcoming-date');
+  const forstaDagar = cellerna('upcoming-days');
+  const forsta = upcoming(poster, FRYST_IDAG);
+  assert.deepEqual(cellerna('upcoming-name'), forsta.map((item) => item.entry.name));
+  assert.deepEqual(forstaDatum, forsta.map((item) => item.nextDueDate));
+
+  bytDag(FRYST_NASTA_DAG);
+  fyllFormularet(dom);
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter sparningen');
+  const andraDatum = cellerna('upcoming-date');
+  const andraDagar = cellerna('upcoming-days');
+  const andra = upcoming(poster, FRYST_NASTA_DAG);
+  assert.deepEqual(cellerna('upcoming-name'), andra.map((item) => item.entry.name));
+  assert.deepEqual(andraDatum, andra.map((item) => item.nextDueDate));
+
+  // Är cellerna lika prövar fallet ingenting, och då är testdatan fel vald och
+  // inte koden. De två raderna nedan är hela punktens bevis: en läsning flyttad
+  // till modulens toppnivå ger samma svar i båda renderingarna.
+  assert.notDeepEqual(
+    andraDatum,
+    forstaDatum,
+    'datumcellen är oförändrad efter dagbytet: dagen lästes vid laddningen och inte vid renderingen'
+  );
+  assert.notDeepEqual(
+    andraDagar,
+    forstaDagar,
+    'dagtexten är oförändrad efter dagbytet: dagen lästes vid laddningen och inte vid renderingen'
+  );
+});
+
+// ---------------------------------------- paket 7: radelementets klass
+
+// Klassnamnet i app.js är enda änden av kopplingen till src/web/style.css som
+// går att pröva, och med fel tagg hamnar ett div i en ul. Cellernas klasser
+// hade assertioner redan före den här rundan, medan radelementet självt saknade
+// en: varken rad.className, item.className eller valet av tagg gick att fälla
+// med en mutation (LARDOMAR.md 2026-09-22).
+
+// (28)
+test('raden i kortet Kommande dragningar är ett li med klassen upcoming', async (t) => {
+  const poster = dragningsposter();
+  const { dom } = await starta(t, planMedListor(() => poster));
+
+  const rader = dom.falt('upcoming-list').children;
+  assert.equal(rader.length, 3);
+  for (const rad of rader) {
+    assert.equal(rad.tagName, 'li', 'en rad i kortet är inte ett li');
+    assert.equal(
+      rad.className,
+      'upcoming',
+      'radens klass är inte upcoming: reglerna för .upcoming i src/web/style.css träffar den inte'
+    );
+  }
+});
+
+// (29) Samma hål i renderEntries, alltså paket 5:s och 6:s rad.
+test('raden i postlistan är ett li med klassen entry', async (t) => {
+  const { dom } = await starta(t, planMedListor(() => TRE_POSTER));
+
+  const rader = dom.list.children;
+  assert.equal(rader.length, 3);
+  for (const rad of rader) {
+    assert.equal(rad.tagName, 'li', 'en rad i postlistan är inte ett li');
+    assert.equal(
+      rad.className,
+      'entry',
+      'radens klass är inte entry: reglerna för .entry i src/web/style.css träffar den inte'
+    );
+  }
+});
+
+// (30) Ta bort-knappens elementtyp. Selektorn i src/web/style.css är
+// button.remove och inte .remove, så elementtypen bär halva regeln — med ett
+// span får knappen varken sin egen färg eller det spärrade lägets utseende.
+// Klasshalvan asserteras av punkt (12):s celluppräkning och upprepas inte här.
+test('Ta bort-knappen är ett button-element', async (t) => {
+  const { dom } = await starta(t, planMedListor(() => TRE_POSTER));
+
+  // Knappen plockas på sitt type och varken på sin klass eller på sin tagg:
+  // annars skulle klassmutationen fälla den här punkten också, och då går det
+  // inte att visa att klasshalvan är punkt (12):s. Cellerna i raden saknar
+  // type, så uppslaget kan bara hitta knappen.
+  const knappar = dom.list.children.map((rad) => {
+    const knapp = rad.children.find((barn) => barn.type === 'button');
+    assert.notEqual(knapp, undefined, 'raden saknar Ta bort-knappen');
+    return knapp;
+  });
+  assert.equal(knappar.length, 3);
+  for (const knapp of knappar) {
+    assert.equal(
+      knapp.tagName,
+      'button',
+      'Ta bort är inte ett button-element: selektorn button.remove i src/web/style.css träffar den inte'
+    );
+  }
+});
+
+// (31) Valen i de två listorna. <select> visar bara <option>, så med fel
+// elementtyp är listan tom och formuläret obrukbart. Punkten prövar
+// elementtypen och inget annat: att listorna fylls med rätt värden och rätt
+// etiketter ägs av punkt (5), och en andra kopia av den assertionen vore ett
+// andra facit.
+test('valen i de två listorna är option-element', async (t) => {
+  const { dom } = await starta(t, () => TOMT_SVAR);
+
+  for (const id of ['interval', 'category']) {
+    const valen = dom.falt(id).children;
+    assert.notEqual(valen.length, 0, `#${id} fylldes inte alls`);
+    for (const val of valen) {
+      assert.equal(
+        val.tagName,
+        'option',
+        `ett val i #${id} är inte ett option-element: ett select visar bara option`
+      );
+    }
+  }
+});
+
+// ------------------------------------ paket 7: laddarens byte av dag
+
+// (32) Spärren i tests/helpers/frozen-dates.js. Ägaren till frågan "är det här
+// en dag" är isValidIsoDate i src/core/dates.js och inte ISO_DATE_PATTERN:
+// mönstret äger frågan "rätt form" och säger true om 2026-02-30, medan
+// isValidIsoDate äger frågan "finns i kalendern" och säger false. Det senare är
+// vad spärren lovar ett svar på, så att ett felskrivet argument fälls i
+// laddaren och inte långt inne i src/core/schedule.js — med mönstret ensamt föll
+// 2026-02-30 först där, med RangeError: nextDueDate kräver ett dagens datum på
+// formen ÅÅÅÅ-MM-DD, och alltså med fel orsak utpekad.
+//
+// Därför två argument: imorgon har fel form, 2026-02-30 har rätt form men ingen
+// kalenderdag, och det är det senare som avgör ägarvalet. Hela meddelandet
+// asserteras och inte bara feltypen, av samma skäl som gäller spärrarna i
+// src/core/schedule.js: en assertion på enbart feltypen kan inte skilja
+// stubbens kast från ett kast längre in (ARKITEKTUR.md, "Stubbens spärrar, och
+// varför bara den ena får ett testfall"). Inget av argumenten läser någon
+// klocka.
+test('laddarens byte av dag avvisar en dag som inte finns i kalendern', async (t) => {
+  const { bytDag } = await starta(t, () => TOMT_SVAR);
+
+  for (const dag of ['imorgon', '2026-02-30']) {
+    assert.throws(
+      () => bytDag(dag),
+      {
+        name: 'Error',
+        message: `frozen-dates kräver ett datum som finns i kalendern på formen ÅÅÅÅ-MM-DD, fick "${dag}".`
+      },
+      `bytDag godtog ${dag}`
+    );
+  }
+});
+
+// (33) Krav 8: högst en levande instans av app.js åt gången, i hela processen.
+// Två modulinstanser delar globalThis.fetch och laddarens dag, så den andra
+// skriver över den förstas omvärld medan båda lever vidare med var sin lyssnare
+// på attrappens element — och node:test kör after-hookar i registreringsordning,
+// så den sist registrerade hooken lägger tillbaka en ögonblicksbild som redan
+// var det första anropets värde.
+//
+// Hela texten asserteras, inte bara feltypen: laddaren har fler kast än det
+// här, och feltypen delas av dem alla.
+const ANDRA_INSTANSEN_AVVISAS =
+  'loadApp har redan en levande instans av src/web/app.js: ett andra anrop ger två instanser som delar globalThis och laddarens dag. Ett underordnat test har en egen testkontext men samma process.';
+
+test('ett andra loadApp i samma testfall avvisas', async (t) => {
+  await starta(t, () => TOMT_SVAR);
+
+  await assert.rejects(
+    () => starta(t, () => TOMT_SVAR),
+    {
+      name: 'Error',
+      message: ANDRA_INSTANSEN_AVVISAS
+    }
+  );
+});
+
+// Det fall som skiljer villkoret "en levande instans i processen" från det
+// tidigare "en laddning per testkontext": ett underordnat test har en egen
+// kontext, så en spärr nycklad på kontexten släpper igenom barnets anrop. Då
+// lever båda instanserna samtidigt, och granskarens körning visade att
+// förälderns formulärsubmit hamnade i barnets fetch-attrapp (LARDOMAR.md
+// 2026-09-22). Ett fall som bara laddar två gånger med samma testkontext kan
+// inte se den skillnaden.
+test('ett loadApp i ett underordnat test avvisas', async (t) => {
+  await starta(t, () => TOMT_SVAR);
+
+  await t.test('barnet har en egen testkontext men samma process', async (barn) => {
+    await assert.rejects(
+      () => starta(barn, () => TOMT_SVAR),
+      {
+        name: 'Error',
+        message: ANDRA_INSTANSEN_AVVISAS
+      }
+    );
+  });
+});
+
+// Att återställningen från fallet ovan blev av. De två globalerna prövas på
+// olika sätt, och skälet är körmiljön: bara den ena går att jämföra med
+// undefined (se FETCH_FORE_TESTERNA ovan).
+//
+// Att dagen är osatt asserteras inte: det läget syns bara genom att läsa den,
+// och varje stavning av den vägen är en träff i klockkontrollen. Avvisningen i
+// krav 8 är det som gör påståendet sant i stället — med högst en levande
+// instans finns ingen andra ögonblicksbild som kan vinna (ARKITEKTUR.md,
+// krav 8).
+test('laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra anrop', () => {
+  assert.equal(globalThis.document, undefined, 'globalThis.document står kvar satt efter förra fallet');
+  assert.equal(
+    globalThis.fetch,
+    FETCH_FORE_TESTERNA,
+    'globalThis.fetch är inte värdet från före testfallen: attrappen står kvar'
   );
 });

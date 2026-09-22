@@ -12,7 +12,9 @@ export const ORE_PER_SEK = 100;
 // någonstans i src/core/ — det är noll skrivet med tecken (-0 === 0) och
 // normaliseras till 0. Inget Number.is*-predikat skiljer de två talen åt:
 // Number.isFinite(-0), Number.isInteger(-0) och Number.isSafeInteger(-0) är alla
-// true. Utan normaliseringen visar formatSek "−0,00 kr" för användaren.
+// true. Utan normaliseringen visar formatSek strängen "\u22120,00\u00a0kr"
+// för användaren: U+2212 MINUS SIGN och U+00A0 hårt blanksteg, båda skrivna
+// med escape som ARKITEKTUR.md kräver (LARDOMAR.md 2026-09-14).
 //
 // Medvetet ingen ingångsspärr, och det är ett namngivet undantag från regeln att
 // varje exporterad funktion i modulen har samma ingångskontroll och feltyp:

@@ -3,23 +3,29 @@
 //
 // Paket 5 bygger punkt 1, 2 (utan kostnader per post), 5, 6 och 7 i
 // ARKITEKTUR.md:s ansvarslista. Paket 6 bygger resten av punkt 2 (kostnaden per
-// post), punkt 3 (totalerna) och punkt 8 (tomläget). Punkt 4 (kommande
-// dragningar) hör till paket 7 och finns inte här.
+// post), punkt 3 (totalerna) och punkt 8 (tomläget). Paket 7 bygger punkt 4
+// (kommande dragningar).
 import { monthlyOre, totalMonthlyOre, totalYearlyOre, yearlyOre } from '/core/cost.js';
+import { todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { formatSek, sekToOre } from '/core/money.js';
+import { upcoming } from '/core/schedule.js';
 
 // Text mot användaren som varken kommer från servern eller från src/core/ står
 // ordagrant i ARKITEKTUR.md och får inte skrivas om. Det gäller konstanterna
-// här nedanför och de strängar renderEntries skriver på plats: knappens Ta bort
-// och etiketterna framför kostnaden per post. Uppräkningen står utan antal —
-// ett krav utan siffra blir inte falskt av nästa tillägg (LARDOMAR.md
-// 2026-09-10, kommentaren i app.js räknar upp två av filens fem strängar).
+// här nedanför och varje sträng som skrivs på plats i en renderingsfunktion —
+// knappens Ta bort, etiketterna framför kostnaden per post och texterna för
+// dagar kvar. Uppräkningen står utan antal och utan ordet enda — ett krav med
+// siffra blir falskt av nästa tillägg (LARDOMAR.md 2026-09-10, kommentaren i
+// app.js räknar upp två av filens fem strängar).
 //
 // GENERAL_ERROR visas bara när ett svar varken bär error eller fieldErrors, till
 // exempel när servern inte svarar alls.
 const GENERAL_ERROR = 'Det gick inte att nå appens server. Försök igen.';
 const EMPTY_STATE = 'Du har inga poster ännu. Lägg till din första utgift ovan.';
+// Kortet Kommande dragningar har en egen tomtext: en läsare ska inte behöva
+// sluta sig till varför ett kort är tomt genom att läsa ett annat.
+const UPCOMING_EMPTY_STATE = 'Inga kommande dragningar ännu.';
 // U+2013 EN DASH, inte bindestreck (U+002D) och inte tankstreck (U+2014).
 // Står i båda totalerna när en hämtning misslyckades: vyn visar aldrig ett tal
 // appen inte vet är sant, och 0,00 kr vore ett tal appen inte har räknat fram.
@@ -31,6 +37,8 @@ const FORM_ERROR = document.querySelector('#form-error');
 const EMPTY_STATE_ELEMENT = document.querySelector('#empty-state');
 const TOTAL_MONTHLY = document.querySelector('#total-monthly');
 const TOTAL_YEARLY = document.querySelector('#total-yearly');
+const UPCOMING_LIST = document.querySelector('#upcoming-list');
+const UPCOMING_EMPTY = document.querySelector('#upcoming-empty');
 const SUBMIT_BUTTON = FORM.querySelector('button[type="submit"]');
 
 // Fälten i formuläret, i samma ordning som validateEntryDraft rapporterar dem.
@@ -116,19 +124,64 @@ function renderEntries(entries) {
   }
 }
 
+// Texten för dagar kvar ägs av app.js: ingen modul i src/core/ formaterar text
+// mot användaren. daysUntil är aldrig negativ — nextDueDate är per definition
+// idag eller senare — så det fallet har ingen gren här.
+function daysText(daysUntil) {
+  if (daysUntil === 0) {
+    return 'Idag';
+  }
+  if (daysUntil === 1) {
+    return 'Om 1 dag';
+  }
+  return `Om ${daysUntil} dagar`;
+}
+
+// Kommande dragningar. Ingenting räknas här: varje rad kommer ur upcoming(),
+// som ger en redan sorterad lista av { entry, nextDueDate, daysUntil }. Datumet
+// visas som ÅÅÅÅ-MM-DD utan omskrivning — det är formatet datamodellen
+// använder, och ett månadsnamn skulle kräva svensk text som ingen modul äger.
+//
+// todayIso() är projektets enda klockläsning och läses här, vid renderingen,
+// inte vid sidladdningen: en flik som står öppen över midnatt visar rätt dagar
+// kvar vid nästa hämtning.
+function renderUpcoming(entries) {
+  UPCOMING_LIST.replaceChildren();
+  for (const item of upcoming(entries, todayIso())) {
+    const rad = document.createElement('li');
+    rad.className = 'upcoming';
+    rad.append(
+      cell('upcoming-name', item.entry.name),
+      cell('upcoming-date', item.nextDueDate),
+      cell('upcoming-days', daysText(item.daysUntil))
+    );
+    UPCOMING_LIST.append(rad);
+  }
+
+  // Listan är tom exakt när entries är tom: varje post har en nästa dragning.
+  if (entries.length === 0) {
+    UPCOMING_EMPTY.textContent = UPCOMING_EMPTY_STATE;
+  } else {
+    UPCOMING_EMPTY.textContent = '';
+  }
+}
+
 // Vyn när en hämtning misslyckas (ARKITEKTUR.md, "Vyn när en hämtning
-// misslyckas"). renderEntries är enda skrivaren av de fyra elementen och nås
-// bara efter ett 200, så utan den här funktionen står förra svarets lista kvar i
-// vyn — med totaler som räknar med en post som redan är borta ur datafilen.
+// misslyckas"). renderEntries och renderUpcoming är enda skrivarna av de sex
+// elementen och nås bara efter ett 200, så utan den här funktionen står förra
+// svarets lista kvar i vyn — med totaler som räknar med en post som redan är
+// borta ur datafilen, och med dragningar för samma post.
 //
 // Tomlägets text är ett påstående om datafilen. Appen vet inte om den är tom;
 // den vet bara att den inte kunde läsas. Därför den tomma strängen och inte
-// EMPTY_STATE.
+// EMPTY_STATE eller UPCOMING_EMPTY_STATE.
 function clearView() {
   LIST.replaceChildren();
   EMPTY_STATE_ELEMENT.textContent = '';
   TOTAL_MONTHLY.textContent = UNKNOWN_TOTAL;
   TOTAL_YEARLY.textContent = UNKNOWN_TOTAL;
+  UPCOMING_LIST.replaceChildren();
+  UPCOMING_EMPTY.textContent = '';
 }
 
 async function readJson(response) {
@@ -171,11 +224,12 @@ function showErrors(body) {
 //
 // Ordningen mellan clearView och feltexten är fri i båda grenarna, inte
 // bindande: clearView skriver bara till #entry-list, #empty-state,
-// #total-monthly och #total-yearly, medan FORM_ERROR i den avvisade grenen och
-// showErrors i grenen för status ≠ 200 bara skriver till #form-error och
-// #error-<fält>. Mängderna är disjunkta. Mätt i en kopia av trädet: mutation:
-// satsparet i den avvisade grenen och satsparet i grenen för status ≠ 200, båda
-// i omvänd ordning samtidigt -> ger EXIT=0 med fail 0, och inget test faller.
+// #total-monthly, #total-yearly, #upcoming-list och #upcoming-empty, medan
+// FORM_ERROR i den avvisade grenen och showErrors i grenen för status ≠ 200
+// bara skriver till #form-error och #error-<fält>. Mängderna är disjunkta.
+// Mätt i en kopia av trädet: mutation: satsparet i den avvisade grenen och
+// satsparet i grenen för status ≠ 200, båda i omvänd ordning samtidigt -> ger
+// EXIT=0 med fail 0, och inget test faller.
 async function loadAndRender() {
   let response;
   try {
@@ -193,7 +247,9 @@ async function loadAndRender() {
     return;
   }
 
-  renderEntries(Array.isArray(body.entries) ? body.entries : []);
+  const entries = Array.isArray(body.entries) ? body.entries : [];
+  renderEntries(entries);
+  renderUpcoming(entries);
 }
 
 // Formulärets eget pågående-läge. Knappens disabled duger inte som enda

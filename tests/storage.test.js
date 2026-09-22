@@ -179,6 +179,19 @@ const CHILD_PATH = fileURLToPath(new URL('./helpers/interrupted-save.js', import
 // ett fallerat test i stället för en väntan utan exitkod.
 const CHILD_START_TIMEOUT_MS = 30000;
 
+// Punkt 8: taket för antalet startomtagningar. En omtagning döljer något — ett
+// barn som systematiskt inte hinner starta blir tyst i stället för rött — och
+// taket är den gräns där tystnaden upphör. Talet är ingen tid utan en räknare:
+// det kan inte påverka utfallet av ett prov som blev av, eftersom ett kasserat
+// varv varken räknas som den gamla listan eller som barnets.
+const MAX_CHILD_START_RETRIES = 3;
+
+// Antalet gjorda startomtagningar. Räknaren är testövergripande och inte per
+// väntan: ett tak per väntan skulle släppa igenom hur många spridda omtagningar
+// som helst, och varje omtagning kostar upp till CHILD_START_TIMEOUT_MS i
+// körtid. Nollställs när SIGKILL-testet börjar.
+let childStartRetries = 0;
+
 function forkChild(filePath, entryCount) {
   const child = fork(CHILD_PATH, [], {
     env: {
@@ -196,11 +209,11 @@ function forkChild(filePath, entryCount) {
 }
 
 // Väntar på barnets 'startar', men aldrig för alltid: meddelandet kapplöper mot
-// exit, error och en timeout. Vinner något annat faller testet med barnets
-// exitCode, signalCode och stderr — en hängning ger ingen exitkod alls, och då
-// går kravet i CLAUDE.md att kontrollera utgångskoden inte att uppfylla.
-async function waitForChildStart(child, stderrText) {
-  const outcome = await new Promise((resolve) => {
+// exit, error och en timeout. Väntan avgör ingenting själv utan returnerar sitt
+// utfall — punkt 8 behandlar de tre förlorande utfallen olika, och bara
+// anroparen vet vilken uppsättning som ska göras om vid en timeout.
+async function waitForChildStart(child) {
+  return new Promise((resolve) => {
     child.once('message', () => resolve({ kind: 'meddelande' }));
     child.once('exit', () => resolve({ kind: 'exit' }));
     child.once('error', (error) => resolve({ kind: 'error', error }));
@@ -210,26 +223,70 @@ async function waitForChildStart(child, stderrText) {
       { once: true }
     );
   });
+}
 
-  if (outcome.kind !== 'meddelande') {
-    child.kill('SIGKILL');
-    const orsak = outcome.error ? `${outcome.kind}: ${outcome.error.message}` : outcome.kind;
-    assert.fail(
-      `barnprocessen ${CHILD_PATH} skickade aldrig "startar" (${orsak}): `
-      + `exitCode=${child.exitCode}, signalCode=${child.signalCode}, stderr=${stderrText()}`
+// Faller med barnets tillstånd utskrivet: en hängning ger ingen exitkod alls,
+// och kravet i CLAUDE.md att kontrollera utgångskoden går då inte att uppfylla.
+function failChildStart(child, stderrText, outcome, inledning) {
+  const orsak = outcome.error ? `${outcome.kind}: ${outcome.error.message}` : outcome.kind;
+  assert.fail(
+    `${inledning} (orsak: ${orsak}): exitCode=${child.exitCode}, `
+    + `signalCode=${child.signalCode}, stderr=${stderrText()}`
+  );
+}
+
+// Punkt 8: allt utom 'meddelande' hanteras här, och de två utfallen behandlas
+// olika. exit och error betyder att barnet dog eller aldrig kunde startas — ett
+// verkligt fel (felstavad sökväg, syntaxfel, en kastande import) som en
+// omtagning bara upprepar, så testet faller omedelbart. Timeouten är den enda
+// gren som görs om: barnet dödas och dess exit inväntas innan anroparen forkar
+// ett nytt, så att aldrig två barn skriver mot samma datafil. Den timeout som
+// skulle bli omtagning nummer MAX_CHILD_START_RETRIES + 1 fäller i stället
+// testet, med antalet gjorda omtagningar och orsaken utskrivna. Anroparen gör
+// om sin uppsättning först när den här funktionen har återvänt.
+async function handleFailedChildStart(child, stderrText, outcome, exited) {
+  if (outcome.kind !== 'timeout') {
+    failChildStart(
+      child,
+      stderrText,
+      outcome,
+      `barnprocessen ${CHILD_PATH} skickade aldrig "startar"`
     );
   }
+
+  child.kill('SIGKILL');
+  await exited;
+
+  if (childStartRetries >= MAX_CHILD_START_RETRIES) {
+    failChildStart(
+      child,
+      stderrText,
+      outcome,
+      `barnprocessen ${CHILD_PATH} skickade aldrig "startar" efter `
+      + `${childStartRetries} startomtagningar (taket MAX_CHILD_START_RETRIES `
+      + `är ${MAX_CHILD_START_RETRIES})`
+    );
+  }
+  childStartRetries += 1;
 }
 
 // Punkt 3 i teststrategin: dödandetiden härleds ur en mätning. Mätomgången
 // dödar inte barnet utan tar tiden från att 'startar' togs emot till exit.
+// Punkt 8: en timeout här kasserar ingen omgång — det finns ingen — utan mäter
+// tKlar från början med ett nytt barn, och inget annat tillstånd rörs.
 async function matTKlar(filePath, entryCount) {
-  const { child, stderrText } = forkChild(filePath, entryCount);
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  await waitForChildStart(child, stderrText);
-  const start = performance.now();
-  await exited;
-  return performance.now() - start;
+  for (;;) {
+    const { child, stderrText } = forkChild(filePath, entryCount);
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    const outcome = await waitForChildStart(child);
+    if (outcome.kind !== 'meddelande') {
+      await handleFailedChildStart(child, stderrText, outcome, exited);
+      continue;
+    }
+    const start = performance.now();
+    await exited;
+    return performance.now() - start;
+  }
 }
 
 // ---------------------------------------------------------------- paths.js
@@ -934,6 +991,10 @@ test('en skrivning som dödas med SIGKILL lämnar antingen den gamla eller den n
   await withDataFile(async (filePath) => {
     const before = sampleEntries();
 
+    // Punkt 8: räknaren är testövergripande och nollställs när testet börjar,
+    // så att taket gäller det här testets omtagningar och inget annat.
+    childStartRetries = 0;
+
     // Antal omgångar, inte en tid. Punkt 3 kräver minst 20; talet nedan är
     // uppmätt, inte valt. Med 20 omgångar fällde punkt 6:s mutation (direkt
     // fs.writeFile i stället för temporärfil plus rename) det här testet i 1 av
@@ -983,17 +1044,35 @@ test('en skrivning som dödas med SIGKILL lämnar antingen den gamla eller den n
 
       counters = { gamlaListan: 0, barnetsLista: 0 };
       for (let i = 0; i < rounds; i += 1) {
-        // Utgångsläget läggs tillbaka före varje omgång, också efter en omgång
-        // där barnets lista vann: annars skulle nästa omgång räkna barnets
-        // lista som den gamla.
-        await saveEntries(before);
+        // Punkt 8: ett varv där barnet aldrig skickade "startar" kasseras och
+        // körs om med samma delays[i] — ett överhoppat varv lämnar ett hål i
+        // det fönster punkt 3 lägger ut jämnt över skrivningen, och punkt 4:s
+        // båda grenar blir därmed svårare att nå. Omkörningen börjar vid
+        // saveEntries, så att disken står i utgångsläget oavsett hur långt det
+        // kasserade barnet hann; handleFailedChildStart har då redan dödat det
+        // barnet och inväntat dess exit, så aldrig två barn skriver mot samma
+        // datafil. Ett kasserat varv räknas i varken gamlaListan eller
+        // barnetsLista: bara ett varv som blev av är ett prov. Varvet lämnas
+        // först när barnet har startat, dödats och avslutats — punkt 4:s
+        // assertioner nedan gäller alltid en omgång som blev av.
+        for (;;) {
+          // Utgångsläget läggs tillbaka före varje omgång, också efter en omgång
+          // där barnets lista vann: annars skulle nästa omgång räkna barnets
+          // lista som den gamla.
+          await saveEntries(before);
 
-        const { child, stderrText } = forkChild(filePath, entryCount);
-        const exited = new Promise((resolve) => child.once('exit', resolve));
-        await waitForChildStart(child, stderrText);
-        await sleep(delays[i]);
-        child.kill('SIGKILL');
-        await exited;
+          const { child, stderrText } = forkChild(filePath, entryCount);
+          const exited = new Promise((resolve) => child.once('exit', resolve));
+          const outcome = await waitForChildStart(child);
+          if (outcome.kind !== 'meddelande') {
+            await handleFailedChildStart(child, stderrText, outcome, exited);
+            continue;
+          }
+          await sleep(delays[i]);
+          child.kill('SIGKILL');
+          await exited;
+          break;
+        }
 
         // Punkt 4: avbrottet får aldrig ge en tredje utgång. loadEntries kastar
         // inte, och listan är antingen den gamla eller barnets. Det är de här
@@ -1066,6 +1145,11 @@ test('en skrivning som dödas med SIGKILL lämnar antingen den gamla eller den n
     for (const attempt of attempts) {
       console.log(`  SIGKILL-försök ${JSON.stringify(attempt)}`);
     }
+
+    // Punkt 8: antalet startomtagningar skrivs ut i samma svep som punkt 7:s
+    // mätvärden, också när det är 0 — en omtagning döljer något, och en rad som
+    // bara syns när något gått fel går inte att sakna i en grön körning.
+    console.log(`  SIGKILL-startomtagningar ${childStartRetries} (taket är ${MAX_CHILD_START_RETRIES})`);
 
     // Punkt 4: båda grenarna ska ha körts. En körning där någondera grenen
     // kördes noll gånger är ett fallerat test, inte ett godkänt.

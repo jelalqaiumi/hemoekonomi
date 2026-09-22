@@ -20,6 +20,24 @@ person på en enhet, ingen historik, SEK) är förutsatta och omprövas inte.
 maskinen. `node --test` och `node:test`/`node:assert` är stabila sedan Node 20.
 Ingen extern testkörare behövs.
 
+**Körmiljön har en inbyggd `globalThis.fetch` men ingen DOM.** Granskarens
+körning på den här maskinen:
+
+```
+typeof globalThis.fetch = function
+globalThis.fetch === undefined: false
+typeof globalThis.document = undefined
+```
+
+Det är ett villkor på varje krav som rör globaler i ett test, och det har redan
+fällt ett: **ett test får aldrig kräva att `globalThis.fetch` är `undefined`
+efter en återställning.** En laddare som sparar och lägger tillbaka det tidigare
+värdet lägger tillbaka Nodes inbyggda funktion, vilket är rätt beteende — det
+värde som ska jämföras är alltså det som lästes innan testfallen kördes, aldrig
+`undefined`. `globalThis.document` saknas däremot i Node och får jämföras med
+`undefined`. Den som skriver ett krav om en global i ett test kör de tre raderna
+ovan först.
+
 **Testkommandot måste vara ett glob-mönster, inte en katalog.** På Node 24
 tolkas positionsargumentet till `--test` som ett glob-mönster. Ett
 katalogargument matchar då ingenting, och Node faller tillbaka på att försöka
@@ -83,15 +101,15 @@ hemochekonomi/
 │   │   └── server.js     HTTP-server, statisk filserver, startpunkt (paket 5).
 │   └── web/              Det som skickas till webbläsaren.
 │       ├── index.html    Enda sidan. Formulär, lista, totaler, kommande
-│       │                 dragningar (paket 5, byggs ut i 6 och 7).
+│       │                 dragningar (paket 5, utbyggd i 6 och 7).
 │       ├── style.css     All styling. Ingen inline-CSS (paket 5).
 │       └── app.js        UI-logik. Anropar API:t, importerar src/core via
-│                         /core/ (paket 5, byggs ut i 6 och 7).
+│                         /core/ (paket 5, utbyggd i 6 och 7).
 └── tests/                Alla tester. Testfiler heter <modul>.test.js, och bara
                           de körs av npm test. Hjälpfiler till ett test ligger
                           under helpers/ och körs aldrig av testköraren.
     ├── smoke.test.js     Paket 1.
-    ├── dates.test.js     Paket 2, byggs ut i paket 7.
+    ├── dates.test.js     Paket 2, utbyggd i paket 7.
     ├── entry.test.js     Paket 2.
     ├── money.test.js     Paket 3.
     ├── cost.test.js      Paket 3.
@@ -99,7 +117,7 @@ hemochekonomi/
     ├── api.test.js       Paket 5.
     ├── lock.test.js      Paket 5.
     ├── server.test.js    Paket 5.
-    ├── app.test.js       Paket 5, byggs ut i 6 och 7. Kör src/web/app.js mot
+    ├── app.test.js       Paket 5, utbyggd i 6 och 7. Kör src/web/app.js mot
     │                     DOM-attrappen. Ingen webbläsare, ingen server.
     ├── schedule.test.js  Paket 7.
     └── helpers/
@@ -107,9 +125,12 @@ hemochekonomi/
         │                        saveEntries och dödas med SIGKILL av
         │                        storage.test.js. Namnet slutar medvetet inte
         │                        på .test.js (paket 4).
-        └── dom.js               DOM-attrapp, fetch-attrapp och laddare för
-                                 app.test.js. Projektets enda DOM-attrapp
-                                 (paket 5).
+        ├── dom.js               DOM-attrapp, fetch-attrapp och laddare för
+        │                        app.test.js. Projektets enda DOM-attrapp
+        │                        (paket 5).
+        └── frozen-dates.js      Den klocka app.js läser under test: todayIso()
+                                 lämnar tillbaka den dag laddaren satt. Läser
+                                 ingen klocka själv (paket 7).
 ```
 
 **Paketmärkningen är bindande.** Varje fil i trädet är märkt med det paket där
@@ -176,15 +197,14 @@ kom till för, träffar den två ställen. Båda har ett utpekat paket och en ut
   under "Vad `entry.js` importerar från `money.js`". **Åtgärdat i paket 3** — de
   fem literalerna i koden är ersatta av konstanten.
 - **`12` i rollen "högsta månadsnummer i ett kalenderdatum" i `dates.js`.**
-  `daysInMonth` och `parseIsoDate` har var sin handskriven kopia av villkoret
-  `month < 1 || month > 12`. `daysInMonth` äger gränsen, och `parseIsoDate`
-  behöver ingen egen kopia: `daysInMonth` svarar `0` för ett månadsnummer
-  utanför 1–12, så raden `day < 1 || day > daysInMonth(year, month)` avvisar
-  redan samma värden. **Åtgärdas i paket 7** av byggaren, i det paket där
-  `dates.js` byggs ut och `tests/dates.test.js` utökas: månadsraden i
-  `parseIsoDate` tas bort, ingen ny konstant införs, och `'2026-13-01'`,
-  `'2026-00-10'` samt `'2026-99-01'` ska fortfarande ge `null`. Fram till dess
-  är kopian ett känt, daterat och utpekat fel — inte en tillåten form.
+  Ägaren är `daysInMonth`, som svarar `0` för varje månadsnummer utanför 1–12.
+  `parseIsoDate` behöver ingen egen kopia av villkoret `month < 1 || month > 12`:
+  raden `day < 1 || day > daysInMonth(year, month)` avvisar redan samma värden.
+  **Åtgärdat i paket 7** — `parseIsoDate` hade en handskriven kopia av villkoret,
+  och den raden togs bort. Vad som gjordes, vilka datum som prövades och vilket
+  testfall som är facit står i beslutsloggens punkt **`entry.js` läser
+  `ORE_PER_SEK` från `money.js`, och ägarregeln för tal får tre avgränsningar och
+  en fullständig träfflista**, och upprepas inte här.
 
 **Exporterade konstanter i `src/core/` fryses med `Object.freeze`.** Gäller
 `INTERVALS`, `INTERVAL_LABELS`, `CATEGORIES`, `CATEGORY_LABELS`, `ENTRY_FIELDS`,
@@ -593,7 +613,7 @@ nedre giltiga gränsen — ett öre — och visar var kedjan slutar avvisa.
 ### Kanonisk lagringsform — det enda `isEntry` kräver utöver regelkedjan
 
 `validateEntryDraft` gör två saker: den **avvisar** ogiltiga värden, och den
-**normaliserar** de godkända. Normaliseringen berör två av de sex fälten:
+**normaliserar** de godkända. Tabellen räknar upp de fält normaliseringen berör:
 
 | Fält | Kanonisk form (det som lagras) | Ägare av uttrycket |
 |------|--------------------------------|--------------------|
@@ -968,16 +988,23 @@ kortare.
 4. Returnera `occurrence(k)`
 
 Jämförelsen i steg 3 är strängjämförelse av `"YYYY-MM-DD"` (fungerar
-lexikografiskt) via `compareIsoDates`. `occurrence` växer med minst 28 dagar per
-steg, så loopen terminerar och kör i praktiken högst 2–3 varv.
+lexikografiskt) via `compareIsoDates`. Med `addMonthsClamped` växer `occurrence`
+med minst 28 dagar per steg, så loopen terminerar och kör i praktiken högst 2–3
+varv. Beviset vilar alltså på förvalet: utförs `occurrence`-steget av något annat
+än `addMonthsClamped` gäller det inte, och den skillnaden bevakas inte — se
+"Parameterns kontrakt" under "Steg 2 görs mätbart".
 
 Konsekvenser som följer av algoritmen och som ska testas i paket 7:
 
 - Startdatum i framtiden → `k = 0` → nästa dragning **är** startdatumet.
-- Startdatum exakt idag → `occurrence(0) = today` → nästa dragning är idag,
-  `daysUntilNextDue = 0`.
+- Startdatum exakt idag → `occurrence(0) = today` → nästa dragning är idag, och
+  `daysUntil` för posten är `0`.
 - Startdatum flera perioder tillbaka → steg 2 hoppar direkt till rätt trakt,
-  steg 3 justerar. Inget varv-för-varv-räknande från 1970.
+  steg 3 justerar. Inget varv-för-varv-räknande från 1970. **Det här kravet
+  handlar om arbete och inte om ett värde**, och prövas därför av punkt (S3) i
+  kravlistan för `tests/schedule.test.js` — inte av någon assertion på
+  returvärdet. Skälet, och varför de andra vägarna förkastades, står under
+  "Steg 2 görs mätbart" nedan.
 
 Facit att använda som testfall i paket 7:
 
@@ -991,26 +1018,477 @@ Facit att använda som testfall i paket 7:
 | `2020-03-31` | `quarterly` | `2026-08-18` | `2026-09-30` | 26 perioder tillbaka, september har 30 dagar |
 | `2026-12-31` | `quarterly` | `2026-08-18` | `2026-12-31` | start i framtiden trots samma år |
 
-**Dagar kvar.** `daysUntilNextDue(entry, todayIso)` =
-`(Date.UTC(nästa) - Date.UTC(idag)) / 86400000`, alltid ett icke-negativt heltal.
-UTC används för att sommartid annars ger 23- och 25-timmarsdygn.
+**Dagar kvar.** Storheten bor i fältet `daysUntil` på `upcoming`s
+`UpcomingItem` och räknas som `daysBetween(idag, nästa dragning)`, alltid ett
+icke-negativt heltal. `daysBetween` i `dates.js` äger räkningen
+`(Date.UTC(nästa) - Date.UTC(idag)) / 86400000`, och `schedule.js` skriver ingen
+egen kopia av den. UTC används för att sommartid annars ger 23- och
+25-timmarsdygn. Att `schedule.js` inte har någon egen exporterad funktion för
+storheten är ett beslut med skäl; se beslutsloggen.
 
 **Sortering av kommande dragningar.** `upcoming(entries, todayIso)` sorterar
 stigande på `nextDueDate`. Vid samma datum: `name` med
 `a.name.localeCompare(b.name, 'sv')`, och vid samma namn `id` med vanlig
-strängjämförelse. Ordningen blir därmed alltid stabil och oberoende av
-inmatningsordningen.
+strängjämförelse. Ordningen är därmed oberoende av inmatningsordningen **så länge
+två poster skiljer sig på någon av de tre nycklarna**, och det gör de i en datafil
+appen själv har skrivit: `createEntry` ger varje post ett eget
+`crypto.randomUUID()`.
+
+Påståendet var tidigare skrivet som "alltid stabil och oberoende av
+inmatningsordningen", utan villkoret, och det är inte sant för två poster som är
+lika på alla tre nycklarna: jämföraren svarar då `0`, sorteringen är stabil, och
+de två behåller den ordning de kom in i. Det är rätt beteende och det enda
+möjliga — poster som är lika på varje nyckel jämföraren läser går inte att
+ordna sinsemellan — men villkoret ska stå skrivet, och `0`-svaret ska vara prövat:
+en jämförare som svarar något annat än `0` för två lika element är inte reflexiv,
+och då är ordningen varken stabil eller oberoende av något. Punkt (S5) i
+kravlistan för `tests/schedule.test.js` är det provet.
 
 **Klockan läses på exakt ett ställe:** `todayIso()` i `src/core/dates.js`.
 Ingen annan funktion i `src/core/` får anropa `Date.now()` eller `new Date()`
 utan argument. Alla funktioner som behöver dagens datum tar emot det som
 parameter. Utan den regeln går paket 7 inte att testa.
 
-Hela det här avsnittet byggs i **paket 7**, tillsammans med de fem exporter i
-`dates.js` som ännu inte finns (se gränssnittslistan). Ingen av dem får byggas
-i förtid: de har inga användare före paket 7 och skulle då stå otestade.
+Hela det här avsnittet hör till **paket 7** och byggdes där, tillsammans med de
+fem exporter i `dates.js` som tillkom i samma paket (se gränssnittslistan).
+Skälet till att de inte byggdes tidigare står kvar som regel: en export utan
+användare stod otestad, och de fem fick sin första användare först här.
 
----
+### Ingångsspärrar i `src/core/schedule.js` — bindande [paket 7]
+
+Modulen äger hela sin egen indatakedja. Alla spärrar kastar `RangeError`, samma
+feltyp som `dates.js`, `money.js` och `cost.js` använder, och värdet skrivs in i
+meddelandet med `String(...)` och aldrig direkt i en mallsträng: `${Symbol('x')}`
+kastar `TypeError`, medan `String(Symbol('x'))` ger `'Symbol(x)'`
+(`LARDOMAR.md`, 2026-08-24). Ingen exporterad funktion i modulen får returnera
+`NaN` eller `-0` för någon indata; den kastar i stället.
+
+Det här avsnittet är filens enda facit för ordningen mellan `schedule.js` egna
+fel och för de svenska strängarna. Beloppet prövas inte här: `amountSek` är
+`cost.js` domän, och en post med negativt belopp ger samma dragningsdatum som en
+med positivt.
+
+`nextDueDate(entry, todayIsoDate, addMonths)` är en numrerad kedja där **första
+träff vinner** — villkoren körs sekventiellt i en enda funktion, med
+`start = parseIsoDate(entry.startDate)` och `today = parseIsoDate(todayIsoDate)`:
+
+| # | Villkor | Meddelande i `RangeError` |
+|---|---------|---------------------------|
+| 1 | `!isPlainObject(entry)` — ägarfunktionen i `entry.js` | `nextDueDate kräver en post som objekt.` |
+| 2 | `!Object.hasOwn(MONTHS_PER_PERIOD, entry.interval)` | `` `nextDueDate kräver ett känt interval, fick "${String(entry.interval)}".` `` |
+| 3 | `start === null` | `` `nextDueDate kräver ett startDate på formen ÅÅÅÅ-MM-DD, fick "${String(entry.startDate)}".` `` |
+| 4 | `today === null` | `` `nextDueDate kräver ett dagens datum på formen ÅÅÅÅ-MM-DD, fick "${String(todayIsoDate)}".` `` |
+| 5 | `typeof addMonths !== 'function'` | `` `nextDueDate kräver att addMonths är en funktion, fick "${String(addMonths)}".` `` |
+
+Ordningen bär beslut som inte är utbytbara:
+
+- **Rad 1 har en ägarfunktion, inte en handskriven kopia.** `isPlainObject`
+  importeras från `entry.js` och säger `true` för ett `Date`, eftersom villkoret
+  är `typeof value === 'object'`, inte `null` och inte en array. Följden är facit:
+  `nextDueDate(new Date(), '2026-08-18')` faller på rad 2 och inte på rad 1,
+  precis som `yearlyOre` i `cost.js` gör. En array med de sex fälten påsatta
+  faller däremot på rad 1, därför att ägarfunktionen har `!Array.isArray(value)`.
+- **Rad 2 gör uppslaget med `Object.hasOwn`**, inte med
+  `MONTHS_PER_PERIOD[entry.interval]` och en sanningsprövning. Annars hittar
+  `interval: 'constructor'` något på prototypen, och `interval: 'weekly'` ger
+  `undefined` rakt in i `k * step`, alltså `NaN` i stället för ett fel.
+  Skillnaden syns bara i **meddelandet**: båda skrivsätten kastar `RangeError`,
+  men det sanningsprövade uppslaget kastar det längre ned, från
+  `addMonthsClamped`, och pekar då ut fel orsak. Det är därför punkt (S4) i
+  kravlistan asserterar hela `message` och inte bara feltypen.
+- **Rad 5 står sist**, efter kontrollen av dagens datum och före steg 1 i
+  algoritmen. Skälet, den indata där placeringen ändrar svaret och vad raden inte
+  lovar står under "Steg 2 görs mätbart" nedan; raden upprepas inte där.
+
+`upcoming(entries, todayIsoDate)` skrivs som funktionens gång och inte som en
+numrerad tabell: dess villkor prövas inte efter varandra utan varvat med
+`nextDueDate`-kedjan i en loop över posterna, och en numrerad tabell skulle där
+ge ett annat svar än koden (`LARDOMAR.md`, 2026-09-02, `totalYearlyOre`-tabellen
+numrerar spärrarna i en ordning koden inte följer).
+
+```
+if (!Array.isArray(entries))
+    -> RangeError: upcoming kräver en lista med poster.
+för varje entry i entries, i listans ordning:
+    due = nextDueDate(entry, todayIsoDate)   // nextDueDate-kedjan ovan äger felen här
+    if (typeof entry.name !== 'string')
+        -> RangeError: upcoming kräver ett name som sträng, fick "<String(entry.name)>".
+    if (!isValidEntryId(entry.id))
+        -> RangeError: upcoming kräver ett id som är en icke-tom sträng, fick "<String(entry.id)>".
+sortera items med compareUpcoming
+```
+
+**Postens plats i listan avgör, inte radens plats i kedjan.** `name` och `id`
+prövas för varje post och inte bara när två datum råkar vara lika: annars skulle
+svaret bero på om en oduglig post hamnade bredvid en post med samma datum.
+`isValidEntryId` är ägaren till "är det här ett giltigt id" och importeras från
+`entry.js`; `upcoming` skriver ingen egen kopia av villkoret.
+
+Indata där mer än ett villkor är sant samtidigt, med det vinnande meddelandet
+utskrivet. Raderna följer av loopens ordning ovan och är obligatoriska testfall i
+`tests/schedule.test.js`; byggaren kör båda och klistrar in utdatan i paketets
+redovisning:
+
+| Indata | Vinnande meddelande |
+|--------|---------------------|
+| `upcoming([post({ name: 42 }), post({ interval: 'weekly' })], '2026-08-18')` | `` upcoming kräver ett name som sträng, fick "42". `` |
+| `upcoming([post({ interval: 'weekly' }), post({ name: 42 })], '2026-08-18')` | `` nextDueDate kräver ett känt interval, fick "weekly". `` |
+
+**Den assertion som ensam skiljer en spärr i det här avsnittet från en annan
+asserterar hela `message`, aldrig bara feltypen.** Feltypen delas av varje spärr i
+modulen och av `dates.js`, så `assert.throws(fn, RangeError)` kan inte skilja en
+spärr från en annan spärr längre ned i kedjan. Det var precis så rad 2 kunde
+överleva sin mutation med grön svit (`LARDOMAR.md`, 2026-09-16).
+
+Kravet gäller den rollen och inte varje `assert.throws` i filen. En bredare
+uppräkning av **värden för samma spärr** — typlistor med `1n`, `Symbol('x')`,
+`null`, `[]`, `new Date()` och liknande — får asserta enbart feltypen. De två
+proven svarar på olika frågor: listan prövar att spärren avvisar varje värde,
+fullmeddelandeassertionen prövar att det är just den spärren som gör det, och de
+behöver inte ligga på samma rad. Den tidigare lydelsen sa "varje `assert.throws`"
+och var därmed bredare än det som byggdes: en granskare kunde inte avgöra om en
+`assert.throws(fn, RangeError)` i filen var ett fel eller ett godtaget undantag
+(`LARDOMAR.md`, 2026-09-22).
+
+**Villkoret som gör det avgörbart, och som körs innan `tests/schedule.test.js`
+lämnas vidare:** varje spärr i det här avsnittet — varje rad i tabellen ovan och
+varje `-> RangeError:` i pseudokoden för `upcoming` — ska ha minst en assertion
+med hela meddelandet. Kontrollen är `grep -n "<meddelandets fasta del>"
+tests/schedule.test.js` för var och en, där den fasta delen är strängen fram till
+det första insatta värdet (för rad 2: `nextDueDate kräver ett känt interval`).
+Varje sökning ska ge minst en träff, och utdatan klistras in i redovisningen; en
+sökning utan träff stoppar paketet. En `assert.throws` som bara bär feltypen är
+då per definition en bredare uppräkning och inget fel.
+
+### Steg 2 görs mätbart (bindande) [paket 7]
+
+Kravet "inget varv-för-varv-räknande från 1970" skiljer sig från varje annat krav
+i den här filen: **de två kodvarianterna ger samma svar för varje indata.**
+Mutationen `let k = Math.max(0, Math.floor(diff / step));` → `let k = 0;` är körd
+två gånger av två olika läsare med samma utfall: `tests 335, pass 335, fail 0`
+och `EXIT=0` på granskarens frysta träd (`LARDOMAR.md` 2026-09-14) och
+`tests 97, pass 97, fail 0` och `EXIT=0` i körningen inför det här beslutet, där
+`nextDueDate` för en månadspost från `1970-01-15` dessutom fortfarande gav
+`2026-09-15`. Skillnaden är inte ett värde utan ett arbete: ett hopp direkt till
+rätt trakt i stället för ett varv per period sedan startdatumet. Hur många varv
+det blir beror på både `startDate` och `today`, och antalet står därför inte som
+ett tal här — det hör hemma i den körning som ger det och redovisas av byggaren
+under (S3). Ingen assertion på ett returvärde
+kan alltså fälla den, och en assertion på körtid är förbjuden i projektet (se
+"Inget test asserterar på körtid" under "Teststrategi").
+
+**Beslut: arbetet görs mätbart genom att `nextDueDate` tar emot funktionen som
+utför `occurrence`-steget som ett injicerbart argument.** Signaturen är
+`nextDueDate(entry, todayIsoDate, addMonths = addMonthsClamped)`, **båda**
+anropen av `occurrence` går genom `addMonths` — det i steg 2 och det i
+korrigeringsloopen — och testet skickar in en omslutning som räknar sina anrop.
+Formen är den `LARDOMAR.md` (2026-09-14) föreskriver. Injektion med förval är
+inget nytt i projektet: `todayIso(now = new Date())` och `createEntry(draft,
+makeId)` är byggda likadant.
+
+Spärren för det injicerade värdet är rad 5 i tabellen under "Ingångsspärrar i
+`src/core/schedule.js`". Villkoret och den svenska strängen står där och skrivs
+inte av här — ett facit per fråga.
+
+**Raden står sist i ingångskedjan**, efter kontrollen av dagens datum och före
+steg 1. Placeringen är inte smak, och skillnaden skrivs som den indata där den
+ändrar svaret: `nextDueDate(5, '2026-09-14', null)` ger med raden sist
+`nextDueDate kräver en post som objekt.` och med raden först `nextDueDate kräver
+att addMonths är en funktion, fick "null".` Företrädet för rad 1 till rad 4 i den
+tabellen ska vara oförändrat, så raden för `addMonths` går sist — och just den
+indatan är ett obligatoriskt testfall.
+
+**Returvärdet från `addMonths` får ingen egen spärr.** Ägaren till frågan "är det
+här ett datum" på den vägen är `compareIsoDates` i `dates.js`, som kastar
+`RangeError` med sitt eget namn för allt som inte är `ÅÅÅÅ-MM-DD`. En andra kopia
+av det villkoret i `schedule.js` vore samma fel som `LARDOMAR.md` (2026-09-02,
+`cost.js` har en egen, svagare kopia av "är detta ett objekt"). Testfall:
+`nextDueDate(giltigPost, '2026-09-14', () => 'skräp')` ska ge
+`compareIsoDates`-meddelandet, inte ett meddelande från `schedule.js`.
+
+**Parameterns kontrakt: vad som bevakas och vad som bara är dokumenterat.**
+Kontraktet för det injicerade värdet har ett led per rad i tabellen nedan, och
+ägarkolumnen säger vem som bevakar ledet. Utfallskolumnen är körd — körningarna
+är granskarens på det frysta trädet (`LARDOMAR.md` 2026-09-14) och inget av dem
+är härlett ur resonemang:
+
+| Led | Ägare | Körd indata och utfall |
+|---|---|---|
+| Går att anropa | ingen | `typeof addMonths !== 'function'` avvisar varje värde som inte är en funktion med `RangeError` och modulens eget namn. En klass passerar raden: `typeof (class C {})` är `'function'`, och anropet ger `TypeError: Class constructor C cannot be invoked without 'new'`. |
+| Ger ett datum `ÅÅÅÅ-MM-DD` | `compareIsoDates` i `dates.js` | `() => 'skräp'`, `() => new Date()`, `() => null` och `() => '2026-02-30'` ger alla `compareIsoDates`-meddelandet. |
+| Flyttar `occurrence` framåt | ingen | `nextDueDate(giltigPost, '2026-09-14', () => '1970-01-01')` hänger för alltid; avbröts med `timeout 8` och `EXIT=124`. |
+
+**Beslut: parametern är en testsöm vars första och sista led är dokumenterade,
+inte bevakade.** `src/core/schedule.js` får ingen spärr för "går att anropa" och
+ingen för "flyttar framåt". Skälen, vart och ett knutet till en regel filen redan
+följer:
+
+- **Ingen väg in i appen når leden.** Ingen kod i `src/` skickar ett tredje
+  argument, och kontrollen är `grep -rn "nextDueDate" src/`: varje träff ska vara
+  definitionen i `schedule.js`, ett anrop med **två** argument, eller
+  `src/web/app.js`, som bara läser fältet `nextDueDate` ur `upcoming`. Kontrollen
+  är skriven som ett villkor på träffarna och inte som en uppräkning av dem, så
+  att den inte blir falsk av att ett anropsställe tillkommer eller försvinner. En
+  spärr för något av de två leden skulle alltså bara kunna nås av ett test skrivet
+  för spärren själv, och det är den konstruktion `LARDOMAR.md` 2026-09-04 och
+  2026-09-07 kräver att man tar bort i stället för att bygga.
+- **"Går att anropa" går inte att avgöra utan att anropa.** Den enda formen är ett
+  `try`/`catch` runt anropet som skriver om ett `TypeError` till ett `RangeError`.
+  Den `catch`-grenen är precis en sådan gren, och den skulle dessutom fånga varje
+  `TypeError` som uppstår **inne** i `addMonthsClamped` och sätta modulens eget
+  namn på det — ett meddelande som pekar ut fel orsak, samma fel som
+  `divideRoundHalfUp`-meddelandet i `LARDOMAR.md` 2026-09-02.
+- **"Flyttar framåt" går bara att avgöra med ett tak på antalet varv.** Det är
+  ordagrant förkastad väg 3 nedan, med skälet utskrivet där. Ett tak som förs in
+  under namnet "kontraktskontroll" är samma rad med ett annat namn.
+- **`typeof`-raden står kvar, och den lovar något annat.** Den avgör ett
+  *meddelande* utan att anropa något: varje värde som inte är en funktion ger
+  `RangeError` med modulens namn i stället för ett `TypeError` från anropsstället.
+  Provet av raden är den obligatoriska listan med icke-funktioner i
+  `tests/schedule.test.js` — `1n`, `Symbol('x')`, `null`, en sträng, `42`, `true`,
+  `NaN`, `{}`, `[]` och `new Date()`. Raden lovar inte "går att anropa" och får
+  inte beskrivas så — varken i den här filen eller i en kodkommentar.
+
+Vad som följer av beslutet, bindande:
+
+- **Klassfallet blir ett testfall, och det asserterar `TypeError`.**
+  `tests/schedule.test.js` skickar in `class C {}` som `addMonths` och kräver att
+  anropet kastar `TypeError`, inte `RangeError`. Fallet naglar fast den
+  dokumenterade gränsen: införs en spärr för ledet senare faller det, och då
+  skrivs det här avsnittet om först. Fallet följer av spärrtabellen och numreras
+  inte — det är inte det enda som fäller en namngiven mutation.
+- **Ingen testfil får skicka in en `addMonths` som inte flyttar `occurrence`
+  framåt.** Anropet hänger, och en hängning ger ingen exitkod alls
+  (`LARDOMAR.md` 2026-09-04), så ledet får inget testfall. Varje omslutning ett
+  test skickar in ska omsluta `addMonthsClamped` och lämna dess returvärde orört;
+  en sådan omslutning uppfyller alla leden av sig själv. Det gäller (S3):s
+  räknande omslutning.
+- **Termineringsbeviset gäller förvalet.** Att `occurrence` växer med minst 28
+  dagar per varv är en egenskap hos `addMonthsClamped`, inte hos varje värde
+  parametern kan bära. Varje mening i den här filen och varje kommentar i `src/`
+  som bevisar att korrigeringsloopen terminerar ska namnge förvalet som den
+  storhet beviset vilar på, och säga att parametern inte bevakas på den punkten.
+- **Nästa granskning.** De två leden är kända och avsiktligt obevakade. Ett fynd
+  som säger "en klass tar sig förbi" eller "en icke-framåtskridande funktion
+  hänger" är därför inte ett fel i koden utan ett förslag att ändra det här
+  beslutet, och ska redovisas som det.
+
+**Förkastade vägar**, med skälet utskrivet, så att ingen bygger om dem:
+
+1. **Stryk kravet som otestbart och skriv om raden till en anteckning om
+   implementationen.** Förkastad. Kravet är inte otestbart — det är bara inte
+   synligt i ett returvärde, och skillnaden mellan de två orden är hela frågan.
+   `upcoming` anropar `nextDueDate` en gång per post, och kortet renderas om vid
+   varje laddning, sparning och borttagning, så en återgång till
+   varv-för-varv-räkning är arbete appen gör om och om igen. Ett krav som ingen
+   kan pröva är dessutom sämre än inget krav (`LARDOMAR.md` 2026-09-07, en
+   kravlista som inleds med "Kraven är bokstavliga" men innehåller punkter ingen
+   kod uppfyller).
+2. **Bryt ut hoppsteget till en egen exporterad funktion och testa dess
+   returvärde.** Förkastad, därför att skyddet då hamnar bredvid hålet: testet
+   prövar att den utbrutna funktionen räknar rätt, medan mutationen består i att
+   `nextDueDate` slutar **använda** den — och den ändringen är fortfarande
+   beteendeidentisk och fäller fortfarande inget testfall. Dessutom blir den en
+   export vars enda anropare kan försvinna utan att något faller (`LARDOMAR.md`
+   2026-09-07, `saveEntries` blev en export utan anropare i `src/`).
+3. **Ett tak på antalet korrigeringsvarv, som kastar `RangeError` när det
+   överskrids.** Förkastad, fastän den skulle fälla mutationen. Med korrekt kod
+   finns ingen giltig indata som når grenen: den skulle stå instrumenterad och
+   skrivas noll gånger under hela sviten, och en gren som ingen indata når ska
+   tas bort i stället för att behållas (`LARDOMAR.md` 2026-09-04 och 2026-09-07,
+   de två konstruktionerna i `storage.js`). Ett tak vore alltså en ny rad av
+   just det slag filen redan har straffat två gånger.
+
+### Kravlista för `tests/schedule.test.js` [paket 7]
+
+Filen saknade kravlista när den byggdes, och de fall en granskning krävde skrevs
+därför utan någon punkt att hänvisa till (`LARDOMAR.md` 2026-09-14). Listan
+numrerar **de fall som är utpekade som facit för en namngiven mutation**. Övriga fall i
+filen följer av facittabellen och spärrtabellerna ovan och numreras inte: bara
+ett fall som bär ett `(SN)` i testfilen ska gå att slå upp här. Prefixet `S`
+skiljer serien från numreringen i `tests/app.test.js`, så att ett nummer i en
+testfil har exakt ett hem.
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (S1) | `nextDueDate klampar från startDate också i korrigeringsloopen` | `addMonths(entry.startDate, k * step)` i loopkroppen → `addMonths(occurrence, step)` |
+| (S2) | `upcoming begär svensk kollation utskriven, inte körmiljöns standardspråk` | `'sv'` stryks ur `a.entry.name.localeCompare(b.entry.name, 'sv')` |
+| (S3) | `nextDueDate hoppar till rätt period i stället för att räkna varv för varv` | `let k = Math.max(0, Math.floor(diff / step));` → `let k = 0;` |
+| (S3) | samma testfall | steg 2: `let occurrence = addMonths(entry.startDate, k * step);` → `let occurrence = addMonthsClamped(entry.startDate, k * step);` |
+| (S3) | samma testfall | loopkroppen: `occurrence = addMonths(entry.startDate, k * step);` → `occurrence = addMonthsClamped(entry.startDate, k * step);` |
+| (S4) | `nextDueDate kastar RangeError för ett interval utanför tabellen` | `Object.hasOwn(MONTHS_PER_PERIOD, entry.interval)` → `MONTHS_PER_PERIOD[entry.interval]` |
+| (S5) | `compareUpcoming svarar 0 för två poster som är lika på varje nyckel` | `return 0;` sist i `compareUpcoming` → `return 1;` |
+
+Varje mutation körs en i taget, ska ge `EXIT=1`, och kryssraden för det utpekade
+testfallet klistras in i redovisningen. Faller bara andra tester medan det
+utpekade passerar räknas mutationen som överlevd och paketet lämnas tillbaka.
+
+(S3):s tre rader är tre skilda mutationer och körs var för sig. De två sista
+skrevs in efter runda 4 (`LARDOMAR.md` 2026-09-15); dessförinnan stod de bara som
+kommentar i `src/core/schedule.js`, och en mutation som bara står i en
+kodkommentar ingår inte i den här listan. `let`-ordet skiljer steg 2:s sats från
+loopkroppens — uttrycket `addMonths(entry.startDate, k * step)` står på båda
+ställena, och varje rad ska gå att tillämpa ordagrant på exakt en sats.
+
+**(S1)** gäller loopkroppens anrop. Uttrycket `addMonths(entry.startDate, k * step)`
+står på två ställen i `src/core/schedule.js` — steg 2 och `while`-kroppen — så
+mutationen byts in **bara i `while`-kroppen**; steg 2:s rad lämnas orörd.
+Mutationen skrevs tidigare med `addMonthsClamped` på båda sidor om pilen och gick
+då inte att tillämpa ordagrant på någon rad i filen; den rättades efter
+`LARDOMAR.md` 2026-09-14.
+
+Fallet måste använda `quarterly` och `yearly` med ett `today` mitt i perioden.
+För `monthly` kan en klampad `occurrence` och ett loopvarv aldrig inträffa
+samtidigt — loopen körs bara när `today` ligger efter `occurrence`, och en
+klampad `occurrence` ligger alltid på månadens sista dag (`LARDOMAR.md`
+2026-09-12). **Inget assertionsmeddelande i fallet får namnge `k`.** `k` är
+modulintern och syns inte i ett returvärde, så `k = 1 ger den klampade
+2026-04-30` är ett påstående raden inte prövar: med `let k = 0;` ger samma anrop
+fortfarande `2026-04-30`. Meddelandet ska säga vad raden faktiskt prövar — att en
+`occurrence` som är lika med `today` inte korrigeras vidare. Det enda ställe
+`k`:s uppförande observeras är (S3), och det observeras som antalet anrop av
+`addMonths`.
+
+**(S3)** skickar in en omslutning kring `addMonthsClamped` som räknar sina anrop
+och lämnar returvärdet orört. Fallet kör **två poster, var och en med sin egen
+räknare** — ett delat tal kan inte skilja posternas anrop åt, och det är just den
+skillnaden fallet mäter:
+
+- **En post vars korrigeringsloop kör noll varv:** `startDate: '1970-01-31'` med
+  `interval: 'monthly'` mot ett fast `today` som inte ligger efter den occurrence
+  steg 2 landar på. Räknaren ser då bara steg 2:s anrop. Assertion: antalet anrop
+  är **högst 3**.
+- **En post vars korrigeringsloop kör minst ett varv:** `startDate: '1970-01-15'`
+  med `interval: 'monthly'` mot samma `today`, som då ligger efter den occurrence
+  steg 2 landar på. Ett anrop från vardera stället. Assertioner: antalet anrop är
+  **minst 2** **och** **högst 3**.
+
+Det `today` de två posterna delar i `tests/schedule.test.js` är `'2026-08-18'`.
+Varje annat `today` som uppfyller de två villkoren ovan duger lika bra — det är
+villkoren som är bindande, inte datumet, och den som byter datum ska pröva båda
+villkoren mot facitreglerna för klampning och sedan köra de tre mutationerna om.
+
+För båda posterna asserteras returvärdet som vanligt, och samma anrop **utan**
+omslutningen ska ge samma svar — annars mäter fallet något annat än
+produktionsvägen.
+
+**Taket ensamt är blint, och därför räcker inte en post.** Ett tak fälls bara av
+*fler* anrop, aldrig av färre, så det kan inte se att ett av de två
+occurrence-stegen slutat gå genom parametern: byts steg 2:s eller loopkroppens
+`addMonths(entry.startDate, k * step)` mot ett direkt anrop av
+`addMonthsClamped`, sjunker antalet och taket håller fortfarande. Det är den
+undre gränsen på den andra posten som fäller de två routningsmutationerna, en i
+taget, och taket som fäller `let k = 0;`. Alla tre står som egna rader i
+mutationstabellen ovan. Formen med **en** post och **enbart** ett tak är den
+granskningen underkände (`LARDOMAR.md` 2026-09-14, loopkroppens väg genom
+`addMonths`); den får inte återinföras med motiveringen att sviten är grön utan
+den.
+
+**Taket mäter arbete och inte ett värde:** ett exakt antal skulle bli falskt av
+en tillåten omskrivning av steg 2, medan ett tak fäller varje återgång till
+varv-för-varv-räkning.
+
+**Den undre gränsen är hårdare knuten till algoritmens form än taket, och det
+ska nästa läsare veta.** Att den andra posten ger minst två anrop förutsätter att
+steg 2 landar på en occurrence före `today` för just den posten. En i sig tillåten
+omskrivning av steg 2 som hoppar förbi `today` skulle ge ett enda anrop också där:
+då faller gränsen, och meddelandet skyller på fel orsak — det säger att ett av
+occurrence-stegen slutat gå genom parametern, fast det som hänt är att steg 2
+räknar annorlunda. Meningen "ett exakt antal skulle bli falskt av en tillåten
+omskrivning av steg 2" gäller alltså i mild form även den undre gränsen. Faller
+gränsen är första frågan därför om steg 2 skrivits om: håller båda posterna
+fortfarande sitt tak och ger båda rätt returvärde, ska gränsens indata väljas om
+till en post vars korrigeringsloop fortfarande kör minst ett varv — gränsen
+sänks inte och tas inte bort, eftersom den är fallets enda detektor för att båda
+occurrence-stegen går genom parametern.
+
+Byggaren redovisar det uppmätta antalet anrop **per post** i den ostörda
+körningen och i varje mutationskörning. **Inget assertionsmeddelande i fallet får
+namnge `k`.** Meddelandet namnger det som mäts — antalet anrop av `addMonths` —
+och för den undre gränsen dessutom de två ställen som kan ha slutat gå genom
+parametern, loopkroppen och steg 2.
+
+**(S2) använder en teknik som inte finns någon annanstans i projektet:
+`String.prototype.localeCompare` och `Intl.Collator` ersätts under sorteringen.**
+En ny konstruktion i en testfil kräver en egen beskrivning innan den byggs
+(`LARDOMAR.md` 2026-09-07, den fjärde hängningsspärren), och här är den:
+
+- **Syfte.** Fallet prövar vad koden *begär*, inte vad den råkar få. Ett test som
+  bara ser på ordningen kan inte skilja `localeCompare(namn, 'sv')` från
+  `localeCompare(namn)` på en maskin vars standardspråk redan är svenskt:
+  mutationen "ta bort `'sv'`" gav `tests 331, pass 331, fail 0` och `EXIT=0` på
+  en sådan maskin (`LARDOMAR.md` 2026-09-12). `app.js` kör i webbläsaren, där
+  språket är användarens och inte utvecklarens.
+- **Konstruktion.** Varje kollationsbegäran under sorteringen fångas, på båda
+  sätten att be om en: `locales`-argumentet till `String.prototype.localeCompare`
+  och till `Intl.Collator`. Minst en begäran ska vara utskriven, och varje
+  utskrivet språk ska ge svensk ordning. `undefined` betyder körmiljöns
+  standardspråk och räknas inte som utskriven.
+- **Återställning.** Båda originalen läggs tillbaka i ett `finally`, så att inget
+  senare fall i filen ser attrapperna. Granskaren har prövat att återställningen
+  sker även när `upcoming` kastar mitt i sorteringen.
+- **Räckvidd.** `node --test` kör en process per testfil, så en ersättning kan
+  inte läcka till en annan testfil. Inom filen är `finally` det enda som skyddar,
+  och därför är det obligatoriskt.
+- **Motexemplet hör till fallet.** Två rader slår fast att `Intl.Collator('sv')`
+  och `Intl.Collator('en')` ger olika svar för `Ångbåt` mot `Zebra` i den här
+  körmiljön. Utan dem vore resten sann av sig själv på en maskin med annan
+  ICU-data; med dem säger fallet det i klartext i stället.
+- **Det tekniken inte kan upptäcka.** Den ser bara begäranden som görs **under**
+  anropet. Skrivs sorteringen om till en `Intl.Collator` som byggs en gång vid
+  modulladdningen fångas ingen begäran — granskaren har mätt att fallet då
+  **faller** i stället för att ge ett falskt godkänt. En sådan omskrivning kräver
+  alltså att (S2) skrivs om, och det är avsiktligt: ett test som tyst skulle
+  börja gälla en annan konstruktion är värre än ett som säger ifrån.
+
+**(S4) asserterar hela `message` för de nycklar som finns på `Object.prototype`.**
+Testfallet är `nextDueDate kastar RangeError för ett interval utanför tabellen`,
+och de nycklar som skiljer de två skrivsätten åt är `constructor`, `toString`,
+`hasOwnProperty` och `__proto__`. För var och en av dem ska fallet kräva
+`` nextDueDate kräver ett känt interval, fick "<nyckeln>". `` ordagrant. En
+assertion på enbart `RangeError` duger inte, och det är mätt: med det
+sanningsprövade uppslaget kastar koden fortfarande `RangeError`, men från
+`addMonthsClamped` och med meddelandet
+`` addMonthsClamped kräver ett heltal månader, fick "NaN". `` — alltså ett
+meddelande som pekar ut fel orsak, medan fallet passerar och mutationen överlever
+med grön svit (granskarens körning, `LARDOMAR.md` 2026-09-16). Samma krav gäller
+redan den motsvarande spärren i `cost.js`, och där fälls mutationen just därför
+att `tests/cost.test.js` asserterar hela meddelandet.
+
+Kravet gäller inte bara den här punkten: regeln står under "Ingångsspärrar i
+`src/core/schedule.js`", och den säger att varje rad i det avsnittet ska ha minst
+en assertion med hela `message` — den assertion som ensam skiljer raden från en
+annan spärr. En bredare uppräkning av värden för samma rad får asserta enbart
+feltypen, och sökningen som visar att varje rad har sin fullmeddelandeassertion
+står på samma ställe. (S4) numreras ändå, eftersom fallet är det som är utpekat
+som facit för mutationen i tabellen ovan.
+
+**(S5) prövar att jämföraren är reflexiv, och asserterar på jämförarens egen
+utdata.** Sista raden i `compareUpcoming`, `return 0;`, var modulens enda rad
+utan täckning: granskarens körning med `--experimental-test-coverage` gav då
+`schedule.js | 99.38 | 96.77 | 100.00 | 157`, och mutationen `return 0;` →
+`return 1;` gav `tests 348, pass 348, fail 0` och `EXIT=0`. Efter att punkten
+byggdes ger samma körning `schedule.js | 100.00 | 100.00 | 100.00` med tom
+kolumn för otäckta rader (granskarens körning). Grenen är nåbar med vanlig
+indata — två poster med samma `nextDueDate`, samma `name` och samma `id` — och
+ingenting i projektet kräver att `id` är unikt, så den ska prövas och inte
+skrivas ut som oprövad.
+
+Assertionen ska ligga på **jämförarens svar** och inte på den sorterade listan.
+Skälet är att en sorterad lista inte kan skilja de två svaren åt utan att luta sig
+mot hur körmiljöns sortering behandlar en jämförare som inte är reflexiv, och det
+är inget projektet får bygga ett prov på (`LARDOMAR.md` 2026-09-22, sista raden i
+`compareUpcoming`). För att svaret ska gå att asserta **exporteras
+`compareUpcoming` från `src/core/schedule.js`**. Exporten har en anropare i
+`src/` — `items.sort(compareUpcoming)` i `upcoming` — och är alltså ingen export
+byggd i förtid; den är samma sorts testsöm som det injicerade `addMonths` i
+`nextDueDate`, och signaturen står i gränssnittsblocket.
+
+Fallet bygger sina två `UpcomingItem` genom att anropa `upcoming` med två poster
+som är lika på alla tre nycklarna, och asserterar `0` för paret i båda
+ordningarna samt `0` för ett item mot sig självt. Att de två posterna är lika på
+varje nyckel är kravet på testdatan: skiljer de sig på någon av dem svarar en
+tidigare rad i kedjan, och fallet prövar då inte den sista raden.
 
 ## Lagring
 
@@ -1572,9 +2050,10 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   ska ha en egen
   `tests/<modul>.test.js` som testar modulens egna exporter direkt, i samma
   paket som filen skapas.** Indirekt täckning via en annan moduls tester räknas
-  inte. `dates` är den enda modul som byggs ut i ett senare paket: de fem
-  exporter som tillkommer i paket 7 får sina testfall i `tests/dates.test.js` i
-  paket 7.
+  inte. `dates` är den enda modul som byggts ut i ett senare paket: de fem
+  exporter som tillkom i paket 7 fick sina testfall i `tests/dates.test.js` i
+  samma paket. Utfallet av den körningen står under `src/core/dates.js` och
+  upprepas inte här.
 - **Avsiktligt obyggda exporter är märkta, inte tysta.** Varje export i
   "Gränssnitt" bär `[paket N]`. Att en export saknas i koden är korrekt så länge
   dess paket inte är påbörjat, och ett fel så snart paketet är klart. Ingen
@@ -1821,7 +2300,7 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   väntan på dess utskrivna rad, väntan på ett barn som ska vägra är väntan på
   dess `exit`; ingen väntan är en tidsgräns som räknas som en mätning, och båda
   kapplöper mot `child.once('error', …)` och hängningsspärren
-  `CHILD_START_TIMEOUT_MS`. Datafilen är alltid en temporär fil. Fyra fall:
+  `CHILD_START_TIMEOUT_MS`. Datafilen är alltid en temporär fil. Fallen:
   1. **Instans två startar inte — minst 20 omgångar.** En temporär datafil,
      instans ett startad en gång och kvar under hela testet. I varje omgång
      startas instans två mot **samma** datafil och en **ledig** port. Att porten
@@ -2016,19 +2495,280 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     tillstånd som inte får följa med till nästa testfall. `globalThis.document`
     och `globalThis.fetch` sätts av laddaren och återställs i en `after`-hook.
     Sökvägarna byggs ur `import.meta.url`, aldrig ur `process.cwd()`.
-  - **Ingen server och inga timers i den här testfilen.** `fetch` är alltid
-    attrappen: allt `app.js` gör här är löften utan I/O, och testet driver dem
-    själv genom att flöda ut mikrotaskerna ett bestämt antal varv. Därför behövs
-    ingen tidsgräns och ingen hängningsspärr, och därför har filerna ingen rad i
-    tabellen under "Inget test asserterar på körtid". Kontrollen där gäller också
-    här, men med två mönster till (`setInterval` och `Date.now`), eftersom kravet
-    på de här två filerna är strängare än på de andra: ingen klocka alls.
-    `grep -n "setTimeout\|setInterval\|AbortSignal.timeout\|Promise.race\|performance.now\|Date.now" tests/app.test.js tests/helpers/dom.js`
-    ska ge noll träffar för båda filerna; en sökning efter de sex mönstren i de
-    två filerna gav noll träffar 2026-09-07. Serversidan prövas av
-    `tests/api.test.js` och
+  - **Ingen server, inga timers och ingen klocka i den här testfilen.** `fetch` är
+    alltid attrappen: allt `app.js` gör här är löften utan I/O, och testet driver
+    dem själv genom att flöda ut mikrotaskerna ett bestämt antal varv. Därför
+    behövs ingen tidsgräns och ingen hängningsspärr, och därför har filerna ingen
+    rad i tabellen under "Inget test asserterar på körtid". Den tabellens kontroll
+    är skriven för hängningsspärrar och svarar på en annan fråga än den här
+    punkten, så den ärvs inte hit: kravet här är strängare och har en egen
+    kontroll. Serversidan prövas av `tests/api.test.js` och
     `tests/server.test.js`; ett fall som startar en server hör hemma där och inte
     här.
+
+    **Kontrollen är förankrad i klockans källor, inte i en lista över metodnamn.**
+    Den tidigare lydelsen räknade upp sex API:er — `setTimeout`, `setInterval`,
+    `AbortSignal.timeout`, `Promise.race`, `performance.now` och `Date.now` — och
+    kunde därför inte se de klockläsningar som skrevs in i filen: `todayIso()`,
+    `Date.parse` och `new Date(ms)` heter inget av de sex, och kontrollen gav noll
+    träffar medan filen läste klockan (`LARDOMAR.md`, 2026-09-22,
+    `tests/app.test.js` läser klockan sju gånger). Mönstret namnger i stället de
+    objekt ett tidsvärde kan komma ur, så att en stavning ingen har tänkt på
+    träffas ändå:
+
+    ```
+    grep -nE "\b(Date|Temporal|performance|hrtime|todayIso|setTimeout|setInterval|setImmediate|AbortSignal)\b|Promise\.race" tests/app.test.js tests/helpers/dom.js tests/helpers/frozen-dates.js
+    ```
+
+    `\bDate\b` träffar `new Date(`, `Date.now`, `Date.parse`, `Date.UTC` och
+    `globalThis.Date`, men inte `startDate` eller `nextDueDate`: ordgränsen saknas
+    inuti ett sammansatt namn, och fältnamnen är därför inga falska träffar.
+    Kontrollen räknas som prövad först när den har körts mot två stavningar som
+    inte liknar de tidigare kända. Byggaren stoppar in `Date.UTC(2026, 0, 1)` och
+    `Temporal.Now.plainDateISO()` på var sin rad i `tests/app.test.js`, kör
+    kommandot, kräver en träff för var och en, tar bort raderna och kör om.
+    Varje kvarvarande träff ska ha en rad i tabellen nedan; en träff utan rad
+    stoppar paketet.
+
+    | Fil | Tillåtna träffar |
+    |---|---|
+    | `tests/app.test.js` | inga |
+    | `tests/helpers/dom.js` | inga |
+    | `tests/helpers/frozen-dates.js` | namnet `todayIso` i exportens egen definition, och ingenting annat: filen har ingen klocka att läsa utan lämnar tillbaka den sträng laddaren satt |
+
+    Raden "inga" gäller också kommentarer, och det är med flit: en kommentar som
+    behöver tala om klockan skriver "klockan" eller "dagens datum" i stället för
+    API-namnet. Priset är en omskriven mening, vinsten är att kontrollen har ett
+    svar — noll träffar — som ingen behöver tolka.
+
+    Av kontrollen följer att **ingen spärr mot en midnattspassage får finnas i
+    filen**: en sådan spärr måste läsa klockan för att jämföra, och varje väg till
+    klockan är en träff. Den behövs inte heller, av skälet i punkten nedan.
+
+  - **Klockan som `app.js` läser är injicerad, inte verklig.** `renderUpcoming`
+    anropar `todayIso()` själv vid varje rendering, och det ska den göra: en flik
+    som står öppen över midnatt ska visa rätt dagar kvar vid nästa hämtning (se
+    "Kommande dragningar i gränssnittet"). DOM-attrappen har ingen klocka att
+    ställa, och ett test som jämför mot samma verkliga klocka har därför två
+    problem. Det kan bli rött på oförändrad kod när dygnet byts mellan
+    uppställningen och körningen, vilket gör `CLAUDE.md`:s grind "`fail 0` och
+    exit 0" oduglig för filen, och det kan aldrig pröva en annan dag än den dag
+    det råkar köras.
+
+    **Beslut: laddaren äger klockan, precis som den äger `document` och `fetch`.**
+    I webbläsaren kommer `todayIso` över nätet, i en Node-körning ur laddaren —
+    samma ompekning som redan gäller varje annan `/core/`-import, och därmed ingen
+    ny sorts konstruktion i filen. Kraven är bokstavliga:
+
+    1. Laddaren har signaturen `loadApp(t, { document, fetch, idag })`. `idag` är
+       en sträng på formen `ÅÅÅÅ-MM-DD`.
+    2. `tests/helpers/frozen-dates.js` är en incheckad hjälpfil under `helpers/`
+       och exporterar `todayIso()` plus den sättare laddaren använder. `todayIso()`
+       lämnar tillbaka den sträng som sattes senast. Filen läser ingen klocka och
+       får inte innehålla något av mönstren i kontrollen ovan utöver sitt eget
+       exportnamn.
+    3. Attrappen är sträng, samma regel som för DOM-attrappen: `todayIso()` kastar
+       när ingen dag är satt, och sättaren kastar för varje värde `isValidIsoDate`
+       i `src/core/dates.js` svarar `false` på. En stub som svarar `undefined`
+       skulle låta `app.js` gå sönder tyst, och då mäter testet ingenting.
+       **Ägaren är `isValidIsoDate` och inte `ISO_DATE_PATTERN`**, och valet är
+       inte fritt: mönstret äger frågan "rätt form", `isValidIsoDate` äger frågan
+       "finns i kalendern", och det är den senare spärren lovar ett svar på.
+       `2026-02-30` har rätt form men ingen kalenderdag, och granskarens körning
+       visar vad mönstret ensamt ger: `loadApp` med den dagen faller med
+       `RangeError: nextDueDate kräver ett dagens datum på formen ÅÅÅÅ-MM-DD,
+       fick "2026-02-30".` kastad från `src/core/schedule.js`, alltså långt från
+       laddaren och med ett meddelande som pekar ut fel orsak. Sättarens text är
+       bindande ordagrant:
+
+       ```js
+       `frozen-dates kräver ett datum som finns i kalendern på formen ÅÅÅÅ-MM-DD, fick "${String(day)}".`
+       ```
+
+       `String(day)` och inte värdet rakt in i mallsträngen, av samma skäl som i
+       `src/core/`: `${Symbol('x')}` kastar `TypeError`. Villkoret skrivs som
+       `!isValidIsoDate(day)` utan någon `typeof`-kontroll bredvid —
+       `isValidIsoDate` svarar `false` för varje värde som inte är en sträng, så
+       en andra kontroll vore en gren ingen indata når.
+    4. Laddaren pekar om `app.js`:s egen `/core/dates.js` till hjälpfilen, efter
+       den ompekning som redan görs för `/core/`. Båda adresserna byggs ur
+       `import.meta.url`, aldrig ur `process.cwd()`. Antalet utbyten asserteras
+       vara **exakt ett**: slutar `app.js` importera `todayIso` ska laddningen
+       falla, inte tyst sluta mäta — samma skäl som assertionen på att
+       `/core/`-ompekningen träffar något.
+    5. Laddaren sätter dagen före importen och återställer det tidigare värdet i
+       en `t.after`-hook, precis som `globalThis.document` och `globalThis.fetch`.
+       Återställningen är sann bara under villkoret i krav 8: **högst en levande
+       instans, alltså högst en hook i taget.** `node:test` kör `after`-hookar i
+       registreringsordning, så två hookar i samma test ger den sist registrerade
+       sista ordet — och den lägger tillbaka en ögonblicksbild som redan var det
+       första anropets värde.
+       Granskarens körning av två `loadApp` i samma test: efteråt svarar
+       `todayIso()` med den **första** dagen i stället för att kasta, och
+       `globalThis.document` och `globalThis.fetch` står kvar satta.
+    6. Laddaren lämnar tillbaka en väg för testet att sätta en annan dag mitt i
+       ett fall, utan att testet importerar hjälpfilen självt. Den vägen är hela
+       poängen med punkt (27) nedan. Den vägen byter dag inom det pågående
+       testfallet och är alltså inte ett andra `loadApp`: krav 8 rör bara
+       laddningen av modulen.
+    7. `tests/app.test.js` har den frusna dagen som en namngiven konstant,
+       `FRYST_IDAG = '2026-03-15'`, och `starta` tar dagen som ett argument med
+       den konstanten som förval. Värdet är valt mitt i en månad med 31 dagar, så
+       att en post som startar i dag, i morgon eller i övermorgon ligger i samma
+       månad och dagtexterna `Idag`, `Om 1 dag` och `Om 2 dagar` går att nå utan
+       någon datumaritmetik i testfilen. Den andra dagen punkt (27) behöver är
+       `FRYST_NASTA_DAG = '2026-03-16'`, skriven som en andra konstant och inte
+       uträknad.
+    8. **Högst en levande instans av `app.js` åt gången, i hela processen.**
+       Laddaren håller en modullokal flagga över om en instans lever, prövar den
+       **innan** något tillstånd rörs, och kastar annars. Flaggan heter
+       `appLaddad`, och den nollställs i samma `t.after`-hook som lägger tillbaka
+       globalerna och dagen. Texten är bindande ordagrant:
+
+       ```js
+       'loadApp har redan en levande instans av src/web/app.js: ett andra anrop ger två instanser som delar globalThis och laddarens dag. Ett underordnat test har en egen testkontext men samma process.'
+       ```
+
+       **Villkoret gäller processen och inte testkontexten**, och den skillnaden
+       är mätt. Den tidigare lydelsen nycklade en `WeakSet` på `t`, och ett
+       underordnat test har en egen kontext: granskarens körning visar att ett
+       `loadApp` inuti ett `t.test` passerade spärren, att båda instanserna levde
+       samtidigt, och att förälderns formulärsubmit hamnade i barnets
+       `fetch`-attrapp — ordagrant den fara spärren finns för. En spärr som bara
+       prövas med sin egen stavning missar den stavning ingen tänkt på; det är
+       fjärde gången i projektet, och därför är villkoret skrivet om det som är
+       farligt (två levande instanser) och inte om den nyckel som råkade ligga
+       närmast (`t`).
+
+       Avvisningen är vald framför en räknare eller en hook som registreras bara
+       första gången, och skälet är att bokföringen inte är hela problemet: två
+       instanser delar `globalThis.fetch` och stubbens dag, så den andra skriver
+       över den förstas omvärld medan båda lever vidare med var sin lyssnare på
+       attrappens element. En räknare hade gjort återställningen sann och lämnat
+       den sammanblandningen kvar. Behöver ett senare paket verkligen två
+       instanser samtidigt är det ett beslut som fattas i beslutsloggen — och då
+       med ett svar på vad de två ska dela.
+
+       **Ordningen i `loadApp` är bindande**, eftersom flaggan annars kan bli
+       kvar: pröva flaggan först, registrera därefter `t.after`-hooken som
+       nollställer den och lägger tillbaka globalerna och dagen, och sätt flaggan
+       sedan. Hooken är registrerad före importen, så den körs också när
+       `import()` avvisar — vilket den gör i syntaxfelsmutationen, som måste
+       fortsätta ge `EXIT=1` utan att lämna flaggan satt för resten av filen.
+
+       **Vad villkoret vilar på:** att testfallen i en fil körs ett i taget.
+       `node --test` kör en process per testfil, och tester inom filen körs efter
+       varandra så länge ingen sätter samtidighet. Skulle ett senare paket ändra
+       det börjar spärren slå till mellan fall som körs parallellt — och det är
+       rätt utfall, eftersom två levande instanser då verkligen delar globaler.
+       Den dagen ska villkoret skrivas om här först.
+
+    **Ompekningen räcker bara så länge ingen annan modul `app.js` laddar läser
+    klockan.** `src/core/schedule.js` tar dagens datum som parameter och ska
+    fortsätta göra det. Kontrollen är `grep -rn "\btodayIso\b" src/core/`: varje
+    träff ska ligga i `dates.js`, som äger funktionen, eller i en kommentar, och
+    ingen importrad under `src/core/` får namnge `todayIso`.
+
+    **Vad konstruktionen inte kan upptäcka**, utskrivet i stället för underförstått:
+    den prövar inte att `todayIso()` i `src/core/dates.js` ger rätt dag — det ägs
+    av `tests/dates.test.js`, där `now` skickas in — och den prövar inte att
+    webbläsaren kan hämta `/core/dates.js`, vilket ägs av testfallen för statiska
+    filer i `tests/server.test.js`. Den prövar det `app.js` gör med den dag den
+    får.
+
+    **Stubbens spärrar, och varför bara den ena får ett testfall.** Krav 3 ovan
+    ger hjälpfilen ett kast när en dag sätts i fel form och ett kast när
+    `todayIso()` anropas innan någon dag är satt. Ingen indata i sviten når dem
+    var för sig — de fälls först i par med en andra ändring — och då gäller
+    frågan från `LARDOMAR.md` (2026-09-04): är grenen **onåbar**, och ska då tas
+    bort, eller **nåbar men oprövad**, och ska då antingen prövas eller skrivas
+    ut? Svaret skiljer sig mellan de två, och därför gör beslutet det också.
+    Kriteriet nedan gäller de här två grenarna och inget annat: en regel som
+    sträcks längre än den indata den är mätt mot är precis det fel som gav
+    `assert.throws`-kravet sin lärdom.
+
+    | Spärr i `tests/helpers/frozen-dates.js` | Nås av | Beslut |
+    |---|---|---|
+    | Formkontrollen i sättaren | en rad i `tests/app.test.js`, utan att någon klocka läses | punkt (32) |
+    | Kastet när ingen dag är satt | bara av en laddare som importerar `app.js` utan att sätta dagen, alltså av en ändring i mätapparaten själv | **avsiktligt oprövad**, skälet nedan |
+
+    Kastet när ingen dag är satt är inte död kod: indatan finns och byggarens
+    körning har nått den genom att ta bort laddarens sättande. Den indatan går
+    däremot inte att skriva i `tests/app.test.js`, eftersom den enda vägen dit är
+    att anropa `todayIso()` i testfilen — och varje sådan väg är en träff i
+    klockkontrollen ovan, som inte har och inte ska ha ett undantag. *En egen
+    testfil för mätapparaten prövades och förkastades:* den skulle stå utanför
+    klockkontrollens fillista och därmed göra hålet i fynd 1 möjligt igen, och
+    ingen annan hjälpfil har en sådan fil. Grenen står alltså kvar som diagnostik
+    för nästa byggare — utan den byter ett glömt sättande ut ett svenskt besked
+    som pekar ut laddaren mot ett fel längre in i `src/core/`, vilket byggarens
+    körning mätte. Byggaren skriver in en rad i kommentaren över grenen som
+    hänvisar hit, så att nästa granskare ser att avsaknaden av testfall är ett
+    beslut och inte ett förbiseende.
+
+    | Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+    |---|---|---|
+    | (32) | `laddarens byte av dag avvisar en dag som inte finns i kalendern` | `if (!isValidIsoDate(day)) {` → `if (false) {` |
+    | (33) | `ett andra loadApp i samma testfall avvisas`, `ett loadApp i ett underordnat test avvisas` och `laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra anrop` | `if (appLaddad) {` → `if (false) {` |
+
+    Fallet för (32) anropar laddarens väg för att byta dag och kräver hela
+    meddelandet, inte bara feltypen, av samma skäl som gäller spärrarna i
+    `src/core/schedule.js`: en assertion på enbart feltypen kan inte skilja
+    stubbens kast från ett kast längre in. Fallet prövar `'imorgon'`, som har fel
+    form, och `'2026-02-30'`, som har rätt form men ingen kalenderdag; det är den
+    senare som avgör ägarvalet i krav 3. Inget av argumenten får vara något som
+    läser klockan.
+
+    De två mutationsuttrycken citerar villkor som krav 3 och krav 8 beskriver och
+    som byggaren skriver i den här rundan. Kontrollen är densamma som för varje
+    annan rad och körs när koden finns: `grep -c "<uttrycket före pilen>"
+    tests/helpers/frozen-dates.js` respektive `tests/helpers/dom.js` ska ge minst
+    `1`, annars är raden och koden skrivna för olika villkor.
+
+    Punkt (33) har tre testfall, och de prövar spärren i krav 8 från var sitt håll.
+    Det första anropar `starta` två gånger i samma testfall och kräver hela texten
+    ur krav 8. Det andra laddar en gång och kör därefter ett underordnat test —
+    `await t.test(...)` — vars kropp anropar `starta` med **barnets** testkontext
+    och kräver samma text. Det fallet är det som skiljer villkoret "en levande
+    instans i processen" från det tidigare "en laddning per `t`": med en nyckel på
+    testkontexten passerar barnets anrop, och granskarens körning visade då två
+    levande instanser där förälderns formulärsubmit hamnade i barnets
+    `fetch`-attrapp. Ett fall som bara laddar två gånger med samma `t` kan inte se
+    den skillnaden, och därför räcker det inte.
+
+    Det tredje fallet prövar att återställningen från det första anropet blev av.
+    Globalerna prövas på olika sätt, och skälet är
+    körmiljön: **bara den ena går att jämföra med `undefined`**. Node har en inbyggd
+    `globalThis.fetch` men ingen DOM (se "Verifierad miljö"), så laddaren sparar
+    den inbyggda funktionen i sitt `tidigareFetch` och lägger tillbaka den. Det är
+    rätt beteende, men värdet är då en funktion och blir aldrig `undefined`. Den
+    tidigare lydelsen krävde `undefined` för båda och var därför omöjlig att
+    uppfylla här; byggaren byggde fallet ordagrant och fick
+    `✖ laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra
+    anrop`.
+
+    - `globalThis.document` asserteras mot `undefined`.
+    - `globalThis.fetch` asserteras mot det värde testfilen läste **innan något
+      testfall kördes**. Filen håller `const FETCH_FORE_TESTERNA =
+      globalThis.fetch;` på modulnivå, och fallet kräver
+      `globalThis.fetch === FETCH_FORE_TESTERNA`. Det är samma påstående som
+      `undefined` skulle ha varit i en miljö utan inbyggd `fetch` — att attrappen
+      inte står kvar — skrivet så att det går att uppfylla här. En assertion om
+      att `fetch` bara *inte* är attrappen vore svagare: den passerar också om
+      återställningen lägger tillbaka något tredje.
+
+    Mutationen i (33):s rad ska fälla **alla tre** fallen, och kryssraderna för
+    var och en ska stå i utfallet: utan spärren registrerar det andra anropet en
+    andra hook vars ögonblicksbild togs efter det första anropet, och då lägger
+    den sista hooken tillbaka det första anropets attrapper — `document` är satt
+    och `fetch` är attrappen i stället för det inlästa värdet.
+
+    **Att dagen är osatt asserteras inte**, och skälet är
+    en konsekvens av klockkontrollen: det läget syns bara genom `todayIso()`, och
+    varje stavning av den vägen är en träff i kontrollen. Avvisningen i krav 8 är
+    det som gör påståendet sant i stället — med högst en levande instans finns
+    ingen andra ögonblicksbild som kan vinna, och det är den mekanismen (33)
+    skyddar.
   - **Attrappen är sträng, och den växer bara med `app.js`.** En selektor eller
     ett element den inte känner till ska ge ett **kast**, aldrig `null`: en
     attrapp som svarar `null` på något den inte förstår låter `app.js` gå sönder
@@ -2080,7 +2820,7 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     följd av ett `POST` som ger `201` och en omhämtning som ger `500`, lämnar
     `#empty-state` tomt — utgångsläget är alltså det motsatta av det förväntade,
     och utan nollställningen i `clearView` står "Du har inga poster ännu"
-    samtidigt som båda totalerna visar `–`, två motsägande påståenden på samma
+    samtidigt som båda totalerna visar `\u2013`, två motsägande påståenden på samma
     skärm; (20) ett svar med status `200` **utan läsbar JSON-kropp** ger en tom
     vy och inget kast. Punkt (20) prövar `Array.isArray(body.entries)`-skyddet i
     `loadAndRender`, som byggarens körning i paket 6 visade är nåbart: `readJson`
@@ -2094,6 +2834,15 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     prövar och den mutation de ska fälla. De räknas till den här listan och är
     lika obligatoriska som (12)–(16); de står där för att en regel och dess
     testfall ska ha exakt ett hem.
+  - **Punkt (21) till (27) står av samma skäl under "Kommande dragningar i
+    gränssnittet", och punkt (28) till (31) under "Radelementets klass är ett
+    kontrakt med `style.css`"**, båda i avsnittet om `src/web/app.js`. Punkt (32)
+    och (33) står i punkten om den injicerade klockan ovan, hos de krav de prövar.
+    De är lika obligatoriska som punkterna här. Uppräkningen ovan är alltså inte
+    fullständig för filen: den slutar vid (20), och fortsättningen har sitt hem
+    där regeln den prövar står. Numren (1) till (33) är den enda serien för
+    `tests/app.test.js`; `tests/schedule.test.js` har en egen serie med prefixet
+    `S` under "Härledning av nästa dragningsdatum".
   - **Mutationer som paket 6 ska köra, utöver syntaxfelsmutationen nedan:**
     (a) byt `totalMonthlyOre(entries)` i `app.js` mot en kolumnsumma över
     `monthlyOre` → punkt (14) ska falla med `EXIT=1`; (b) **varje** rad som sätter `#empty-state` till den tomma strängen tas bort,
@@ -2112,7 +2861,12 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     fil de bygger i fortfarande körs av sviten.
 - **Determinism:** inget test får bero på dagens datum. Dagens datum skickas
   alltid in som parameter. Ett test som skulle gå sönder i mars är ett trasigt
-  test.
+  test. Regeln har ett gränsfall och ingen undantagsrätt: `src/web/app.js` läser
+  klockan självt, eftersom den ska visa rätt dagar kvar i en flik som stått öppen
+  över midnatt. Parametern finns även där, men en modul in i stället för en
+  funktion in — laddaren injicerar dagen, se punkten om DOM-attrappen ovan. Ett
+  test som i stället läser samma verkliga klocka som koden under prov uppfyller
+  inte den här punkten.
 - **Paket 4:s "ny körning"** uppfylls genom att testet skriver med
   `saveEntries`, därefter importerar modulen på nytt med en cache-brytande
   query (`await import('../src/server/storage.js?fresh=' + Date.now())`) och
@@ -2257,6 +3011,14 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
      Är någon räknare fortfarande 0 efter det tredje försöket faller testet på
      assertionen i punkt 4, och byggaren lämnar tillbaka paketet med mätvärdena.
      Räknarnas slutliga värden och antalet försök är dessutom redovisningskrav.
+     **En startomtagning enligt punkt 8 förbrukar inget av de tre försöken här
+     och har ett eget, oberoende tak.** De tre försöken justerar `windowFactor`
+     och `entryCount` efter vad räknarna visade, och ett barn som aldrig hann
+     starta ger inget underlag för någondera justeringen — det säger ingenting
+     om var ett dödande landade, eftersom inget dödande blev av. Att låta en
+     fork som missade kasta ett helt försöks utförda omgångar vore dessutom att
+     kasta prov som blev av för ett fel som inte rör fördelningen. Antalet
+     startomtagningar redovisas tillsammans med räknarna och antalet försök.
      Villkoret "minst 1 i var och en" är den enda assertion i projektet vars
      utfall beror på hur lång tid en skrivning tar; den står här därför att det
      tidigare förbudet mot varje sådan assertion var det som lät mutationen
@@ -2267,25 +3029,89 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
      datum — gäller oförändrat.
   8. **Hängningsspärren — det utskrivna undantaget från punkt 3.** Varje väntan
      på barnets `startar`-meddelande ska kapplöpa mot `child.once('exit', …)`,
-     `child.once('error', …)` och en `AbortSignal.timeout(…)`. Vinner något
-     annat än meddelandet ska testet falla, och felmeddelandet ska innehålla
-     barnets `exitCode`, `signalCode` och `stderr` — barnet startas därför med
-     `stderr` som `'pipe'`, och utskriften samlas upp från start.
+     `child.once('error', …)` och en `AbortSignal.timeout(…)`.
      Timeouten **är** ett millisekundtal och står som en namngiven konstant i
      testfilen, `CHILD_START_TIMEOUT_MS`, på minst 30 000 ms. Undantaget är
      avgränsat och inte en uppluckring: en dödandetid avgör var i barnets arbete
      avbrottet landar och därmed vad omgången mäter, medan den här tiden aldrig
-     kan påverka utfallet av en omgång som blir av. Den avgör bara att ett barn
-     som **aldrig** startar ger ett fallerat test i stället för en väntan utan
-     exitkod. Gränsen är satt så högt just för att en långsam maskin inte ska
-     kunna göra spärren till ett falskt fel; ett högre värde är alltid tillåtet,
-     ett lägre inte. Skälet till att spärren måste finnas är att en hängning
-     inte ger någon exitkod alls, och kravet i `CLAUDE.md` att kontrollera
-     utgångskoden går då inte att uppfylla — granskarens körning från en annan
-     katalog hängde i tio minuter utan exitkod och gav vid nästa försök
-     `EXIT=124` från en yttre `timeout 60`. Innan testet räknas som skrivet ska
-     det köras en gång med barnets filnamn medvetet felstavat och ge exit 1 inom
-     några sekunder; den utdatan klistras in i redovisningen.
+     kan påverka utfallet av en omgång som blir av. Gränsen är satt så högt just
+     för att en långsam maskin inte ska kunna göra spärren till ett falskt fel;
+     ett högre värde är alltid tillåtet, ett lägre inte. Skälet till att spärren
+     måste finnas är att en hängning inte ger någon exitkod alls, och kravet i
+     `CLAUDE.md` att kontrollera utgångskoden går då inte att uppfylla —
+     granskarens körning från en annan katalog hängde i tio minuter utan exitkod
+     och gav vid nästa försök `EXIT=124` från en yttre `timeout 60`.
+
+     **Vinner något annat än meddelandet skiljs två utfall åt, och de behandlas
+     olika.**
+     - **`exit` eller `error`** — barnet dog, eller kunde inte startas alls.
+       Testet faller omedelbart, och felmeddelandet ska innehålla barnets
+       `exitCode`, `signalCode` och `stderr`; barnet startas därför med `stderr`
+       som `'pipe'`, och utskriften samlas upp från start. Ett barn som dör är
+       ett verkligt fel — felstavad sökväg, syntaxfel, en kastande import — och
+       får aldrig göras om: en omtagning upprepar bara samma fel och fördröjer
+       beskedet.
+     - **Timeouten** — barnet varken skickade `startar`, avslutades eller
+       kastade. Det är den enda grenen som görs om. Skälet är granskarens
+       mätning: sviten gick röd en gång på 26 fullkörningar på en idle maskin,
+       med en fork som inte hann skicka `startar` inom `CHILD_START_TIMEOUT_MS`.
+       En slutgranskning av hela flödet kan inte vila på en svit som går röd
+       utan att något är fel i projektets kod.
+
+     **Timeouten kan slå till på två ställen, och omtagningen betyder olika
+     saker på de två.** I punkt 3:s mätomgång finns ingen omgång att kassera:
+     `tKlar` mäts om från början med ett nytt barn, och inget annat tillstånd
+     rörs. Inuti omgångsloopen kasseras varvet och körs om **med samma
+     `delays[i]`** — ett varv som hoppas över lämnar ett hål i det fönster punkt
+     3 lägger ut jämnt över skrivningen, och punkt 4:s båda grenar blir därmed
+     svårare att nå. Ett omkört varv börjar om från `await saveEntries(before)`,
+     så att disken står i utgångsläget oavsett hur långt det kasserade barnet
+     hann, och det kasserade barnets `exit` inväntas innan ett nytt forkas, så
+     att aldrig två barn skriver mot samma datafil. Ett kasserat varv räknas i
+     varken `gamlaListan` eller `barnetsLista`: bara ett varv som blev av är ett
+     prov.
+
+     **Taket.** Antalet startomtagningar i hela testet begränsas av en namngiven
+     konstant i testfilen, `MAX_CHILD_START_RETRIES`, med värdet `3`. Den
+     timeout som skulle bli omtagning nummer `MAX_CHILD_START_RETRIES + 1`
+     fäller testet i stället för att göra om något. Konstanten heter `RETRIES`
+     och inte `ATTEMPTS` därför att punkt 7 redan använder ordet *försök* om
+     något annat, och två betydelser av samma ord i samma test är ett andra
+     facit. Taket är testövergripande och inte per väntan: ett tak per väntan
+     skulle släppa igenom ett obegränsat antal spridda omtagningar, och varje
+     omtagning kostar upp till `CHILD_START_TIMEOUT_MS` i körtid.
+     **Vad taket skyddar mot.** En omtagning döljer något, och det är hela
+     invändningen mot den: ett barn som *systematiskt* inte hinner starta — på
+     en långsam maskin, eller för att en import i `src/server/` har börjat hänga
+     — blir med en omtagning tyst i stället för rött. Taket är den gräns där
+     tystnaden upphör. Nås det faller testet med antalet gjorda omtagningar,
+     orsaken (`timeout`) och det sista barnets `exitCode`, `signalCode` och
+     `stderr` i meddelandet, precis som `exit`-grenen faller. En systematisk
+     oförmåga att starta når taket på de första väntningarna och ger ett rött
+     test efter ungefär fyra gånger `CHILD_START_TIMEOUT_MS` — med utskriven
+     orsak och en exitkod, aldrig som en hängning.
+     Värdet `3` är inte härlett ur någon mätning av hur ofta en fork missar; den
+     mätningen finns inte, och det enda kända utfallet är granskarens en röda
+     körning av 26. Talet är valt som det minsta som skiljer en enstaka miss
+     från en upprepning. Visar en senare körning att en i övrigt grön maskin
+     behöver fler ska talet skrivas om här, med mätningen inklistrad — aldrig i
+     testfilen ensam.
+     **Antalet startomtagningar är ett redovisningskrav** och skrivs ut i samma
+     svep som punkt 7:s mätvärden, också när det är `0`. En körning där taket
+     inte nåddes men omtagningar ändå gjordes är den enda plats där en maskin på
+     gränsen blir synlig.
+
+     **Båda grenarna ska köras, och körningarna klistras in i redovisningen.**
+     - `exit`-grenen: kör testet en gång med barnets filnamn medvetet felstavat.
+       Det ska ge exit 1 inom några sekunder, och den inklistrade utdatan ska
+       visa ett `exitCode` som inte är `null` och en `stderr` som inte är tom —
+       det är kontrollen av att fallet gick genom `exit` och inte genom
+       timeouten.
+     - Timeout- och takgrenen: kör testet en gång i en kopia av trädet med
+       `CHILD_START_TIMEOUT_MS` satt till `1`, aldrig i `tests/` (`LARDOMAR.md`,
+       2026-09-07, felsökningsutskrifter lämnades kvar i `src/server/storage.js`).
+       Varje väntan timeoutar då, taket nås redan i mätomgången, och testet ska
+       falla med antalet omtagningar och orsaken `timeout` i meddelandet.
   Följer av `LARDOMAR.md` (2026-09-02, atomicitetstestet avbryter aldrig en
   skrivning, och 2026-09-04, SIGKILL-testet dödar barnet innan skrivningen har
   börjat, och 2026-09-04, storage-testet hänger för alltid i stället för att
@@ -2354,6 +3180,38 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   godkänt förrän namnet på det fallerande testet har jämförts med det utpekade
   testet:** klistra in raden som börjar med kryss (`✖`). Faller bara andra tester
   räknas mutationen som överlevd, oavsett exitkod.
+- **Mutationstabellernas kolumn kräver att punktens egen kryssrad står i
+  utfallet, inte att den står ensam där.** Kolumnen hette tidigare "Mutationen det
+  ensamt fäller", och den lydelsen är ett påstående om varje rad i tabellen.
+  Ett sådant påstående åldras, och mekanismen är värd att skriva ut: **ett nytt
+  testfall kan göra en äldre rads ensamhet falsk utan att någon rör raden.** Det
+  inträffade när punkt (27) skrevs — den renderar kortet Kommande dragningar två
+  gånger med en lista som inte är tom, alltså samma form som fäller varje mutation
+  i `renderUpcoming` som lämnar gamla rader kvar eller läser fel fält. Granskarens
+  körning av varje rad i samtliga tabeller: (24) gav `fail 2` och (26) gav
+  `fail 2`, där den andra kryssraden i båda fallen är (27); (30) gav `fail 8`, av
+  det skäl noten till den raden skriver ut; (33) gav `fail 2`; övriga rader gav
+  `fail 1`. Talen är granskarens från den rundan och är skrivna i dåtid med flit:
+  de ändras så snart en punkt får ett testfall till, och det är just därför
+  kolumnen inte längre påstår något om dem. Kolumnen lyder därför
+  `Mutation som ska ge EXIT=1 med punktens egen kryssrad i utfallet` i samtliga
+  tabeller. Kravet är avgörbart rad för rad, och det blir inte falskt av att ett
+  testfall tillkommer.
+
+  Ensamheten är inte längre ett krav, men den är fortfarande en upplysning, och
+  den hämtas ur redovisningen: **byggaren skriver ut vilka testfall som faller för
+  varje mutation.** Faller fler än punktens eget är frågan om punkten ändå är värd
+  sin plats, och svaret är vad kryssraden säger — en punkt vars rad namnger
+  orsaken behålls även när äldre fall faller med, därför att de äldre
+  kryssraderna pekar ut något annat. Noten för punkt (30) är exemplet, och den
+  formen används för varje rad där det gäller.
+
+  **När en tabell ska köras om:** skrivs ett nytt testfall som renderar samma vy
+  eller anropar samma funktion som en befintlig punkt, körs varje mutationstabell
+  som rör den vyn eller funktionen om, rad för rad, med antalet fallerande
+  testfall utskrivet per rad. Ett skäl att inte köra om räknas aldrig som en
+  körning (`LARDOMAR.md`, 2026-09-22, "deras rader är äkta ensamma fällare"
+  skrevs om fem tabeller utan att någon av dem kördes om).
 - **Validering ska ha egna tester.** Följer av `LARDOMAR.md`. Ett paket som tar
   emot användarinput utan testad validering är inte klart.
 - **Fält som kan komma i flera typer testas i alla typer.** Varje rad i
@@ -2441,9 +3299,17 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   kunna göra spärren till ett falskt fel. Ett högre värde är alltid tillåtet, ett
   lägre inte. Tre namn finns, ett per roll:
 
+  Raden för `tests/storage.test.js` har en avvikelse som punkt 8 äger: där
+  fäller spärren inte ensam utan utlöser en omtagning av den kasserade
+  uppsättningen, och det är takräknaren `MAX_CHILD_START_RETRIES` som avgör när
+  en väntan blir ett fallerat test. Avvikelsen gäller bara den raden. Taket är
+  en räknare och ingen tid: det träffas inte av kontrollen ovan, det kan inte
+  påverka utfallet av ett prov som blev av, och det får därför ingen egen rad i
+  tabellen.
+
   | Testfil | Konstant | Väntan spärren bryter | Villkoret den skyddar |
   |---------|----------|-----------------------|-----------------------|
-  | `tests/storage.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets `startar`-meddelande, atomicitetstestets punkt 8 | Ett barn som aldrig startar (felstavad sökväg, syntaxfel, kastande import) |
+  | `tests/storage.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets `startar`-meddelande, atomicitetstestets punkt 8 | Ett barn som varken skickar `startar`, avslutas eller kastar: en fork som hänger. Ett barn som *dör* — felstavad sökväg, syntaxfel, kastande import — fångas av `exit`-grenen och fäller testet omedelbart, utan att spärren behövs |
   | `tests/server.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets utskrivna rad i autostartfallet, punkt 4 under "Paket 5" | Ett barn som avslutas utan att skriva sin rad |
   | `tests/server.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets `exit` i autostartens felgren, punkt 5 under "Paket 5" | `try`/`catch` runt `start()` i autostarten, som skriver felet och sätter `process.exitCode = 1`: ett barn som i stället fortsätter lyssna avslutas aldrig |
   | `tests/lock.test.js` | `CHILD_START_TIMEOUT_MS` | Barnets utskrivna rad, fall 1–3 under "Paket 5: två instanser mot samma datafil" och fall 7 under "Paket 5: två `start()` i samma process" | Ett barn som avslutas utan att skriva sin rad, t.ex. för att låset felaktigt blockerade det |
@@ -2528,7 +3394,7 @@ importerar från `money.js`" och upprepas inte här.
 ### `src/core/dates.js`
 
 De fyra första exporterna byggdes i paket 2 därför att `startDate`-valideringen
-kräver dem. De fem sista har sin första användare i paket 7 och byggs där.
+kräver dem. De fem sista fick sin första användare i paket 7 och byggdes där.
 
 ```js
 export const ISO_DATE_PATTERN;   // [paket 2] /^\d{4}-\d{2}-\d{2}$/ — enda definitionen i projektet
@@ -2550,9 +3416,21 @@ modul får skriva mönstret på nytt. `isValidIsoDate` är den kompletta kontrol
 `entry.js` behöver skilja på "fel format" och "obefintligt datum" för att kunna
 ge två olika felmeddelanden.
 
-Att paket 2-hälften är byggd och paket 7-hälften inte är **rätt tillstånd** i
-dag. `tests/dates.test.js` finns redan och täcker de fyra byggda exporterna
-(inklusive `daysInMonth(2000, 2)` och ogiltiga månadsnummer); i paket 7 utökas
+Modulen byggdes alltså i två omgångar, och båda halvorna är byggda. Kontrollen
+står utan antal: en sökning efter `^export (function|const)` i
+`src/core/dates.js` ger samtliga namn i blocket ovan, och var och en av de fem
+som tillkom i paket 7 — `toIsoDate`, `addMonthsClamped`, `compareIsoDates`,
+`daysBetween` och `todayIso` — ger minst en träff på
+`grep -n "<namn>" tests/dates.test.js`. Inget tal skrivs ned här, och det är
+avsiktligt: ordet "träffar" betyder olika saker för `grep -c` (antal rader med
+minst en förekomst) och för `grep -o` rörledd till `wc -l` (antal förekomster),
+och de två ger olika svar för `addMonthsClamped` och `todayIso`, eftersom två
+rader i filen bär namnet två gånger. Den tidigare lydelsen på den här platsen
+angav fem tal i prosa utan sitt kommando och var därmed fel för två av dem
+(`LARDOMAR.md` 2026-09-14). Ett påstående utan siffra blir dessutom inte falskt
+av nästa tillägg.
+`tests/dates.test.js` fanns sedan paket 2 och täckte de fyra första exporterna
+(inklusive `daysInMonth(2000, 2)` och ogiltiga månadsnummer); i paket 7 utökades
 samma fil med testfall för de fem tillkommande — `addMonthsClamped` mot
 facittabellen i "Härledning av nästa dragningsdatum", `compareIsoDates` och
 `daysBetween` med både positiv och negativ riktning, `toIsoDate` med
@@ -2825,17 +3703,37 @@ ett säkert heltal). En lista på tio miljoner poster ska inte skrivas som test.
 
 ```js
 export const MONTHS_PER_PERIOD;                        // { monthly: 1, quarterly: 3, yearly: 12 } — fryst
-export function nextDueDate(entry: Entry, todayIsoDate: string): string;
-export function daysUntilNextDue(entry: Entry, todayIsoDate: string): number;
+// addMonths är injicerbar enbart för att antalet steg ska gå att mäta, se "Steg 2 görs mätbart" nedan.
+export function nextDueDate(entry: Entry, todayIsoDate: string, addMonths = addMonthsClamped): string;
 
 // UpcomingItem = { entry: Entry, nextDueDate: string, daysUntil: number }
 export function upcoming(entries: Entry[], todayIsoDate: string): UpcomingItem[];   // sorterad
+// Jämföraren upcoming sorterar med. Exporterad för att (S5) ska kunna asserta svaret 0 för två lika items.
+export function compareUpcoming(a: UpcomingItem, b: UpcomingItem): number;
 ```
+
+Modulen har ingen export för "dagar kvar för en enskild post". Storheten finns
+bara som fältet `daysUntil` i `UpcomingItem`, räknat med ägarfunktionen
+`daysBetween` i `dates.js`. Skälet, och de två vägar som prövades och
+förkastades, står i beslutsloggen.
+
+`compareUpcoming` har en anropare i `src/`: `items.sort(compareUpcoming)` i
+`upcoming`. Kontrollen `grep -rn "compareUpcoming" src/` ska därför ge både
+definitionen och det anropet — ger den bara definitionen är exporten i det läge
+`LARDOMAR.md` (2026-09-16) beskriver och ska avgöras på nytt. Exporten gör inte
+jämföraren till en väg in i modulen för någon annan: `upcoming` bestämmer
+ordningen, och ingen annan modul får anropa den.
 
 `MONTHS_PER_PERIOD.yearly` skrivs som `12` och importerar **inte**
 `MONTHS_PER_YEAR` från `cost.js`. Talen är lika, rollerna olika: tabellen svarar
 på hur många månader en period omfattar, konstanten på hur många månader ett år
 har. `schedule.js` importerar ingenting från `cost.js`.
+
+`upcoming` **skickar inte vidare** `addMonths` och får inget eget tredje
+argument. Parametern finns för att göra arbetet mätbart i den funktion kravet
+gäller, och en genomsläppning skulle ge en spärr och ett testfall till utan att
+skydda något nytt. `upcoming` anropar alltså `nextDueDate(entry, todayIsoDate)`
+med två argument.
 
 ### `src/server/paths.js` [paket 4; `getLockFilePath` i paket 5]
 
@@ -3374,8 +4272,8 @@ egen export i `src/core/cost.js`:
 **Kolumnen och totalen kan skilja sig med ören, och det är avsiktligt.** Det
 följer av beslutet "Totalen avrundas en gång, ur den exakta årssumman" i
 beslutsloggen: totalen avrundas en gång ur den exakta årssumman, medan varje rad
-avrundas för sig. Arkitektens körning av `src/core/cost.js` på Node v24.19.0, tre
-poster à 100,00 kr:
+avrundas för sig. Arkitektens körning av `src/core/cost.js` på Node v24.19.0, med
+posterna à 100,00 kr:
 
 | Post | `interval` | `monthlyOre` | `yearlyOre` |
 |---|---|---|---|
@@ -3552,21 +4450,30 @@ Misslyckas en hämtning — `fetch` avvisas, eller svaret har någon annan statu
 `UNKNOWN_TOTAL` är `app.js`:s tredje egna sträng och bindande ordagrant:
 
 ```js
-const UNKNOWN_TOTAL = '–';
+const UNKNOWN_TOTAL = '\u2013';
 ```
 
 Tecknet är U+2013 EN DASH, inte bindestreck (U+002D) och inte tankstreck
-(U+2014). **Det skrivs med escapen `–` i koden, aldrig som det råa
-tecknet** — ett tecken utanför ASCII som står rått i en sträng går inte att
-skilja från sina grannar vid läsning, och den här filen har redan brutit mot
-det en gång med ett osynligt U+00A0 (`LARDOMAR.md` 2026-09-10). Det står ensamt: feltexten i den allmänna felrutan säger redan vad som
+(U+2014). **Det skrivs med escapen `\u2013` — i koden, i testerna och i den
+här filen — aldrig som det råa tecknet** — ett tecken utanför ASCII som står rått i
+en sträng går inte att skilja från sina grannar vid läsning. Regeln gäller varje
+icke-ASCII-tecken som ingår i en sträng en funktion producerar, inte det tecken
+som senast råkade bli fel: `\u00a0`, `\u2013` och `\u2212` skrivs alla
+med escapen. Filen har brutit mot regeln en gång per tecken — ett osynligt U+00A0
+(`LARDOMAR.md` 2026-09-10 och 2026-09-11) och ett rått U+2013 i det här
+kodblocket, som stod kvar från paket 6 till den andra granskningen av paket 7
+och alltså inte var den rad `src/web/app.js` innehåller (`LARDOMAR.md`
+2026-09-14). Ett tankstreck i **löptext** — rad 1–3, 1–60 tecken — är typografi
+och ligger utanför regeln; det som omfattas är strängar en funktion producerar.
+
+Det står ensamt: feltexten i den allmänna felrutan säger redan vad som
 gick fel, och en andra förklaring intill varje belopp vore samma besked två
 gånger. En egen svensk mening här förkastades av det skälet.
 
 **Testfallen är obligatoriska** och läggs till kravlistan för `tests/app.test.js`
 som (17): ett avvisat `fetch` vid sidladdning ger tömd lista, tomt
-`#empty-state`, `–` i båda totalelementen och `GENERAL_ERROR` i felrutan; och
-(18): en lista renderad ur ett `200`, följd av en borttagning vars omhämtning
+`#empty-state`, `\u2013` i båda totalelementen och `GENERAL_ERROR` i
+felrutan; och (18): en lista renderad ur ett `200`, följd av en borttagning vars omhämtning
 misslyckas, lämnar inget av den gamla listans innehåll i vyn. Mutationen som ska
 fällas av (17) är "ta bort anropet som nollställer vyn i den misslyckade grenen"
 → `EXIT=1`.
@@ -3610,6 +4517,290 @@ strukna: den prövar `typeof body.error === 'string'` på ett värde som kommer 
 läsbar JSON-kropp — `readJson` svarar `{}` för en kropp som inte gick att tolka.
 Den indata som når grenen ska finnas som ett konkret testfall i
 `tests/app.test.js`, se kravlistan under "Teststrategi".
+
+#### Kommande dragningar i gränssnittet [paket 7]
+
+Punkt 4 i ansvarslistan är sammanfattningen. Det här avsnittet är facit för den:
+markup, element-id:n och de svenska strängarna. `app.js` räknar ingenting — varje
+rad kommer ur `upcoming(entries, todayIso())`, som ger en redan sorterad lista av
+`{ entry, nextDueDate, daysUntil }`.
+
+**Kortet.** En egen `<section class="card">` i `<main>` i `index.html`, placerad
+**efter** kortet **Summa**: listan svarar på "vad händer härnäst" och läses sist,
+när användaren vet vad posterna är och vad de kostar. Rubriken är
+`<h2>Kommande dragningar</h2>`. Kortet innehåller en `<ul id="upcoming-list"
+class="upcoming-list">` och därefter ett tomlägeselement
+`<p class="empty-state" id="upcoming-empty"></p>`, samma teknik som
+`#empty-state` — ett tomt `textContent` syns inte.
+
+**En rad per post, i den ordning `upcoming` gav.** Raden är ett `<li>` med
+klassen `upcoming` — se "Radelementets klass är ett kontrakt med `style.css`" —
+och innehåller cellerna i tabellen:
+
+| Cell | Klass | Innehåll |
+|---|---|---|
+| Namn | `upcoming-name` | `item.entry.name` |
+| Datum | `upcoming-date` | `item.nextDueDate`, ordagrant |
+| Dagar kvar | `upcoming-days` | enligt tabellen nedan |
+
+Datumet visas som `YYYY-MM-DD` utan omskrivning. Det är formatet datamodellen
+använder, det är standard i Sverige (SS 01 61 21), och ett månadsnamn skulle
+kräva en ny tabell med svensk text som ingen modul äger i dag.
+
+**Texten för dagar kvar är bindande ordagrant** och ägs av `app.js`, eftersom
+ingen modul i `src/core/` formaterar text mot användaren:
+
+| `item.daysUntil` | Text |
+|---|---|
+| `0` | `Idag` |
+| `1` | `Om 1 dag` |
+| `n > 1` | `Om ${n} dagar` |
+
+`daysUntil` är aldrig negativ — `nextDueDate` är per definition idag eller
+senare, se algoritmen under "Datum och dragningar". Blir den ändå negativ är det
+ett fel i `schedule.js`, inte något `app.js` ska dölja med en egen text: det
+fallet har ingen rad här och ska inte byggas.
+
+**Tomläget.** `#upcoming-empty` sätts till `Inga kommande dragningar ännu.` när
+listan är tom, och till den tomma strängen annars. Listan är tom exakt när
+`entries` är tom — varje post har en nästa dragning — men kortet får ändå en egen
+text i stället för att luta sig mot `#empty-state`: en läsare ska inte behöva
+sluta sig till varför ett kort är tomt genom att läsa ett annat.
+
+**`clearView` ska nollställa också det här kortet.** Regeln under "Vyn när en
+hämtning misslyckas" gäller oförändrat — vyn visar aldrig något appen inte vet är
+sant — och efter paket 7 omfattar den dessa element:
+
+```
+#entry-list      tömd
+#empty-state     tom sträng
+#total-monthly   UNKNOWN_TOTAL
+#total-yearly    UNKNOWN_TOTAL
+#upcoming-list   tömd          [paket 7]
+#upcoming-empty  tom sträng    [paket 7]
+```
+
+En kvarstående dragningslista efter en misslyckad hämtning vore samma fel som
+den kvarstående postlistan granskaren mätte i paket 6: rader som beskriver en
+datafil appen inte kunde läsa.
+
+**Två nya id:n i `index.html` betyder två nya `FakeElement` i `createDom()`** i
+`tests/helpers/dom.js`, registrerade under `upcoming-list` och `upcoming-empty` —
+ingen ny metod och ingen ny egenskap. Testfallet som jämför attrappens id:n med
+`index.html`:s faller tills båda finns. Räkna själv med
+`grep -o ' id="[^"]*"' src/web/index.html | wc -l` före och efter i stället för
+att skriva ned ett antal: ett antal i den här filen har blivit fel en gång förut.
+
+**`style.css` — krav, inte kod.** `.upcoming-list` ska sakna punktmarkörer som
+`.entry-list` gör, raden ska ha samma slags rutnät som `.entry` med datumet och
+dagarna högerställda, och `.upcoming-date` ska ha
+`font-variant-numeric: tabular-nums` så att datumen står i kolumn. Regeln för
+smal skärm ska ge en läsbar rad. Ingen ny text mot användaren tillkommer. Vilket
+element reglerna träffar avgörs av klassnamnet, och det namnet är ett kontrakt
+mellan två filer — se nästa avsnitt.
+
+**Kravlista för `tests/app.test.js`, punkt (21) till (27)** — obligatoriska:
+(21) tre poster med olika nästa dragning renderas i `upcoming`-ordningen, och
+raderna bär namn, datum ordagrant och rätt dagtext; (22) de tre dagtexterna
+`Idag`, `Om 1 dag` och `Om 2 dagar` visas för `daysUntil` `0`, `1` och `2` —
+gränsen mellan singular och plural ska ha ett fall på var sida; (23) en tom lista
+ger tomt `#upcoming-list` och texten i `#upcoming-empty`, och en misslyckad
+hämtning tömmer **båda**. Mutationer att köra, en per rad med egen kryssrad:
+varje rad i `clearView` som rör de två nya elementen tas bort en i taget, och
+`daysUntil === 1` byts mot `daysUntil >= 1`. Varje mutation ska ge `EXIT=1`.
+Villkoret står i `daysText(daysUntil)` och skrivs därför med det namn det bär
+där, inte med det namn det bär hos anroparen: mutationen ska gå att tillämpa
+ordagrant, och `grep -c "item.daysUntil === 1" src/web/app.js` ger `0`
+(`LARDOMAR.md` 2026-09-16).
+
+**Punkt (24) och (25) — de två nollställningarna i `renderUpcoming`.** De kom
+till efter granskningen och är lika obligatoriska som (21)–(23): var och en är
+det enda som fäller sin mutation. De numreras här och inte bara i testfilen —
+ett `(N)` i en testfil utan punkt i den här listan stoppar paketet
+(`LARDOMAR.md` 2026-09-14).
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (24) | `en borttagning med lyckad omhämtning lämnar bara de kvarvarande posternas dragningar` | `UPCOMING_LIST.replaceChildren()` tas bort ur `renderUpcoming` — se noten nedan: raden delar sin mutation med punkt (27) |
+| (25) | `en sparning med lyckad omhämtning tar bort tomtexten ur #upcoming-empty` | `UPCOMING_EMPTY.textContent = ''` tas bort ur `else`-grenen i `renderUpcoming` |
+
+Noten till (24): granskarens körning ger `fail 2`, där den andra kryssraden är
+punkt (27) — den renderar samma kort två gånger med en lista som inte är tom och
+fäller därför samma mutation. Kravet är punktens egen kryssrad, se
+mutationsregeln under "Teststrategi".
+
+**Formkravet är gemensamt och bindande: kortet ska renderas två gånger, och
+utgångsläget före den andra renderingen ska vara det motsatta av det förväntade
+resultatet.** En assertion om att ett element är tomt skyddar inte raden som
+tömmer det om elementet redan var tomt — då är den sann av sig själv och fäller
+bara en mutation som skriver *fel* text, aldrig en som tar bort raden
+(`LARDOMAR.md` 2026-09-10 och 2026-09-12). För (24) betyder det en längre lista
+följd av en kortare: tre rader som ska bli två. För (25) betyder det en tom lista
+följd av en med en post, så att tomtexten står på skärmen före det andra anropet.
+Punkt (21)–(23) renderar kortet en enda gång från ett orört utgångsläge och kan
+därför inte ersätta dem.
+
+Båda fallen har två renderingar och därmed två klockläsningar i produktionskoden.
+Ingen av dem kan ge ett annat svar än den andra, och ingen spärr mot en
+midnattspassage ska finnas: klockan `app.js` läser är laddarens, och den står
+still tills testet självt flyttar den (se "Klockan som `app.js` läser är
+injicerad, inte verklig" under "Teststrategi"). Ett test som i stället läste den
+verkliga klockan behövde en sådan spärr, kunde bli rött på oförändrad kod och
+kunde aldrig pröva två olika dagar — det var läget granskaren mätte
+(`LARDOMAR.md`, 2026-09-22).
+
+**Punkt (26) — datumcellen visar nästa dragning och inte startdatumet.** Punkten
+kom till efter granskningen och är lika obligatorisk som (21) till (25).
+Facitraden `| Datum | upcoming-date | item.nextDueDate, ordagrant |` i
+celltabellen ovan stod utan skydd: varje post i `tests/app.test.js` har ett
+`startDate` som ligger idag eller de närmaste dagarna, och för en post som
+startar i framtiden **är** nästa dragning startdatumet — steg 2 ger `k = 0`. De
+två uttrycken är då samma sträng, och en assertion på det renderade värdet prövar
+därför inte vilket av fälten koden läser (`LARDOMAR.md` 2026-09-16).
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (26) | `datumkolumnen visar nästa dragning och inte startdatumet` | `cell('upcoming-date', item.nextDueDate)` → `cell('upcoming-date', item.entry.startDate)` — se noten nedan: raden delar sin mutation med punkt (27) |
+
+Noten till (26): granskarens körning ger `fail 2` med punkt (27) som andra
+kryssrad, av samma skäl som gäller (24). Punkten behålls, och skälet är vad
+kryssraden säger: (27):s rad heter `dagarna räknas om mot den nya dagen när
+listan hämtas om` och pekar inte ut vilket fält datumcellen läser, medan (26):s
+rad gör det.
+
+**Testdatan är kravet här, inte assertionens form.** Fallet ska innehålla minst
+en post där `nextDueDate` skiljer sig från `startDate`, och den posten är
+`startDate: '2020-03-31'` med `interval: 'quarterly'` — samma rad som står i
+facittabellen under "Datum och dragningar". Cellens innehåll jämförs mot
+`upcoming(entries, FRYST_IDAG)`:s `nextDueDate` för samma post och inte mot en
+inskriven datumsträng: facit ska komma ur ägaren till frågan, `schedule.js`, och
+följa med när algoritmen ändras.
+
+Regeln bakom punkten gäller varje cell i kortet: för varje fält en
+renderingsfunktion skriver ut ska testdatan väljas så att fältet skiljer sig från
+de andra fält samma objekt bär. Är två fält lika i all testdata prövar
+assertionen inte vilket av dem koden läser.
+
+**Punkt (27) — klockan läses vid varje rendering, inte vid sidladdningen.**
+`renderUpcoming` ska anropa `todayIso()` inne i funktionen, och det är ett krav
+och ingen detalj: en flik som står öppen över midnatt ska visa rätt dagar kvar
+vid nästa hämtning. Kravet stod utan prov så länge testfilen läste den verkliga
+klockan — den står still under en körning, så en klockläsning flyttad till
+modulens toppnivå ger samma svar i varje testfall. Laddarens klocka går att
+flytta, och det är det punkten gör.
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (27) | `dagarna räknas om mot den nya dagen när listan hämtas om` | `upcoming(entries, todayIso())` → `upcoming(entries, MODUL_IDAG)`, med `const MODUL_IDAG = todayIso();` tillagd bland modulens konstanter: klockan läses då en gång vid laddningen i stället för vid varje rendering |
+
+Formen är bindande: fallet renderar kortet två gånger, med `FRYST_IDAG` före den
+första renderingen och `FRYST_NASTA_DAG` före den andra, och den andra
+renderingen utlöses av en sparning eller en borttagning vars omhämtning ger `200`
+med **samma** lista som den första. Posten är en `monthly`-post som startar
+`FRYST_IDAG`, så att den första renderingen ger `Idag`. Assertionerna som krävs:
+varje rad jämförs mot `upcoming(poster, FRYST_IDAG)` respektive
+`upcoming(poster, FRYST_NASTA_DAG)` — aldrig mot en inskriven dagtext, som vore
+ett andra facit — och därutöver ska cellerna `upcoming-date` och `upcoming-days`
+från den första renderingen jämföras med samma celler från den andra och vara
+**olika**. Är de lika prövar fallet ingenting, och då är testdatan fel vald, inte
+koden (samma krav som punkt (26) ställer på sin post).
+
+#### Radelementets klass är ett kontrakt med `style.css` [paket 7]
+
+Ett klassnamn som `app.js` skriver och `style.css` väljer på är en koppling
+mellan två filer, och `style.css` har inget automatiskt test. Klassnamnet i
+`app.js` är därför den enda ände av kopplingen som går att pröva, och den ska
+prövas. Cellernas klasser hade assertioner redan före den här rundan, medan
+radelementet självt saknade en: varken `rad.className = 'upcoming'`,
+`item.className = 'entry'` eller valet av tagg gick att fälla med en mutation
+(granskarens körning, `LARDOMAR.md`, 2026-09-22, radens egen klass i kortet
+Kommande dragningar överlever mutation). Med fel klass får raden ett annat korts
+rutnät eller inget alls, och med fel tagg hamnar ett `<div>` i en `<ul>`.
+
+**Bindande: varje egenskap ett element bär som ett annat kontrakt beror på ska ha
+en assertion i `tests/app.test.js`.** Inte bara `textContent` — ett element bär
+mer än sin text. Kravet är skrivet om egenskapens **roll** och inte om
+egenskapens namn, därför att en tidigare lydelse krävde `className` och `tagName`
+för varje skapat element och därmed var bredare än de punkter som byggde den
+(`LARDOMAR.md`, 2026-09-22, "Varje `assert.throws` ..." — samma form, samma fel).
+Frågorna som avgör går båda att besvara mekaniskt:
+
+1. **Väljer `style.css` på klassnamnet?** Då är klassnamnet ett kontrakt mellan
+   två filer och ska asserteras.
+2. **Beror något på elementtypen?** Den frågan har två mekaniska prov: namnger
+   någon selektor i `style.css` elementtypen (`button.remove`, inte `.remove`),
+   eller kräver föräldern just den barntypen (`<ul>` tar `<li>`, `<select>` visar
+   bara `<option>`)? Är svaret ja på något av dem ska `tagName` asserteras.
+
+Tabellen är facit för de element `app.js` skapar, och den ska läsas om när ett
+element tillkommer:
+
+| Element och var det skapas | Klassen | Elementtypen |
+|---|---|---|
+| `li` i `renderUpcoming` | `upcoming` bär rutnätet och kantlinjen — punkt (28) | `<ul>`:s barn — punkt (28) |
+| `li` i `renderEntries` | `entry` bär samma sak — punkt (29) | `<ul>`:s barn — punkt (29) |
+| `button` i `renderEntries` | `remove` bär `button.remove` och det spärrade lägets regler — asserteras av punkt (12):s celluppräkning | selektorn är `button.remove`, alltså bär typen halva regeln — punkt (30) |
+| `span` i `cell` | cellklasserna bär varje `.entry-`- och `.upcoming-`-regel — asserteras av punkt (12) och (21) | **inget kontrakt, uttryckligt undantag:** ingen selektor i `style.css` namnger elementtypen, och föräldern är ett rutnät som tar vilket barn som helst |
+| `option` i `fillOptions` | **inget kontrakt:** `fillOptions` sätter ingen klass, och `style.css` har ingen regel för elementet | `<select>` visar bara `<option>`: med fel typ är listan tom och formuläret obrukbart — punkt (31) |
+
+Undantaget för `span` är skrivet som ett undantag och inte utelämnat, så att
+nästa granskare kan skilja ett medvetet val från ett hål. Ändras `style.css` så
+att en selektor namnger elementtypen blir undantaget falskt i samma stund, och
+raden ska då bytas mot en punkt.
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (28) | `raden i kortet Kommande dragningar är ett li med klassen upcoming` | `rad.className = 'upcoming';` → `rad.className = 'entry';`; `rad.className = 'upcoming';` → `rad.className = '';`; `const rad = document.createElement('li');` → `const rad = document.createElement('div');` |
+| (29) | `raden i postlistan är ett li med klassen entry` | `item.className = 'entry';` → `item.className = 'upcoming';`; `const item = document.createElement('li');` → `const item = document.createElement('div');` |
+| (30) | `Ta bort-knappen är ett button-element` | `const remove = document.createElement('button');` → `const remove = document.createElement('span');` — se noten nedan: raden delar sin mutation med äldre fall |
+| (31) | `valen i de två listorna är option-element` | `const option = document.createElement('option');` → `const option = document.createElement('div');` |
+
+Raderna med flera mutationer körs en mutation i taget. Noten för (30) är
+exemplet på den form varje rad använder när den delar sin mutation med äldre
+fall; regeln bakom kolumnen står under "Teststrategi".
+
+**Kolumnen kräver att punktens egen kryssrad står i utfallet, inte att den står
+ensam där.** Rubriken sa tidigare "ensamt fäller", och det stämmer inte för raden
+för (30): DOM-attrappen plockar Ta bort-knappen med selektorn
+`button[type="button"]`, som matchar på elementtypen, så varje befintligt fall som
+klickar på knappen faller med. Byggarens körning: åtta testfall faller, varav sju
+fanns före den här rundan, och samma mutation gav `pass 26, fail 7, EXIT=1` innan
+(30) skrevs. Punkten behålls ändå, och skälet är vad kryssraden **säger**: de sju
+äldre heter saker som "en borttagning som ger 404 visar serverns text" och pekar
+inte ut elementtypen, medan (30):s rad gör det — en granskare som bara får sju
+kryss om borttagning läser dem som ett fel i borttagningen och letar på fel
+ställe. Noten gäller den raden och inte tabellen: står det i en rads not att
+äldre fall faller med är det en uppgift att kontrollera mot redovisningen, inte
+ett fel. Byggaren skriver ut vilka testfall som faller för varje mutation i
+tabellen, så att nästa granskare kan avgöra en rad genom att läsa redovisningen i
+stället för att köra om allt.
+
+Klassmutationen för Ta bort-knappen, `remove.className = 'remove';` →
+`remove.className = 'delete';`, står inte i (30):s rad därför att punkt (12)
+redan räknar upp radens klasser. Den ska ändå köras, och utfallet ska innehålla
+punkt (12):s kryssrad — annars är klasshalvan oskyddad och behöver en egen punkt.
+Punkt (31) prövar elementtypen och inget annat: att listorna fylls med rätt
+värden och rätt etiketter ägs av punkt (5), och en andra kopia av den assertionen
+vore ett andra facit.
+
+Uttrycken är skrivna med det namn de bär där de står i `src/web/app.js`, så att
+varje mutation går att tillämpa ordagrant: `grep -c "<uttrycket före pilen>"
+src/web/app.js` ska ge minst `1` för var och en, och den kontrollen körs innan
+paketet lämnas vidare (`LARDOMAR.md`, 2026-09-16). Punkt (29) prövar
+`renderEntries`, alltså paket 5:s och 6:s rad, och punkt (30) och (31) prövar
+paket 5:s knapp och paket 5:s listor; alla fyra hör ändå hemma här, eftersom
+hålet är detsamma överallt och regeln ska ha ett hem.
+
+**Kontrollen som hittar nästa sådant hål** körs när en regel läggs till i
+`style.css` och innan `src/web/app.js` lämnas vidare, och den är en sökning per
+fråga ovan. Kör `grep -nE "className = '|cell\('" src/web/app.js`, plocka ut varje klassnamn
+raderna skriver, och sök var och en i `tests/app.test.js`; ett klassnamn som
+`app.js` skriver men testfilen aldrig nämner är ett hål och stoppar paketet. Kör
+därefter `grep -nE "document\.createElement\('" src/web/app.js` och ställ de två
+frågorna ovan till varje träff; ett element som besvarar någon av dem med ja utan
+att ha en rad i tabellen stoppar paketet. Båda sökningarna är riktade från
+`app.js` till testet och inte tvärtom, därför att det är `app.js` som kan få ett
+nytt namn eller en ny elementtyp utan att någon märker det.
 
 #### Knappen spärras under ett pågående anrop [paket 5]
 
@@ -3704,20 +4895,146 @@ kan inte innehålla frågor. Samtliga markeringar är strukna: sökningen ovan g
 efter rättningen inga markeringar alls — varje kvarvarande träff är ett
 omnämnande av att mekanismen är avskaffad, inte en markering.
 
-Antalen nedan är körda i paket 6 och gäller den här filen som den ser ut nu.
-De räknar **omnämnanden**, och ett av dem är den här textens egna sökmönster,
-som matchar sig självt — ett mönster som skrivs in i den fil det söker i höjer
-sitt eget antal, och det är skälet till att antalet inte går att skriva en gång
-för alla:
+Inget antal står skrivet här, och det är avsiktligt. Mönstren nedan matchar sig
+själva: varje mening som dokumenterar dem, och varje hänvisning till den lärdom
+som beskriver dem, höjer sitt eget antal. Ett tal blir därmed fel av att skrivas
+ned — det stod `3` respektive `6` här och var fel så snart beslutsloggen fick en
+post till. Kommandona körs och **träffarna läses**, en och en:
 
 ```
-grep -c "inte kör\(t\|d\|da\) av arkitekten" ARKITEKTUR.md   -> 3
-grep -c "inte kört\|inte körd\|inte körda\|ej kört" ARKITEKTUR.md -> 6
+grep -n "inte kör\(t\|d\|da\) av arkitekten" ARKITEKTUR.md
+grep -n "inte kört\|inte körd\|inte körda\|ej kört" ARKITEKTUR.md
 ```
 
 Det bindande påståendet är inte ett antal utan detta: **ingen träff är en
-markering på ett krav**. Den kontrollen görs genom att läsa träffarna, inte
-genom att jämföra en siffra.
+markering på ett krav** — varje kvarvarande träff är ett omnämnande av att
+mekanismen är avskaffad, eller en hänvisning till den lärdom som beskriver den.
+Den kontrollen görs genom att läsa träffarna, inte genom att jämföra en siffra.
+
+**En markör som pekar ut en uppgift som ännu inte är utförd åldras (bindande för
+den här filen).** Det är rollen som avgör, inte stavningen: varje markör som
+binder en åtgärd till ett paketnummer är sann bara fram till den stund byggaren
+utför den, och blir i samma stund ett falskt påstående om koden. Filen har haft
+tre stavningar av samma roll — `**Kvar i paket N:**`, `**Åtgärdas i paket N**`
+och den avskaffade "inte kört av arkitekten" — och gick på var och en för sig,
+eftersom sökningen gjordes efter den stavning som råkade stå i den lärdom som
+just då rättades. En fjärde stavning ska träffas av samma kontroll utan att
+någon ändrar den.
+
+Det löftet höll inte när det prövades. Kontrollen bestod då bara av kommando A
+nedan, och A är förankrat i fetstilen — alltså i typografin, inte i rollen. De
+tre kända stavningarna råkade allihop vara fetstilta, så förankringen såg gratis
+ut. Granskarens körning hittade i vanlig löptext ställen som band ett arbete
+till ett paketnummer utan en enda asterisk ("byggs ut i paket N", "de fem sista
+har sin första användare i paket N och byggs där", "de fem exporter i `dates.js`
+som ännu inte finns", "att paket N-hälften är byggd och paket N-hälften inte är
+rätt tillstånd i dag"), och A träffade inget av dem. Ett
+mönster förankras i orden som bär rollen — aldrig i fetstil, backticks eller
+rubriknivå.
+
+Kontrollen är därför **två** kommandon, och båda körs innan varje paket lämnas
+vidare, oavsett vilket paket som pågår:
+
+```
+A: grep -nE "\*\*[^*]+ i paket [0-9]" ARKITEKTUR.md
+B: grep -nE "(byggs|byggd|byggas|byggt|utök|tillkom|återst|kvarst|ännu inte|rätt tillstånd)[^.]{0,80}[Pp]aket [0-9]|[Pp]aket [0-9][^.]{0,80}(byggs|byggd|byggas|byggt|utök|tillkom|återst|kvarst|ännu inte|rätt tillstånd)" ARKITEKTUR.md
+```
+
+Inget av de två räcker ensamt, och det ena är inte en bättre version av det
+andra. A träffar en markör som bär fetstil men inget byggord
+(`**Åtgärdat i paket N**`), B träffar en markör som bär ett byggord men ingen
+fetstil (`byggs ut i paket N` mitt i en trädvy eller en löpande mening). B söker
+åt båda hållen därför att ordet lika gärna står före som efter paketnumret.
+
+**B är avsiktligt trubbigt.** Det träffar också dåtid ("byggdes i paket N") och
+ren planeringstext, och de träffarna ska stå kvar som träffar: de klassas som
+utfall 1 eller 3 nedan och lämnas. Ett mönster som smalnas tills bara de kända
+felen återstår kan bara hitta de fel som redan är kända, och det är just det
+felet A gjorde. Träffarna ska samtidigt vara så få att en agent orkar läsa dem
+alla, och de är det: B:s träfflista är en liten bråkdel av
+`grep -c "[Pp]aket [0-9]" ARKITEKTUR.md`, som är den enda ärliga men oläsbara
+sökningen B ersätter. Prövade och förkastade tillägg till ordlistan:
+`ska`, `kommer att`, `skrivs`, `görs`, `prövas` och `körs` ger nästan bara
+kravlistor ("testfall som ska köras i paket N"), alltså utfall 3, och dränker de
+verkliga träffarna.
+
+**Läs meningen, inte raden.** Båda kommandona är radvisa, men en markör kan
+sträcka sig över en radbrytning: ordet som bär rollen står på en rad och
+paketnumret på nästa, eller tvärtom. En träff är därför en anvisning att läsa
+hela meningen den står i, och rättningen omfattar hela meningen.
+
+**Orden står som stammar** (`utök`, `tillkom`, `återst`, `kvarst`) och inte som
+hela ordformer, därför att böjningen annars avgör: en sökning på `tillkommer`
+missar `tillkom`, precis som en sökning på "inte kört" en gång missade två
+markörer som stod i plural. Stammen `bygg` är däremot för bred — den träffar
+varje mening om byggaren — så där står formerna utskrivna i stället.
+
+**B kommer att missa något.** En markör kan skrivas med ett verb som inte står i
+ordlistan ("införs i paket N", "flyttas till paket N"). Den som skriver en sådan
+mening lägger in stammen i B i samma ändring; ordlistan är inte fredad. Det som
+är bindande är rollen, och B är bara dagens bästa mekaniska spår av den.
+
+Varje träff läses; ingen räknas. Träffen klassas som ett av utfallen nedan:
+
+1. **Dåtid** (`**Utfört i paket N:**`, `**Åtgärdat i paket N**`) — en färdig
+   uppgift, skriven som ett konstaterande. Lämnas.
+2. **Presens eller futurum** (`**Kvar i paket N:**`, `**Åtgärdas i paket N**`,
+   `**Utförs i paket N**`) med ett paketnummer som är påbörjat eller avslutat —
+   alltid ett fel, och rättas av den agent som hittar den, oavsett vilket paket
+   som pågår. Antingen körs det kommando som visar att uppgiften kvarstår och
+   utdatan klistras in, eller så skrivs raden om i dåtid med det som faktiskt
+   gjordes. Flyttas uppgiften till ett senare paket skrivs den om med det
+   paketnumret.
+3. **Ingen markör** — en rubrik eller en kravlista som råkar nämna ett paket
+   (`**Obligatoriska testfall i paket N**`) pekar inte ut någon oavslutad
+   uppgift. Lämnas.
+
+Frågan som skiljer utfall 2 från utfall 3 i löpande text är **om meningen
+påstår en avsaknad**. "De fem sista har sin första användare i paket N och byggs
+där" och "de exporter som ännu inte finns" säger att koden saknar något i dag —
+utfall 2, och falskt i samma stund byggaren skrivit filen. "Regeln bor i
+`src/core/money.js` och byggs i paket N" och "modulen får i paket N sina fyra
+första exporter" fördelar arbete mellan paket utan att påstå något om vad som
+finns just nu — utfall 3, sant oavsett när det läses. Ett arbete får tilldelas
+ett paket i presens; ett tillstånd får bara beskrivas som det är.
+
+Formen `**Byggaren ska:**` i den här loggen träffas inte av något av de två och är
+inget undantag som smugits in: den bär inget paketnummer, den hör till det
+beslut den står i, och den är den plats lärdomen `2026-08-23 — dokumentation:
+ARKITEKTUR.md beskriver kod som inte längre ser ut så` anvisar för instruktioner
+till byggaren. Den är en order och aldrig historik — byter ett namn i `src/`
+skrivs den om till det nya namnet.
+
+Exemplen ovan skrivs med `N` i stället för en siffra just för att den här texten
+inte ska matcha sitt eget sökmönster och höja sitt eget antal.
+
+**En mening som inleder en uppräkning bär inte uppräkningens antal (bindande för
+den här filen).** Regeln står redan i beslutsloggens punkt om `clearView`-blocket
+och har brutits fyra gånger. Den fick en mekanisk kontroll efter tredje gången,
+men kontrollen var förankrad i en lista över substantiv — `element`, `rader`,
+`id:n`, `fall`, `punkter`, `exporter`, `stavningar`, `ställen` — och paket 7 skrev
+"Raden har tre celler:", ett substantiv som inte fanns i listan när listan skrevs
+(`LARDOMAR.md`, 2026-09-22). Samma fel som kommando A gjorde med fetstilen: en
+spärr prövad enbart med de stavningar som fanns när den skrevs. Kontrollen är
+därför förankrad i **formen** — ett räkneord, ett eller två ord, kolon sist på
+raden — och har ingen ordlista alls:
+
+```
+C: grep -nEi "\b(två|tre|fyra|fem|sex|sju|åtta|nio|tio|[0-9]+) [a-zåäö]+( [a-zåäö]+)?:$" ARKITEKTUR.md
+```
+
+C körs på hela filen innan varje paket lämnas vidare, tillsammans med A och B.
+`-i` står där av samma skäl som gör B trubbigt: ett räkneord som inleder en
+mening skrivs med versal, och den sortens rad är den vanligaste bäraren av
+konstruktionen — utan flaggan går varje `Tre utfall finns:` förbi. Varje träff
+läses, ingen räknas, bland annat därför att ett belopp som `100,00 kr:` träffas
+av mönstret utan att vara ett antal. Träffen klassas efter vad talet
+räknar. **Räknar det raderna i tabellen, listan eller kodblocket som följer** ska
+meningen skrivas om utan talet, och blocket bära antalet; det är den enda
+rättningen, en ny siffra duger aldrig. **Räknar det något annat** — ett belopp,
+ett antal anrop i ett scenario, en mätning som redovisas med sitt kommando —
+lämnas träffen. Raden som skriver ut kommandot ovan matchar inte kommandot:
+efter varje räkneord i alterneringen följer ett `|`, inte ett mellanslag.
 
 - **Node.js med inbyggd HTTP-server och webbläsaren som gränssnitt** — enda
   körsätt som ger ett grafiskt gränssnitt med noll beroenden och som är
@@ -4055,10 +5372,19 @@ genom att jämföra en siffra.
   `checkAmountSek` som citerade uttrycket med siffran skrevs om till
   `v * ORE_PER_SEK` respektive `Math.round(v * ORE_PER_SEK) / ORE_PER_SEK`, så
   att kommentar och kod pekar ut samma ägare — granskarens körning 2026-09-04 av
-  `grep -n '\b100\b' src/core/entry.js` gav noll träffar. **Kvar i paket 7:** den andra
-  träffen, `12` i rollen "högsta månadsnummer" i `dates.js` — månadsraden i
-  `parseIsoDate` tas bort, gränsen ägs av `daysInMonth`; villkoret och de tre
-  datumen som ska fortsätta ge `null` står i regeltexten under "Mappstruktur".
+  `grep -n '\b100\b' src/core/entry.js` gav noll träffar. **Utfört i paket 7:** den
+  andra träffen, `12` i rollen "högsta månadsnummer" i `dates.js` — raden
+  `if (month < 1 || month > 12) { return null; }` togs bort ur `parseIsoDate`, och
+  på dess plats står numera en kommentar som pekar ut `daysInMonth` som ägare av
+  gränsen. Dagraden `day < 1 || day > daysInMonth(year, month)` avvisar samma
+  värden, eftersom `daysInMonth` svarar `0` för varje månadsnummer utanför 1–12.
+  Ingen ny konstant infördes. De tre datumen ur regeltexten under "Mappstruktur" —
+  `'2026-13-01'`, `'2026-00-10'` och `'2026-99-01'` — ger fortfarande `null`, och
+  testfallet `parseIsoDate ger null för månadsnummer utanför 1-12 utan en egen
+  månadsrad` i `tests/dates.test.js` är facit för det. I `src/core/dates.js` står
+  `12` därefter kvar som kod bara i `const MONTHS_PER_YEAR = 12;`, som är rollen
+  "antal månader per år" med en egen ägarkommentar, och i `month > 12` inuti
+  `daysInMonth`, som är ägaren till rollen "högsta månadsnummer".
   (påverkat av lärdom: **ja**, `2026-09-02 — arkitektur: den utvidgade
   ägarregeln för tal bryts av kod som redan fanns`)
 - **Villkoret "är det här ett vanligt objekt" har en ägarfunktion,
@@ -4460,8 +5786,10 @@ genom att jämföra en siffra.
   fånga: `start()`, `server.address()` och utskriften. De prövas med en `spawn`
   av `node <server.js>` med `PORT` satt till en port testet först fått av kärnan,
   och det är samtidigt projektets enda automatiska prov av `npm start`.
-  Barnprocessen bär hela hängningsspärren från atomicitetstestets punkt 8: en
-  `spawn` utan den är en hängning utan exitkod som väntar på att inträffa. Ingen
+  Barnprocessen bär samma hängningsspärr som atomicitetstestets punkt 8 kräver,
+  med samma konstantnamn och samma minsta värde men utan punkt 8:s omtagning,
+  som gäller `tests/storage.test.js` ensamt: en `spawn` utan spärren är en
+  hängning utan exitkod som väntar på att inträffa. Ingen
   ny export byggs i förtid — båda har en användare i `server.js` från första
   raden de finns. **Byggaren ska:** flytta portuttrycket oförändrat till
   `resolvePort(env)`, flytta autostartvillkoret till
@@ -4673,9 +6001,10 @@ genom att jämföra en siffra.
   `10fe469`, och den överlevde paket 3, 4 och 5. Den ersattes av kravet i sig plus
   granskarens körning som visar att kravet är uppfyllt. Sökningen som lärdomen
   föreskriver kördes över hela filen — `I dagens`, `ska ersättas`, `skrivet för
-  hand`, `Kvar i paket` — och gav inga fler falska träffar: `Kvar i paket 7` pekar
-  på ett paket som ännu inte är påbörjat och är därmed en öppen uppgift och inte
-  ett påstående om koden. (påverkat av lärdom: **ja**, `2026-09-07 —
+  hand`, `Kvar i paket` — och gav vid det tillfället inga fler falska träffar:
+  `Kvar i paket 7` pekade då på ett paket som ännu inte var påbörjat och var
+  därmed en öppen uppgift och inte ett påstående om koden. Den raden skrevs om
+  till `**Utfört i paket 7:**` när paket 7 var byggt. (påverkat av lärdom: **ja**, `2026-09-07 —
   dokumentation: rättningen av "beskriver kod som inte längre ser ut så" gjordes
   till hälften`)
 - **Autostartens felgren fick en egen punkt i teststrategin och en egen rad i
@@ -4998,3 +6327,765 @@ genom att jämföra en siffra.
   `close`-hanteraren är ett löfte ingen anropare kan invänta, och det är en tredje
   roll. (påverkat av lärdom: **ja**, `2026-09-07 — test: en fjärde hängningsspärr
   byggdes utan den rad ARKITEKTUR.md kräver för den`)
+- **Räkneordet ströks ur meningen som inleder `clearView`-blocket** — meningen
+  bar uppräkningens antal och uppräkningen bar ett annat, och det är fjärde
+  gången ett antal i den här filen är fel. Rättningen är inte en ny siffra utan
+  ingen siffra: `clearView` omfattar "dessa element", och blocket under bär
+  antalet. Grannmeningen om nya id:n i `index.html` bär inget antal ur ett block
+  utan jämför två körningar av samma kommando, och den är därför oförändrad.
+  Regeln som följer av de fyra gångerna står nu i sin skarpaste form: ett antal
+  som också står i en uppräkning, en tabell eller ett kodblock i samma stycke
+  skrivs bara på ett av de två ställena, och det stället är uppräkningen.
+  (påverkat av lärdom: **ja**, `2026-09-12 — dokumentation: "omfattar den fem
+  element" står tre rader ovanför en uppräkning med sex`, och `2026-09-10 —
+  dokumentation: "Två nya id:n" i samma stycke som kräver tre FakeElement`)
+- **Åldringskontrollen är två kommandon, och det andra är förankrat i orden i
+  stället för i fetstilen** — kontrollen lovade att fånga varje markör "utan att
+  någon ändrar den" och föll på den första stavning som prövade löftet: den var
+  skriven som `**[^*]+ i paket N`, alltså som ett mönster över typografi, och
+  varje markör i vanlig löptext gick förbi. Det är samma fel som lärdomen om
+  millisekundförbudet — en regel skriven om den form den råkar träffa i stället
+  för om sitt skäl — och det upptäcktes bara därför att granskaren läste text som
+  kommandot aldrig visade. Tre beslut följde. Kommando B söker efter
+  **byggorden** i båda riktningarna kring ett paketnummer och bryr sig inte om
+  markeringar. Båda kommandona körs, eftersom inget av dem rymmer det andra: A
+  fångar fetstil utan byggord, B fångar byggord utan fetstil. Och B får vara
+  trubbigt — det träffar dåtid och planeringstext med flit, därför att ett
+  mönster som smalnas tills bara de kända felen återstår bara kan hitta de fel
+  som redan är kända. Bredare ordlistor prövades: `ska`, `kommer att`, `skrivs`,
+  `görs`, `prövas` och `körs` nära ett paketnummer ger nästan enbart kravlistor,
+  som är utfall 3, och gör listan oläsbar utan att tillföra en enda markör.
+  Kvar står en känd svaghet, utskriven i stället för bortglömd: ett verb utanför
+  ordlistan går förbi B, och den som skriver en sådan mening lägger in stammen i
+  samma ändring. Kriteriet som avgör utfall 2 mot utfall 3 fick samtidigt en
+  operativ form — **påstår meningen en avsaknad?** — eftersom "byggs i paket N"
+  är en tilldelning och "byggs ut i paket N" är ett påstående om att koden saknar
+  något i dag. B prövades mot de markörer som fanns **innan** de rättades, inte
+  efteråt; en rutin som bara körts mot färdigrättad text bevisar ingenting.
+  (påverkat av lärdom: **ja**, `2026-09-12 — dokumentation: fyra
+  framtidspåståenden om paket 7 är nu falska, och den nya rutinen fångar inget av
+  dem`, `2026-09-07 — dokumentation: ARKITEKTUR.md förbjuder den
+  millisekundkonstant LARDOMAR.md kräver`, och `2026-09-10 — dokumentation: "det
+  är punkt (13) som är dess test" prövades inte med den mutation punkt (14)
+  prövades med`)
+- **Varje mening som sa att `dates.js`-hälften och dragningsavsnittet återstod
+  skrevs om i dåtid** — samma påstående stod på fem ställen: i trädvyn över
+  `tests/`, i teststrategins punkt om enhetstester, i inledningen till
+  "Datum och dragningar", i inledningen till `src/core/dates.js` och i stycket
+  efter dess gränssnittsblock. Det femte hittades av kommando B och inte av
+  granskaren, vilket är hela skälet till att B finns. Utfallet skrivs på **ett**
+  ställe — under `src/core/dates.js` — och de övriga hänvisar dit i stället för
+  att upprepa det, eftersom samma order tidigare har stått på tre rader och den
+  som rättade en av dem hade fortfarande fel på två. Tre rader i trädvyn med
+  formen "byggs ut i 6 och 7" rättades i samma svep fastän granskaren bara
+  namngav en av dem: `index.html`, `src/web/app.js` och `tests/app.test.js` bär
+  alla sitt paket 7-arbete i dag, och att rätta ett av fyra likadana påståenden
+  är den vanligaste halvrättningen i den här filens historia. (påverkat av
+  lärdom: **ja**, `2026-09-11 — dokumentation: det osynliga blanksteget rättades
+  i dokumentet och lämnades kvar i testfilen`, och `2026-09-07 — dokumentation:
+  rättningen av "beskriver kod som inte längre ser ut så" gjordes till hälften`)
+- **Escapekravet skrevs om från ett tecken till en teckenklass, och de fyra råa
+  U+2013 ströks** — regeln hade formulerats om ett tecken i taget, och varje
+  rättning hade sökt efter just det tecken posten namngav. Följden var att
+  meningen som förbjuder råtecknet skrev ordet "escapen" som själva råtecknet,
+  och att det bindande kodblocket för `UNKNOWN_TOTAL` inte var den rad
+  `src/web/app.js` innehåller. Rättningen är gjord efter **regeln** och inte
+  efter radnumren: sökningen kördes över hela filen med alla tre kodpunkterna i
+  en teckenklass, och varje träff bedömdes en och en. Kvar står bara U+2013 i
+  löptext — intervall som `1–12`, tabellernas platshållare `–` och
+  sammansättningar som `Läs–ändra–skriv` — och den gränsdragningen är nu utskriven
+  i regeltexten, så att nästa läsare inte behöver gissa om en träff är ett fel.
+  (påverkat av lärdom: **ja**, `2026-09-14 — dokumentation: U+2013 står rått i
+  ARKITEKTUR.md, även i meningen som förbjuder det`, och `2026-09-11 —
+  dokumentation: det osynliga blanksteget rättades i dokumentet och lämnades kvar
+  i testfilen`)
+- **De fem antalen om `tests/dates.test.js` ströks i stället för att rättas** —
+  talen stod i prosa utan sitt kommando, och ordet "träffar" har två läsningar
+  som ger olika svar på just de två punkter där talen var fel: `grep -c` räknar
+  rader, `grep -o | wc -l` räknar förekomster, och två rader i filen bär sitt namn
+  två gånger. Att skriva in rätt tal hade löst fel problem — nästa tillägg gör
+  dem fel igen. Påståendet är därför omformulerat till det som ska vara sant och
+  som inte kan bli fel av ett tillägg: varje namn i blocket ger minst en träff,
+  med kommandot utskrivet och utan antal. Det är den form lärdomen rekommenderar.
+  (påverkat av lärdom: **ja**, `2026-09-14 — dokumentation: fem antal skrevs in i
+  ARKITEKTUR.md utan kommandot, och två av fem stämmer inte`, och `2026-09-07 —
+  dokumentation: antalet avskaffade "inte kört av arkitekten"-markörer räknades
+  utan alla böjningsformer`)
+- **De fyra granskningsframtvingade testfallen fick sina punkter: (24), (25),
+  (S1) och (S2), och `tests/schedule.test.js` fick en egen numrerad serie** —
+  numren `(24)` och `(25)` fanns i testfilen men inte i dokumentet, och
+  `tests/schedule.test.js` hade ingen kravlista alls. Två beslut om formen följde.
+  Serien för `tests/schedule.test.js` får prefixet `S`, så att ett nummer i en
+  testfil kan slås upp på exakt ett ställe. Och listan numrerar bara de fall som
+  ensamma fäller en namngiven mutation — en kravlista som utger sig för att
+  räkna upp allt men inte gör det blir ett andra facit, vilket den här filen redan
+  har straffats för. Kollationsfallets teknik — att `String.prototype.localeCompare`
+  och `Intl.Collator` ersätts under sorteringen — fick ett eget stycke med syfte,
+  återställning, räckvidd och det den **inte** kan upptäcka, på samma villkor som
+  en ny hängningsspärr. Granskarens mätningar står inskrivna där i stället för i
+  en testkommentar. (påverkat av lärdom: **ja**, `2026-09-14 — test: fyra
+  obligatoriska testfall byggdes utan sin rad i ARKITEKTUR.md, och två av dem
+  numrerar punkter som inte finns`, och `2026-09-07 — test: en fjärde
+  hängningsspärr byggdes utan den rad ARKITEKTUR.md kräver för den`)
+- **Steg 2 i `nextDueDate` görs mätbart genom ett injicerbart `addMonths`, och
+  kravet står kvar som krav** — de två kodvarianterna ger samma svar för varje
+  indata, så egenskapen som ska skyddas är ett **arbete** och inte ett värde.
+  Tre vägar vägdes. Att stryka kravet förkastades: det är inte otestbart, bara
+  osynligt i ett returvärde, och `upcoming` anropar `nextDueDate` en gång per post
+  vid varje rendering. Att bryta ut hoppsteget till en egen exporterad funktion
+  förkastades: testet hade då prövat att den räknar rätt, medan mutationen består
+  i att `nextDueDate` slutar **använda** den — skyddet hade hamnat bredvid hålet.
+  Ett tak på antalet korrigeringsvarv förkastades trots att det fäller mutationen:
+  ingen giltig indata når den grenen, och en gren som ingen indata når ska tas
+  bort, inte byggas. Kvar står lärdomens egen form. Priset skrivs ut i stället för
+  att döljas: produktionssignaturen får ett argument som bara tester skickar, och
+  det argumentet får därför en egen spärr med svensk text, sist i kedjan, med den
+  indata som visar varför placeringen spelar roll. Returvärdet får ingen egen
+  spärr — `compareIsoDates` äger den frågan, och en andra kopia vore ett känt fel.
+  Samtidigt förbjuds assertionsmeddelanden som namnger `k`: variabeln är
+  modulintern, och `k = 1 ger den klampade 2026-04-30` är ett påstående raden inte
+  prövar. (påverkat av lärdom: **ja**, `2026-09-14 — test: steg 2 i nextDueDate
+  kan tas bort utan att något test faller, och det nya fallet påstår sig förankra
+  k`, `2026-09-02 — datamodell: cost.js har en egen, svagare kopia av "är detta
+  ett objekt"`, och `2026-09-04 — test: två konstruktioner i storage.js körs
+  aldrig och överlever mutation`)
+- **(S1):s mutation skrevs om till kodens eget uttryck, och antalet varv ströks
+  ur mätbarhetsavsnittet i stället för att rättas** — två textfel från förra
+  rundan, båda av samma slag: dokumentet beskrev kod och körningar som inte var
+  dess egna. (S1)-raden citerade `addMonthsClamped(entry.startDate, k * step)`,
+  ett uttryck signaturändringen i samma paket hade skrivit bort;
+  `grep -n "addMonthsClamped(entry.startDate" src/core/schedule.js` gav noll
+  träffar och `grep -n "addMonths(entry.startDate" src/core/schedule.js` rad 90
+  och 102. Raden pekar nu ut kodens uttryck, och eftersom det står på två ställen
+  säger (S1)-stycket vilket av dem mutationen gäller — en mutation som inte går
+  att tillämpa ordagrant hör inte hemma i en lista som inleds med "Varje mutation
+  körs en i taget". Varvtalet `674` hörde till ett `today` i mars medan meningen
+  namnger `2026-09-15`, där körningen ger `680`. Talet rättades inte utan
+  formulerades bort: antalet varv beror på både `startDate` och `today`, så varje
+  tal i löptext blir falskt av nästa datumändring, medan (S3) redan kräver att
+  byggaren redovisar det uppmätta antalet ur sin egen körning. Det är sjätte
+  gången ett antal i den här filen är fel, och ett tal som inte står här kan inte
+  bli fel en sjunde gång. (påverkat av lärdom: **ja**, `2026-09-14 —
+  dokumentation: (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte
+  längre finns i koden`, och `2026-09-14 — dokumentation: "674 varv" är antalet
+  för ett annat today än det meningen själv namnger`)
+- **Kontraktet för det injicerade `addMonths` dokumenteras i stället för att
+  bevakas: "går att anropa" och "flyttar framåt" får ingen spärr** — granskaren
+  mätte att `typeof addMonths !== 'function'` täcker ett av kontraktets led:
+  `typeof (class C {})` är `'function'`, så en klass passerar raden och anropet
+  ger `TypeError: Class constructor C cannot be invoked without 'new'`, och en
+  funktion som inte flyttar `occurrence` framåt hänger för alltid
+  (`timeout 8`, `EXIT=124`). Ledet "ger ett datum" har en ägare som håller,
+  `compareIsoDates`. Att bygga spärrar för de andra två förkastades. Ingen kod i
+  `src/` skickar ett tredje argument, så en sådan spärr kan bara nås av ett test
+  skrivet för spärren själv — det är den konstruktion projektet redan tagit bort
+  två gånger. "Går att anropa" går dessutom inte att avgöra utan att anropa, och
+  ett `try`/`catch` runt anropet skulle sätta modulens namn på varje `TypeError`
+  som uppstår inne i `addMonthsClamped`; "flyttar framåt" går bara att avgöra med
+  ett tak på antalet varv, och taket är redan förkastat i samma avsnitt. Kvar
+  står att skriva ut vad som gäller: en tabell med ett led per rad och ägaren
+  utskriven, ett testfall som asserterar att en klass ger `TypeError` och inte
+  `RangeError` — så att den dokumenterade gränsen faller om någon senare inför en
+  spärr utan att ändra beslutet — och ett förbud mot testfall som skickar in en
+  icke-framåtskridande funktion, eftersom en hängning inte ger någon exitkod.
+  `typeof`-radens löfte skrevs samtidigt om till det den gör: den avgör ett
+  meddelande utan att anropa något. Termineringsbeviset knöts till förvalet på
+  båda ställena det står, i algoritmavsnittet och i det nya stycket, och
+  kommentaren i `nextDueDate` ska säga samma sak. **Byggaren ska:** skriva om
+  kommentaren i korrigeringsloopen så att den namnger `addMonthsClamped` som den
+  storhet beviset vilar på och säger att parametern inte bevakas på den punkten,
+  och lägga till klassfallet i testlistan för `addMonths`. (påverkat av lärdom:
+  **ja**, `2026-09-14 — schedule: spärren för det injicerade addMonths täcker
+  bara halva sin egen motivering`, `2026-09-04 — test: två konstruktioner i
+  storage.js körs aldrig och överlever mutation`, och `2026-09-04 — test:
+  storage-testet hänger för alltid i stället för att falla när barnprocessen inte
+  startar`)
+- **(S3) mäter två poster med var sin räknare, och den andra posten bär en undre
+  gräns utöver taket** — den här posten hör till runda 3:s första fynd och skrevs
+  först nu; rättningen gjordes då i testfilen medan det stycke som föreskriver
+  (S3):s konstruktion lämnades kvar i den underkända lydelsen, så kravlistan
+  beskrev under en hel runda ett test som var strikt svagare än det byggda. Fyndet
+  var att båda occurrence-stegen går genom `addMonths`, men att ett tak bara kan
+  fällas av *fler* anrop: ett steg som slutar gå genom parametern ger *färre*
+  anrop och är därför osynligt för ett tak, och en post vars korrigeringsloop kör
+  noll varv räknar dessutom bara ett av de två stegen. Alternativen prövades och
+  förkastades. Ett exakt antal anrop för en post: förkastat av samma skäl som
+  tidigare — det blir falskt av en tillåten omskrivning av steg 2. Ett tak på ett
+  *lägre* tal: förkastat, ett tak fäller fortfarande bara arbete som växer. En
+  räknare per anropsställe inne i `nextDueDate`: förkastad, det vore en
+  produktionsrad som bara ett test når, samma konstruktion filen redan tagit bort
+  två gånger. Kvar står lärdomens egen form: två poster, var sin räknare, och på
+  den post vars korrigeringsloop kör minst ett varv en undre gräns **och** ett
+  tak, med loopkroppen och steg 2 utpekade i meddelandet. Priset skrivs ut i
+  stället för att döljas: den undre gränsen är hårdare knuten till algoritmens form
+  än taket, så en tillåten omskrivning av steg 2 som hoppar förbi `today` skulle
+  fälla den och skylla på fel orsak — det står nu i (S3)-stycket tillsammans med
+  vad nästa läsare ska göra då, nämligen välja om gränsens indata och inte ta bort
+  gränsen. Mutationstabellen fick samtidigt två nya rader för (S3): de två
+  routningsmutationerna stod bara i en kodkommentar i `src/core/schedule.js`, och
+  en mutation som bara står i en kodkommentar går inte att slå upp av nästa
+  byggare. (påverkat av lärdom: **ja**, `2026-09-14 — test: loopkroppens väg genom
+  addMonths skyddas av inget test, och tas den bort överlever också den mutation
+  (S3) byggdes för`, `2026-09-15 — dokumentation: (S3):s kravlista föreskriver den
+  form granskningen underkände, inte den som byggdes`, och `2026-09-04 — test: två
+  konstruktioner i storage.js körs aldrig och överlever mutation`)
+- **Punkt 8 delades i två utfall: ett barn som dör fäller testet, ett barn som
+  aldrig hör av sig ger en omtagning med tak** — den tidigare lydelsen band ihop
+  de två ("vinner något annat än meddelandet ska testet falla"), och granskarens
+  fynd visade vad det kostar: sviten gick röd en gång på 26 fullkörningar på en
+  idle maskin, på en enda fork som inte hann skicka `startar`. Testet forkar
+  mätomgången plus `N` barn per försök i punkt 7, och punkt 7 tillåter tre
+  försök, så en fullkörning startar många hundra barn — en missfrekvens i den
+  storleksordning granskaren såg gör en i övrigt grön svit röd med jämna
+  mellanrum. Byggaren lämnade tillbaka i stället för att bygga, vilket var rätt:
+  rättningen motsäger en bindande rad och är därmed arkitektens fråga.
+  Att avvisa ändringen och behålla lydelsen prövades och förkastades: en
+  slutgranskning av hela flödet kan inte vila på en svit vars utfall avgörs av
+  om en fork hann starta. Att i stället höja `CHILD_START_TIMEOUT_MS` prövades
+  och förkastades — det flyttar gränsen utan att ändra vad som händer vid den,
+  och en fork som inte schemalagts inom 30 sekunder blir inte mer sannolik att
+  ha schemalagts inom 60. Att göra om *varje* utfall prövades och förkastades:
+  `exit` och `error` är deterministiska fel (byggarens körning med felstavat
+  filnamn gav `exitCode=1` och en `stderr` som pekar ut modulladdaren, varje
+  gång), och en omtagning där upprepar bara samma fel och fördröjer beskedet.
+  De två utfallen är redan åtskilda i koden, som sätter utfallets sort innan
+  `assert.fail`, så avgränsningen är ett tillägg i dokumentet och inte en ny
+  konstruktion.
+  Omtagningen betyder olika saker på testets två anropsställen, och båda står nu
+  utskrivna: i mätomgången finns ingen omgång att kassera, så `tKlar` mäts om
+  från början, medan ett kasserat varv i omgångsloopen körs om med **samma**
+  `delays[i]`. Att hoppa över varvet prövades och förkastades — det lämnar ett
+  hål i det fönster punkt 3 lägger ut jämnt över skrivningen, och punkt 4:s båda
+  grenar blir svårare att nå av ett skäl som inte har med skrivningen att göra.
+  Priset skrivs ut i stället för att döljas: en omtagning **döljer** ett barn
+  som systematiskt inte hinner starta, och det är därför taket finns.
+  `MAX_CHILD_START_RETRIES` är testövergripande och inte per väntan, eftersom
+  ett tak per väntan släpper igenom hur många spridda omtagningar som helst och
+  varje omtagning kostar upp till `CHILD_START_TIMEOUT_MS` i körtid. Nås taket
+  faller testet med antalet omtagningar, orsaken och barnets `exitCode`,
+  `signalCode` och `stderr` — en systematisk startoförmåga ger alltså fortfarande
+  rött, bara efter ungefär fyra spärrlängder i stället för en. Värdet `3` är
+  skrivet som ett val och inte som en mätning, med den saknade mätningen
+  utpekad. Namnet blev `RETRIES` och inte `ATTEMPTS`, som byggaren föreslog,
+  därför att punkt 7 redan använder ordet *försök* om sina tre uppsättningar.
+  Punkt 7 fick en egen mening om att en startomtagning inte förbrukar något av
+  de tre försöken: de justerar `windowFactor` och `entryCount` efter räknarna,
+  och ett barn som aldrig startade ger inget underlag för någondera. Byggarens
+  bedömning att taket inte är en ny tidsberoende konstruktion prövades och
+  håller i två led: undantagslistans egen kontroll är en sökning efter
+  `setTimeout`, `AbortSignal.timeout`, `Promise.race` och `performance.now`, och
+  en räknarkonstant träffas inte av något av mönstren — men viktigare är att ett
+  kasserat varv inte rör `gamlaListan` eller `barnetsLista`, så taket kan inte
+  påverka utfallet av ett prov som blev av. Undantagstabellens rad för
+  `tests/storage.test.js` beskrev tre `exit`-fall som spärrens villkor; den är
+  omskriven till den fork som hänger, och avvikelsen "spärren fäller inte ensam"
+  står nu i stycket ovanför tabellen, så att tabellen och punkt 8 inte ger olika
+  besked om samma rad. **Byggaren ska:** låta väntan på `startar` returnera sitt
+  utfall i stället för att fälla testet på egen hand, fälla omedelbart på `exit`
+  och `error` med `exitCode`, `signalCode` och `stderr`, och på `timeout` döda
+  barnet, invänta dess `exit`, räkna upp en testövergripande räknare och göra om
+  uppsättningen — mätomgången från en ny mätning av `tKlar`, ett varv i loopen
+  från `await saveEntries(before)` med samma `delays[i]`; införa
+  `MAX_CHILD_START_RETRIES = 3` i `tests/storage.test.js`, låta den timeout som
+  skulle bli omtagning nummer fyra fälla testet med antalet omtagningar och
+  orsaken utskrivna, skriva ut antalet startomtagningar i samma svep som punkt
+  7:s mätvärden också när det är `0`, och redovisa två körningar: en med barnets
+  filnamn felstavat (ska ge exit 1 inom några sekunder med ett `exitCode` som
+  inte är `null` och en `stderr` som inte är tom) och en i en kopia av trädet med
+  `CHILD_START_TIMEOUT_MS` satt till `1` (ska falla på taket med orsaken
+  `timeout`). (påverkat av lärdom: **ja**, `2026-09-04 — test: storage-testet
+  hänger för alltid i stället för att falla när barnprocessen inte startar`,
+  `2026-09-07 — dokumentation: ARKITEKTUR.md förbjuder den millisekundkonstant
+  LARDOMAR.md kräver`, `2026-09-07 — test: kravet "två anrop i rad" gav
+  kontraktstestet en loop som inte kan fälla någon mutation`, och `2026-09-04 —
+  test: två konstruktioner i storage.js körs aldrig och överlever mutation`)
+- **`src/core/schedule.js` fick en egen numrerad spärrtabell, och `upcoming`
+  skrevs som funktionens gång i stället för som en tabell** — modulen kallade sig
+  själv ägare av hela sin indatakedja, men kedjan och merparten av dess svenska
+  strängar gick inte att slå upp i den här filen. Följden var mätbar och inte
+  teoretisk: utan en utskriven sträng kunde testfallet för det frysta uppslaget
+  bara asserta feltypen, och feltypen delas av varje spärr i modulen och av
+  `dates.js` — så mutationen av just den raden överlevde med grön svit. Formen är
+  hämtad från `cost.js`, som fick sin tabell av samma skäl. `nextDueDate` blir en
+  numrerad tabell därför att dess villkor körs sekventiellt i en enda funktion.
+  `upcoming` blir det **inte**: dess villkor varvas med `nextDueDate`-kedjan i en
+  loop över posterna, och en numrerad tabell skulle där ge ett annat svar än
+  koden. I stället står loopens ordning som pseudokod, följd av indata där mer än
+  ett villkor är sant samtidigt och det vinnande meddelandet utskrivet — samma
+  behandling som `totalYearlyOre` redan har. Den tidigare enradstabellen för det
+  injicerade `addMonths` togs bort ur "Steg 2 görs mätbart" och ersattes av en
+  hänvisning till rad 5, så att villkoret och strängen har exakt ett hem; det
+  avsnittet behåller sitt eget ämne, alltså varför raden står sist och vad den
+  inte lovar. Meningen om "de fyra befintliga radernas företräde" pekar nu på
+  tabellens rad 1 till rad 4, som går att slå upp. **Byggaren ska:** köra varje
+  indata i tabellen över samtidigt sanna villkor, skriva dem som
+  testfall i `tests/schedule.test.js` och klistra in utdatan; kontrollen innan
+  paketet lämnas vidare är att slå upp varje sträng som
+  `src/core/schedule.js` skickar till `new RangeError(...)` i det här dokumentet,
+  och ingen får saknas. (påverkat av lärdom: **ja**, `2026-09-16 —
+  dokumentation: schedule.js:s sex felmeddelanden och spärrordning står inte i
+  ARKITEKTUR.md, som ändå hänvisar till "de fyra befintliga raderna"`,
+  `2026-09-02 — dokumentation: totalYearlyOre-tabellen numrerar spärrarna i en
+  ordning koden inte följer`, och `2026-08-23 — dokumentation: två facit i samma
+  fil ger olika svar för samma belopp`)
+- **(S4): det frysta uppslagets testfall asserterar hela `message`** — en
+  `assert.throws` mot enbart `RangeError` kan inte skilja en spärr från en annan
+  spärr längre ned i kedjan, och därför överlevde mutationen av
+  `Object.hasOwn`-raden. Att lägga till fler prototypnycklar i listan prövades och
+  förkastades: nycklarna fanns redan där, och det var assertionens form och inte
+  urvalet som var hålet. Punkten numreras trots att kravet "hela `message`" gäller
+  varje rad i spärrtabellen, därför att serien numrerar de fall som ensamt fäller
+  en namngiven mutation — och mutationstabellen för `tests/schedule.test.js` fick
+  raden i samma ändring. **Byggaren ska:** skriva om prototypnycklarna i
+  testfallet `nextDueDate kastar RangeError för ett interval utanför tabellen` så
+  att var och en kräver hela meddelandet, köra mutationen i tabellen och klistra
+  in kryssraden. (påverkat av lärdom: **ja**, `2026-09-16 — test:
+  Object.hasOwn-spärren i schedule.js överlever mutation, och testkommentaren
+  namnger ett skydd assertionen inte ger`, och `2026-08-23 — test: kontrollen av
+  antalet fält i isEntry skyddas inte av något test`)
+- **Punkt (26): datumcellen får ett testfall där `nextDueDate` skiljer sig från
+  `startDate`** — facitraden för cellen hade ingen mutation och inget testfall som
+  kunde falla, eftersom all testdata i `tests/app.test.js` har ett `startDate`
+  som ligger idag eller de närmaste dagarna. För en post som startar i framtiden
+  ger steg 2 `k = 0`, så de två fälten bär samma sträng och assertionen kan inte
+  se vilket av dem koden läser. Att i stället skriva om celltabellen till "datumet
+  som visas" prövades och förkastades — facit ska säga vilket fält som läses, och
+  det är just det påståendet som saknade skydd. Kravet skrevs som ett krav på
+  **testdatan** och inte på assertionen, eftersom det är datan som gör skillnaden
+  synlig, och regeln generaliserades till varje cell i kortet. **Byggaren ska:**
+  lägga in en post med `startDate: '2020-03-31'` och `interval: 'quarterly'` i
+  fallet, jämföra cellen mot `upcoming(entries, idag)`:s `nextDueDate` för samma
+  post, och köra mutationen i punkt (26):s tabell med kryssraden inklistrad.
+  (påverkat av lärdom: **ja**, `2026-09-16 — test: datumkolumnen i kortet
+  Kommande dragningar kan bytas mot startDate utan att något test faller`, och
+  `2026-09-12 — test: språkargumentet 'sv' i localeCompare skyddas inte, eftersom
+  maskinens eget språk är sv-SE`)
+- **Mutationen för dagtexten skrevs om till kodens eget uttryck** — raden
+  citerade `item.daysUntil === 1`, som är namnet på anropsstället; villkoret står
+  i `daysText(daysUntil)` och bär där namnet `daysUntil`. En mutation som inte går
+  att tillämpa ordagrant hör inte hemma i en lista som kräver en körning per rad,
+  och det är andra gången samma fel rättas i den här filen. Raden stod i löptext
+  och inte i en tabell, och det var därför `grep -c`-kontrollen inte kördes mot
+  den: kontrollen gäller nu båda formerna. (påverkat av lärdom: **ja**,
+  `2026-09-16 — dokumentation: mutationsraden i kravlistan för (21) till (23)
+  citerar ett uttryck som inte finns i app.js`, och `2026-09-14 — dokumentation:
+  (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte längre finns i
+  koden`)
+- **`daysUntilNextDue` tas bort ur `src/core/schedule.js`** — exporten hade ingen
+  anropare i `src/`: sökningen efter namnet där ger definitionen och ingenting
+  annat, medan `src/web/app.js` läser fältet `daysUntil` ur `upcoming`. Lärdomen
+  ger tre utgångar och alla tre prövades. *Att behålla exporten med raden "ingen
+  anropare i `src/` sedan paket N — behålls därför att ..." förkastades:* skälet
+  går inte att skriva sant. Den enda andra exporten i projektet som bär den raden,
+  `saveEntries`, har ett omöjlighetsskäl — ingen annan väg kan sätta ett känt
+  utgångsläge på disk — och här finns inget motsvarande. Funktionen äger inget
+  begrepp: räkningen ägs av `daysBetween` i `dates.js` och datumet av
+  `nextDueDate`, och kroppen är de två satta efter varandra. Varje prov den bär
+  går att skriva mot `upcoming`. *Att låta `upcoming` anropa den förkastades:*
+  `upcoming` behöver `nextDueDate` både till fältet och till sorteringen, så ett
+  anrop av `daysUntilNextDue` skulle räkna fram nästa dragning en andra gång per
+  post, vid varje laddning, sparning och borttagning. Det är dubbelt arbete för en
+  garanti mot glidning som redan har ett testfall, och det motsäger avsnittet
+  "Steg 2 görs mätbart", som gör just arbetet i `nextDueDate` till ett eget krav.
+  Kvar står att ta bort den. Priset skrivs ut i stället för att döljas: proven för
+  "dagar kvar" blir omständligare, eftersom var och en måste gå genom en lista och
+  plocka ut fältet, och `upcoming` blir enda vägen till storheten.
+  **Byggaren ska:** ta bort `export function daysUntilNextDue` ur
+  `src/core/schedule.js`; ta bort namnet ur importraden i
+  `tests/schedule.test.js`; skriva om testfallen i blocket som i dag står under
+  rubrikkommentaren för funktionen så att de prövar fältet `daysUntil` i
+  `upcoming([...], today)` med oförändrad indata och oförändrade förväntade tal,
+  och namnge `upcoming` i testnamnen; ta bort raden som prövar
+  `daysUntilNextDue(new Date(), '2026-08-18')`, eftersom raden intill redan prövar
+  samma sak genom `upcoming([new Date()], '2026-08-18')`; skriva om testfallet
+  `upcoming räknar samma svar som daysUntilNextDue och nextDueDate för varje post`
+  så att `daysUntil` jämförs med `daysBetween(today, rad.nextDueDate)`, med
+  `daysBetween` importerad från `../src/core/dates.js` — ägarfunktionen, inte en
+  handskriven kopia av uttrycket; slå ihop de prov som efter omskrivningen blir
+  ordagrant samma som ett befintligt `upcoming`-fall och redovisa varje
+  sammanslagning; och köra `npm test` med `fail 0` och exit 0. (påverkat av
+  lärdom: **ja**, `2026-09-16 — arkitektur: daysUntilNextDue byggdes utan
+  anropare i src/ och utan den märkning gränssnittsblocket kräver`, `2026-09-07 —
+  arkitektur: saveEntries blev en export utan anropare i src/ när updateEntries
+  togs i bruk`, och `2026-09-02 — datamodell: cost.js har en egen, svagare kopia
+  av "är detta ett objekt"`)
+- **Klockan `app.js` läser injiceras av laddaren; `tests/app.test.js` slutar läsa
+  den verkliga klockan, och förbudet står kvar oförändrat** — granskaren mätte att
+  filen läste klockan på sju ställen medan kontrollen som skulle förbjuda det gav
+  noll träffar, och att en midnattspassage gör filen röd på oförändrad
+  produktionskod. Två utgångar fanns och den ena är vald. *Att i stället skriva in
+  ett undantag för `todayIso()` och dokumentera midnattsspärren förkastades*, av
+  tre skäl. `CLAUDE.md` säger att klockan läses på exakt ett ställe och att allt
+  annat tar dagens datum som parameter, "annars går de inte att testa" — ett
+  undantag i den här filen kan inte upphäva det. Ett test som räknar fram sitt
+  facit ur samma klocka som koden under prov är dessutom samma sorts svaghet som
+  `'sv'` i `localeCompare` på en svensk maskin och som `let k = 0`: två uttryck som
+  sammanfaller för all testdata. Och filen kan då aldrig pröva någon annan dag än
+  den dag den råkar köras, vilket är precis vad punkt (27) behöver. *Att byta ut
+  `globalThis.Date` eller `Date.now` i testprocessen förkastades:* det träffar
+  varje modul i processen, inte bara den som prövas, och ersättning av en inbyggd
+  konstruktion är det projektet redan har behövt skriva ett eget stycke för
+  (`LARDOMAR.md` 2026-09-14). *Att låta `renderUpcoming` ta dagen som parameter
+  förkastades:* anroparen i `app.js` måste ändå läsa klockan någonstans, och
+  flyttas läsningen till `loadAndRender` eller till modulens toppnivå blir
+  beteendet i en flik som stått öppen över midnatt sämre — parametern vore
+  dessutom en parameter utan annan anropare än testet. Kvar står att laddaren äger
+  klockan, precis som den redan äger `document` och `fetch`: i webbläsaren kommer
+  `todayIso` över nätet, i en Node-körning ur `tests/helpers/frozen-dates.js`.
+  Kontrollen skrevs samtidigt om från sex metodnamn till de objekt ett tidsvärde
+  kan komma ur, eftersom en sluten stavningslista nu har missat sitt mål fyra
+  gånger i projektet. **Byggaren ska:** skapa `tests/helpers/frozen-dates.js`
+  enligt punkt 2 och 3 under "Klockan som `app.js` läser är injicerad, inte
+  verklig"; bygga ut laddaren enligt punkt 1, 4, 5 och 6 där; ta bort importen av
+  `todayIso` ur `tests/app.test.js` tillsammans med hjälpfunktionerna för
+  midnattsspärr och datumaritmetik och varje anrop av dem; lägga in konstanterna
+  och `starta`-argumentet enligt punkt 7 och skriva om paket 7:s testfall så att
+  de bygger sina poster ur `FRYST_IDAG` som inskrivna datumsträngar, utan
+  datumaritmetik; lägga till punkt (27); köra den nya kontrollen och kräva noll
+  träffar i `tests/app.test.js` och `tests/helpers/dom.js`; köra
+  prövningsstavningarna `Date.UTC(2026, 0, 1)` och `Temporal.Now.plainDateISO()`
+  och klistra in en träff för var och en; köra mutationen i punkt (27) och klistra
+  in kryssraden; och köra `npm test` med `fail 0` och exit 0. (påverkat av lärdom:
+  **ja**, `2026-09-22 — test: tests/app.test.js läser klockan sju gånger, och
+  kontrollen som ska förbjuda det ser ingenting`, `2026-09-12 — test:
+  språkargumentet 'sv' i localeCompare skyddas inte, eftersom maskinens eget språk
+  är sv-SE`, och `2026-09-07 — test: en fjärde hängningsspärr byggdes utan den rad
+  ARKITEKTUR.md kräver för den`)
+- **Radelementets `className` och `tagName` får var sin assertion, i båda
+  renderingsfunktionerna: punkt (28) och (29)** — klassen är enda kopplingen mellan
+  raden och de regler `style.css` skriver för `.upcoming` respektive `.entry`, och
+  den kopplingen gick att bryta med grön svit. Mutationslistan för kortet räknade
+  upp allt som är *innehåll* — nollställningarna, dagtexten, datumcellen — och
+  radelementet självt bär ingen text och hamnade utanför, trots att listan ska
+  genereras ur den ändrade filen och inte ur det här dokumentet. *Att låta
+  `style.css` få ett eget automatiskt test förkastades:* det kräver en
+  CSS-tolkare, alltså projektets första beroende, för att pröva en koppling vars
+  ena ände redan går att asserta med en rad i en fil som körs. *Att nöja sig med
+  punkt (28) och lämna `renderEntries` förkastades:* hålet är mätt i båda
+  funktionerna, och en regel som bara gäller den senast skrivna av två likadana
+  rader är ingen regel. Kravet är därför skrivet om varje element `app.js` skapar
+  och inte om de två rader som är kända i dag, och det fick ett eget avsnitt så
+  att regeln och testfallen har ett hem. **Byggaren ska:** skriva testfallen (28)
+  och (29) med namnen i tabellen, köra var och en av de fem mutationerna i
+  tabellen separat med `EXIT=1` och kryssraden inklistrad, köra `grep -c` för
+  varje uttryck före pilen mot `src/web/app.js` och kräva minst `1`, köra
+  klassnamnskontrollen från `app.js` till `tests/app.test.js` och redovisa
+  utdatan, och köra `npm test` med `fail 0` och exit 0. (påverkat av lärdom:
+  **ja**, `2026-09-22 — gränssnitt: radens egen klass i kortet Kommande
+  dragningar överlever mutation`, `2026-09-12 — gränssnitt: renderUpcomings två
+  nollställningar överlever mutation och kortet motsäger sig självt`, och
+  `2026-09-16 — dokumentation: mutationsraden i kravlistan för (21) till (23)
+  citerar ett uttryck som inte finns i app.js`)
+- **Kravet på `assert.throws` smalnades till den roll det har, i stället för att
+  tolv assertioner skrevs om** — lydelsen "varje `assert.throws` ... asserterar
+  hela `message`" skrevs i samma runda som tolv assertioner i `tests/schedule.test.js`
+  bär enbart feltypen, och en granskare kunde därför inte avgöra om en sådan rad
+  var ett fel eller ett godtaget undantag. *Att behålla kravet brett och skriva om
+  de tolv förkastades:* granskarens två försvagningsmutationer fälls redan, så
+  omskrivningen köper ingen upptäcktsförmåga, och den skulle göra de breda
+  typlistorna — `1n`, `Symbol('x')`, `null`, `[]`, `new Date()` — till tolv
+  kopior av samma sträng, alltså fler ställen att hålla i synk när ett meddelande
+  ändras. Det som verkligen bär skyddet är att **varje spärr har minst en**
+  fullmeddelandeassertion, och det var precis den egenskapen som saknades när rad
+  2 överlevde sin mutation. Kravet är därför skrivet om den assertionen, och
+  undantaget för en bredare värdeuppräkning står utskrivet. Regeln fick samtidigt
+  det som gjorde den ofullständig: ett mekaniskt villkor, en sökning per spärr på
+  meddelandets fasta del i testfilen, som säger ifrån när en spärr saknar sin
+  assertion. **Byggaren ska:** köra sökningen för varje rad i spärrtabellen och
+  för varje `-> RangeError:` i `upcoming`-pseudokoden mot
+  `tests/schedule.test.js`, klistra in utdatan, och lämna tillbaka paketet till
+  arkitekten om någon sökning saknar träff i stället för att lägga till en
+  assertion på eget bevåg. (påverkat av lärdom: **ja**, `2026-09-22 —
+  dokumentation: "Varje assert.throws ... asserterar hela message" skrevs i samma
+  runda som tolv assert.throws utan message`, och `2026-09-07 — dokumentation:
+  ARKITEKTUR.md förbjuder den millisekundkonstant LARDOMAR.md kräver`)
+- **Räkneordet ströks ur meningen som inleder celltabellen, och kontrollen mot
+  konstruktionen fick formen i stället för en ordlista** — "Raden har tre celler:"
+  bar antalet som tabellen under den redan bär. Det är femte gången samma
+  konstruktion skrivs i den här filen, och andra gången den mekaniska kontrollen
+  mot den missar sitt mål: substantivlistan hade inget ord för `celler`. *Att
+  lägga till `celler` i listan förkastades* av samma skäl som gjorde kommando A
+  otillräckligt — en lista som fylls på med det ord som senast råkade fela kan
+  bara hitta de fel som redan är kända. Mönstret är därför förankrat i formen, ett
+  räkneord följt av ett eller två ord och kolon sist på raden, och har ingen
+  ordlista alls. Kommandot kördes mot hela filen och varje träff lästes: två
+  meningar till bar sitt blocks antal och skrevs om utan tal — meningen som
+  inleder tabellen över kanonisk form och meningen som inleder tabellen över
+  arkitektens kostnadskörning. Flaggan `-i` kom till i samma körning: utan den
+  går varje räkneord som inleder en mening förbi, och två sådana rader stod i
+  filen — uppräkningen av låsets fall i teststrategin och uppräkningen av
+  åldringskontrollens utfall. Också de skrevs om utan tal. Kvarvarande träffar
+  räknar något annat än ett blocks rader — ett scenario med två överlappande
+  anrop, ett belopp med `100,00` och en `grep`-mätning som redovisas med sitt
+  kommando — och lämnades, vilket är det andra av kontrollens två utfall.
+  (påverkat av lärdom: **ja**,
+  `2026-09-22 — dokumentation: "Raden har tre celler:" står före uppräkningen, och
+  kontrollen mot det saknar ordet celler`, `2026-09-12 — dokumentation: "omfattar
+  den fem element" står tre rader ovanför en uppräkning med sex`, och `2026-09-10
+  — dokumentation: "Två nya id:n" i samma stycke som kräver tre FakeElement`)
+- **`createElement`-kravet smalnades till rollen, och de element rollen
+  fortfarande träffar fick punkt (30) och (31)** — lydelsen "både `className` och
+  `tagName` för varje element" var bredare än de punkter som byggde den: `span`
+  och `button` hade klass men inte typ asserterad, `option` ingendera, och
+  byggaren byggde riktigt nog inget utan en punkt. Det är samma form som kravet på
+  `assert.throws` i samma runda, alltså andra gången ett bindande "varje" skrivs
+  bredare än det som byggs, och utgången är därför densamma: kravet skrivs om till
+  det skäl det har. Skälet är kontraktet, inte egenskapens namn — klassen därför
+  att `style.css` väljer på den, elementtypen därför att en selektor kan namnge
+  den (`button.remove`) eller en förälder kräva den (`<ul>` tar `<li>`,
+  `<select>` visar bara `<option>`). Med rollen utskriven blir svaret olika per
+  element, och tabellen ger det: `span` i `cell` får ett **uttryckligt undantag**
+  för elementtypen, eftersom ingen selektor i `style.css` namnger den och rutnätet
+  tar vilket barn som helst, medan `button` och `option` får var sin punkt — för
+  knappen är typen halva selektorn `button.remove` och bär därmed också det
+  spärrade lägets regler, och för valen är typen skillnaden mellan en fylld och en
+  tom rullgardin. *Att behålla kravet brett och ge `span` en typassertion
+  förkastades:* en assertion som ingen selektor och inget föräldrakontrakt beror på
+  fäller bara en ändring som ingen ser, och den vore ett andra facit att hålla i
+  synk när en cell byter element. *Att stryka kravet och nöja sig med (28) och
+  (29) förkastades:* knappens typ bär en bindande `style.css`-regel och valens typ
+  bär formulärets användbarhet — båda är hål, inte smak. **Byggaren ska:** skriva
+  testfallen (30) och (31) med namnen i tabellen; köra de två mutationerna i
+  tabellen var för sig med `EXIT=1` och kryssraden inklistrad; dessutom köra
+  `remove.className = 'remove';` → `remove.className = 'delete';` och visa att det
+  är punkt (12) som faller; köra `grep -c` för varje uttryck före pilen mot
+  `src/web/app.js` och kräva minst `1`; köra båda sökningarna i "Kontrollen som
+  hittar nästa sådant hål" och redovisa utdatan; och köra `npm test` med `fail 0`
+  och exit 0. (påverkat av lärdom: **ja**, `2026-09-22 — dokumentation: "Varje
+  assert.throws ... asserterar hela message" skrevs i samma runda som tolv
+  assert.throws utan message`, `2026-09-22 — gränssnitt: radens egen klass i kortet
+  Kommande dragningar överlever mutation`, och `2026-09-14 — test: fyra
+  obligatoriska testfall byggdes utan sin rad i ARKITEKTUR.md`)
+- **Stubbens formkontroll får punkt (32); kastet när ingen dag är satt skrivs ut
+  som avsiktligt oprövat** — de två spärrarna i `tests/helpers/frozen-dates.js`
+  överlever var sin mutation, och frågan lärdomen `2026-09-04` ställer har olika
+  svar för dem. Ingen av dem är död kod: byggarens körningar nådde båda genom att
+  ändra laddaren, så borttagningskravet för en gren ingen indata når gäller inte —
+  skillnaden mellan **onåbar** och **nåbar men oprövad** är skriven ut i avsnittet,
+  eftersom det är just den skillnaden nästa granskare ska kunna avgöra.
+  Formkontrollen nås med en rad i `tests/app.test.js` och får därför ett testfall:
+  argumentet `'imorgon'` går genom laddarens väg att byta dag och läser ingen
+  klocka, så klockkontrollen står orörd. Kastet när ingen dag är satt nås bara av
+  en laddare som importerar `app.js` utan att sätta dagen. *Att skriva ett testfall
+  för det förkastades:* den enda vägen dit ur testfilen är att anropa `todayIso()`
+  där, och varje sådan väg är en träff i klockkontrollen, som inte får något
+  undantag — ett undantag där vore att återinföra hålet i fynd 1. *En egen testfil
+  för mätapparaten förkastades* av samma skäl, med tillägget att den skulle stå
+  utanför klockkontrollens fillista och att ingen annan hjälpfil har en sådan fil.
+  *Att ta bort grenen förkastades:* utan den byter ett glömt sättande ut ett
+  svenskt besked som pekar ut laddaren mot ett fel längre in i `src/core/`, vilket
+  byggarens körning mätte — grenen är diagnostik för nästa byggare, och beslutet
+  att den saknar testfall står skrivet så att det inte behöver upptäckas en gång
+  till. **Byggaren ska:** skriva testfallet (32) med namnet i tabellen och kräva
+  hela meddelandet, inte bara feltypen; köra mutationen i tabellen med `EXIT=1` och
+  kryssraden inklistrad; köra `grep -c` på uttrycket före pilen mot
+  `tests/helpers/frozen-dates.js` och kräva minst `1`; skriva in en rad i
+  kommentaren över kastet som hänvisar till det här beslutet; köra klockkontrollen
+  och kräva oförändrat noll träffar; och köra `npm test` med `fail 0` och exit 0.
+  (påverkat av lärdom: **ja**, `2026-09-04 — test: två konstruktioner i storage.js
+  körs aldrig och överlever mutation`, `2026-09-07 — lagring:
+  felsökningsutskrifter lämnades kvar i src/server/storage.js`, och `2026-09-22 —
+  test: tests/app.test.js läser klockan sju gånger, och kontrollen som ska förbjuda
+  det ser ingenting`)
+- **Kolumnrubriken "ensamt fäller" byttes mot kravet att punktens egen kryssrad
+  står i utfallet, och raden för (30) fick en not** — rubriken var ett påstående om
+  varje rad i tabellen, och byggarens körning visade att den inte höll för (30):
+  DOM-attrappen plockar Ta bort-knappen med `button[type="button"]`, en selektor
+  som matchar på elementtypen, så de befintliga borttagningsfallen faller med.
+  Tredje gången i samma paket att en formulering är bredare än det som gäller —
+  efter `assert.throws`-kravet och `createElement`-kravet — och utgången är
+  densamma: skriv kravet så att det går att avgöra rad för rad. *Att stryka punkt
+  (30) förkastades:* de äldre kryssraderna namnger borttagning och inte
+  elementtypen, så en granskare som bara ser dem letar på fel ställe; punktens
+  värde ligger i vad kryssraden säger, inte i att den är ensam. *Att skriva om
+  rubriken till "fäller" utan not förkastades:* då försvinner den upplysning nästa
+  granskare behöver för att avgöra raden utan att köra om allt. Rubrikerna i de
+  andra mutationstabellerna lämnades då oförändrade, med motiveringen att deras
+  rader var redovisade som ensamma fällare — den motiveringen höll inte, och
+  nästa punkt i loggen rättar den och byter rubrik i samtliga tabeller. Byggaren
+  redovisar hädanefter vilka testfall som faller per mutation i den här tabellen.
+  (påverkat av lärdom: **ja**, `2026-09-22
+  — dokumentation: "Varje assert.throws ... asserterar hela message" skrevs i samma
+  runda som tolv assert.throws utan message`, `2026-08-23 — test: kontrollen av
+  antalet fält i isEntry skyddas inte av något test`, och `2026-09-14 —
+  dokumentation: (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte
+  längre finns i koden`)
+- **Rubriken byttes i samtliga mutationstabeller, och mekanismen som gjorde två
+  rader osanna skrevs in** — motiveringen "deras rader är redovisade som ensamma
+  fällare" var ett skäl att inte köra, och ett skäl räknas aldrig som en körning.
+  Granskarens rad-för-rad-körning visar varför: (24) och (26) ger `fail 2`, och
+  den andra kryssraden är i båda fallen punkt (27), som skrevs i samma runda.
+  Mekanismen är värd mer än rättningen — **ett nytt testfall kan göra en äldre
+  rads ensamhet falsk utan att någon rör raden** — och den står nu som en egen
+  regel under "Teststrategi", tillsammans med kravet att en tabell körs om när ett
+  nytt fall rör samma vy eller funktion. *Att köra om alla fem tabellerna varje
+  rond och skriva in de faktiska kryssraderna förkastades:* det är en skyldighet
+  som växer med varje nytt testfall och som just har visat sig omöjlig att komma
+  ihåg, medan kravet "punktens egen kryssrad står i utfallet" är avgörbart rad för
+  rad och inte blir falskt av ett tillägg. Ensamheten är därmed ingen del av
+  kravet men fortfarande en upplysning, och den hämtas ur byggarens redovisning av
+  vilka fall som faller. (24) och (26) fick var sin not av samma form som (30).
+  Två meningar som bar samma ensamhetspåstående skrevs om i samma ändring:
+  kravlistans inledning för `tests/schedule.test.js` och motiveringen till att
+  (S4) numreras. **Byggaren ska:** skriva ut vilka testfall som faller för varje
+  mutation i varje tabell paketet kör. (påverkat av lärdom: **ja**, `2026-09-22 —
+  dokumentation: "deras rader är äkta ensamma fällare" skrevs om fem tabeller utan
+  att någon av dem kördes om`, och `2026-09-10 — dokumentation: "det är punkt (13)
+  som är dess test" prövades inte med den mutation punkt (14) prövades med`)
+- **Laddaren avvisar ett andra `loadApp` i samma testfall i stället för att
+  bokföra flera** — krav 5 lovade att det tidigare värdet läggs tillbaka, och
+  granskarens körning visar att två anrop i samma test lämnar den **första** dagen
+  kvar och båda globalerna satta, eftersom `node:test` kör `after`-hookar i
+  registreringsordning och den sist registrerade ögonblicksbilden vinner. *Att
+  hålla en räknare eller registrera hooken bara vid första anropet förkastades:*
+  båda gör bokföringen sann och lämnar den verkliga faran kvar, att två
+  modulinstanser i samma testfall delar `globalThis.fetch` och stubbens dag medan
+  båda har lyssnare på attrappens element — ett prov vars utfall ingen kan
+  resonera om. Avvisningen är den minsta mekanismen som gör kravet sant, och den
+  säger dessutom ifrån i stället för att tyst tillåta en konstruktion som ingen har
+  tänkt igenom. Behöver ett senare paket två instanser fattas det beslutet här,
+  med ett svar på vad de ska dela. Punkt (33) skyddar avvisningen, och att dagens
+  osatta läge inte asserteras är en följd av klockkontrollen och står utskrivet.
+  Ordern till byggaren stod här i presens och krävde en `WeakSet` nycklad på `t`
+  och ett efterföljande fall som asserterar `undefined` för båda globalerna. Båda
+  halvorna är upphävda av senare punkter i loggen — nyckeln av punkten om
+  `t.test`, `undefined` av punkten om körmiljöns inbyggda `fetch` — och ordern är
+  därför struken här i stället för att stå kvar som ett krav ingen får följa. Det
+  som byggdes: krav 8 med en spärr prövad före allt annat, punkt (33) och
+  mutationen i dess rad. (påverkat av lärdom: **ja**, `2026-09-22 — test: laddarens
+  återställning av den frusna dagen lämnar kvar den första dagen när loadApp
+  anropas två gånger i samma test`, och `2026-09-07 — lås: ett misslyckat andra
+  start() i samma process tar bort ett lås som fortfarande används`)
+- **`compareUpcoming` exporteras och får punkt (S5); löftet om ordningen fick sitt
+  villkor** — sista raden, `return 0;`, är modulens enda otäckta rad och överlever
+  sin mutation, samtidigt som filen lovade en ordning som "alltid" är stabil och
+  oberoende av inmatningsordningen. Två saker var fel, och båda är rättade. Löftet
+  gäller under villkoret att två poster skiljer sig på någon av de tre nycklarna —
+  för poster som är lika på alla tre är svaret `0`, sorteringen stabil och
+  ordningen den de kom in i, vilket är det enda möjliga och nu utskrivet. Och
+  raden ska prövas: en jämförare som inte är reflexiv är ett fel oavsett om det
+  syns i vyn. *Att skriva ut raden som avsiktligt oprövad förkastades:* grenen nås
+  av vanlig indata, provet är några rader, och ett löfte som vilar på en oprövad
+  rad är inte ett löfte. *Att asserta på den sorterade listan i stället för på
+  jämförarens svar förkastades:* ett sådant prov lutar sig mot hur körmiljöns
+  sortering behandlar en jämförare som inte är reflexiv. Därför exporten, som har
+  en anropare i `src/` och är samma sorts testsöm som det injicerade `addMonths`.
+  **Byggaren ska:** exportera `compareUpcoming`; skriva (S5) med två poster lika
+  på `nextDueDate`, `name` och `id`, med `0` asserterat i båda ordningarna och för
+  ett item mot sig självt; köra mutationen `return 0;` → `return 1;` med `EXIT=1`
+  och kryssraden inklistrad; köra `grep -rn "compareUpcoming" src/` och redovisa
+  att både definitionen och anropet syns; och köra täckningskörningen på nytt och
+  redovisa att ingen rad i `src/core/schedule.js` står otäckt. (påverkat av
+  lärdom: **ja**, `2026-09-22 — test: sista raden i compareUpcoming körs av inget
+  test och överlever mutation`, och `2026-09-16 — arkitektur: daysUntilNextDue
+  byggdes utan anropare i src/ och utan den märkning gränssnittsblocket kräver`)
+- **`setFrozenDay` byter ägare till `isValidIsoDate`, och (32) prövar
+  gränsvärdet** — spärren frågade `ISO_DATE_PATTERN`, alltså formen, medan två
+  kommentarer lovade att ett felskrivet argument fälls i laddaren och inte inne i
+  `schedule.js`. Granskarens körning: `2026-02-30` har rätt form, passerar
+  spärren, och faller sedan med `nextDueDate kräver ett dagens datum ...` från
+  `src/core/schedule.js` — exakt det kommentarerna säger att den inte gör.
+  `dates.js` har två ägare i samma modul, och valet mellan dem var underförstått:
+  `ISO_DATE_PATTERN` äger "rätt form", `isValidIsoDate` äger "finns i kalendern",
+  och det är den senare frågan spärren lovar ett svar på. *Att i stället skriva om
+  de två kommentarerna till "prövar bara formen" förkastades:* då står en
+  apparatspärr kvar som släpper igenom precis de värden som ger det förvirrande
+  felet längre in, och hela skälet till att spärren finns faller. Meddelandet
+  skrevs om så att det säger vad som prövas, och villkoret skrivs utan
+  `typeof`-kontroll, eftersom `isValidIsoDate` svarar `false` för varje värde som
+  inte är en sträng och en andra kontroll vore en gren ingen indata når.
+  **Byggaren ska:** byta villkoret och meddelandet enligt krav 3; skriva om (32):s
+  testfall så att det prövar både `'imorgon'` och `'2026-02-30'` med hela
+  meddelandet; köra den nya mutationsraden med `EXIT=1` och kryssraden inklistrad;
+  skriva om de två kommentarerna så att de namnger den valda ägaren och skälet,
+  och köra `grep -rn` på fem ord ur den gamla meningen i `src`, `tests` och
+  `ARKITEKTUR.md` före och efter med båda utfallen inklistrade. (påverkat av
+  lärdom: **ja**, `2026-09-22 — test: setFrozenDay släpper igenom kalenderogiltiga
+  datum, och kommentaren på två ställen påstår motsatsen`, och `2026-09-02 —
+  datamodell: cost.js har en egen, svagare kopia av "är detta ett objekt"`)
+- **Återställningen av `globalThis.fetch` jämförs med det inlästa värdet, inte
+  med `undefined`, och körmiljöns globaler blev ett villkor i miljöavsnittet** —
+  kravet på fallet efter (33) var omöjligt att uppfylla: Node har en inbyggd
+  `fetch`, så laddaren lägger tillbaka en funktion och aldrig `undefined`.
+  Byggaren byggde kravet ordagrant och fick en kryssrad, vilket är rätt ordning —
+  ett omöjligt krav ska falla, inte byggas bort. *Att stryka `fetch`-halvan med
+  skälet utskrivet förkastades:* då prövas bara den ena av de två globaler
+  laddaren rör, och `fetch` är den som en andra ögonblicksbild byter ut mot en
+  attrapp — alltså precis den halva (33) finns för. *Att assertera att `fetch`
+  bara inte är attrappen förkastades:* det passerar också om återställningen
+  lägger tillbaka något tredje. Kvar står identitetsjämförelsen mot det värde
+  testfilen läser på modulnivå innan något testfall körts, vilket säger samma sak
+  som `undefined` skulle ha sagt i en miljö utan inbyggd `fetch`. Mätningen
+  skrevs samtidigt in under "Verifierad miljö" som ett villkor på varje krav om
+  en global i ett test, eftersom det är en egenskap hos körmiljön och inte hos
+  den här punkten. **Byggaren ska:** lägga tillbaka fallet med
+  `FETCH_FORE_TESTERNA` enligt punkten, köra mutationen i (33):s rad och klistra
+  in kryssraden för varje fall punkten har, och köra `npm test` med `fail 0` och
+  exit 0.
+  (påverkat av lärdom: **ja**, `2026-08-18 — miljö: testkommandot i ARKITEKTUR.md
+  skrevs ned utan att köras`, och `2026-09-02 — dokumentation: ARKITEKTUR.md:s
+  exempelsträng för formatSek är inte den koden ger`)
+- **Spärren i krav 8 nycklas på processen och inte på testkontexten** — en
+  `WeakSet` över `t` prövar bara den stavning spärren själv är skriven för, och
+  ett underordnat test har en egen kontext. Granskarens körning i en kopia: ett
+  `loadApp` inuti ett `t.test` passerade, båda instanserna levde samtidigt, och
+  förälderns formulärsubmit hamnade i barnets `fetch`-attrapp — ordagrant den
+  fara spärren finns för. Fjärde gången en spärr prövas enbart med sin egen
+  stavning. *Att låta `WeakSet` ligga kvar och lägga till barnets kontext
+  förkastades:* det är samma fel en gång till, eftersom nästa stavning ingen
+  tänkt på går förbi igen; villkoret ska skrivas om det som är farligt, två
+  levande instanser i samma process. *En räknare som nollställs i en hook
+  förkastades* av samma skäl som en räknare förkastades förra rundan: den gör
+  bokföringen sann utan att hindra sammanblandningen. Kvar står en modullokal
+  flagga, `appLaddad`, nollställd i samma hook som lägger tillbaka globalerna och
+  dagen. Ordningen i `loadApp` skrevs ut som bindande — pröva, registrera hooken,
+  sätt flaggan — eftersom en flagga som sätts före hooken blir kvar när
+  `import()` avvisar, och just det gör syntaxfelsmutationen. Vad villkoret vilar
+  på står också utskrivet: att testfallen i en fil körs ett i taget. Punkt (33)
+  fick ett tredje testfall, det med `t.test`, som är det enda som skiljer det nya
+  villkoret från det gamla. **Byggaren ska:** byta `laddadeTester`-spärren mot
+  flaggan enligt krav 8 med den ordningen; byta meddelandet till krav 8:s nya
+  text; skriva testfallet `ett loadApp i ett underordnat test avvisas`; köra
+  mutationen `if (appLaddad) {` → `if (false) {` och klistra in kryssraden för
+  vart och ett av punktens tre fall; köra `grep -c "if (appLaddad) {"
+  tests/helpers/dom.js` och kräva minst `1`; och köra `npm test` med `fail 0` och
+  exit 0. (påverkat av lärdom: **ja**, `2026-09-22 — test: WeakSet-spärren i
+  loadApp går förbi med t.test, och de två modulinstanserna byter fetch med
+  varandra`, `2026-09-07 — test: textspärren mot saveEntries i api.js går förbi
+  med ett alias`, och `2026-09-12 — test: språkargumentet 'sv' i localeCompare
+  skyddas inte, eftersom maskinens eget språk är sv-SE`)
+- **Tre påståenden som åldrats rättades i samma svep: den upphävda ordern,
+  `fail 1`-raden och täckningssiffran** — alla tre är samma form, ett påstående i
+  presens om ett läge som en senare ändring har gjort falskt, och alla tre kostade
+  eller kunde ha kostat en vända. Ordern för punkt (33) krävde fortfarande en
+  `WeakSet` på `t` och `undefined` för båda globalerna, alltså två krav som
+  senare punkter i den här loggen upphäver; den är struken och ersatt av vad som
+  faktiskt byggdes, eftersom en order som ingen får följa inte hör hemma i en
+  bindande fil. Meningen "medan övriga rader ger `fail 1`" är utbytt mot
+  granskarens rad-för-rad-körning, skriven i dåtid och med en mening om varför
+  talen inte ska läsas som ett facit: de ändras så snart en punkt får ett testfall
+  till, vilket är just det kolumnrubriken inte längre påstår något om.
+  Täckningssiffran för `schedule.js` stod i presens med det gamla värdet och står
+  nu i dåtid, följd av vad samma körning ger efter att (S5) byggdes. *Att skriva
+  om `fail`-talen till ett krav förkastades:* de är en upplysning ur en körning,
+  och ett antal som blir fel av nästa testfall ska inte vara bindande. Regeln som
+  följer, och som gäller varje sådan rättning: ett påstående om ett läge skrivs i
+  dåtid med den som körde utskriven, och ett krav skrivs som ett krav.
+  (påverkat av lärdom: **ja**, `2026-09-22 — dokumentation: byggarordern för punkt
+  (33) kräver fortfarande det undefined som samma fil förbjuder`, `2026-09-22 —
+  dokumentation: "medan övriga rader ger fail 1" motsägs av två av filens egna
+  rader`, och `2026-09-22 — dokumentation: täckningssiffran för schedule.js står i
+  presens och är inte längre den körningen ger`)
+- **Två fynd i `tests/helpers/dom.js` är inte paket 7:s och lämnas till nästa
+  paket som rör filen** — granskaren fann att `FakeElement.querySelector` har en
+  `#`-gren som ingen indata når, och att `document.querySelector` i attrappen
+  svarar `null` för ett okänt id trots att den här filen kräver ett **kast** av
+  attrappen ("Attrappen är sträng"). Båda är oförändrade sedan `dd5ddaf`, alltså
+  från paket 5 eller 6, och ingen av dem rör det paket 7 bygger. De skrivs upp här
+  i stället för att rättas nu, av skälet i `CLAUDE.md`: en uppgift i taget, och en
+  rättning i mätapparaten mitt i ett paket som just har verifierats om skulle göra
+  granskningens körningar ogiltiga. Nästa paket som rör `dom.js` avgör dem, och
+  kravet står redan skrivet under "Attrappen är sträng": en gren ingen indata når
+  tas bort, och ett okänt id ska ge ett kast och aldrig `null`. (påverkat av
+  lärdom: **ja**, `2026-09-04 — test: två konstruktioner i storage.js körs aldrig
+  och överlever mutation`)

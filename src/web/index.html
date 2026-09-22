@@ -14,7 +14,7 @@
 
     <main>
       <!-- Paket 5: formulär och lista. Paket 6: kostnad per post, totalrutan
-           och tomläget. Listan över kommande dragningar byggs i paket 7. -->
+           och tomläget. Paket 7: kortet med kommande dragningar sist i main. -->
       <section class="card">
         <h2>Lägg till en utgift</h2>
 
@@ -78,6 +78,18 @@
           <span class="total-label">Totalt per år</span>
           <span class="total-amount" id="total-yearly"></span>
         </p>
+      </section>
+
+      <!-- Kommande dragningar står efter Summa: listan svarar på "vad händer
+           härnäst" och läses sist, när användaren vet vad posterna är och vad de
+           kostar. Raderna skrivs av app.js ur upcoming(entries, todayIso());
+           ingenting räknas här. Tomläget har en egen text i stället för att luta
+           sig mot #empty-state — en läsare ska inte behöva sluta sig till varför
+           ett kort är tomt genom att läsa ett annat. -->
+      <section class="card">
+        <h2>Kommande dragningar</h2>
+        <ul id="upcoming-list" class="upcoming-list"></ul>
+        <p class="empty-state" id="upcoming-empty"></p>
       </section>
     </main>
 
