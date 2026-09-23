@@ -19,6 +19,10 @@ import {
   isValidEntryId,
   validateEntryDraft
 } from '../src/core/entry.js';
+// Ägaren till beloppets visningsform. Rundgångstestet nedan matar appens egen
+// utdata tillbaka in i valideringen, och strängen hämtas därför härifrån i
+// stället för att skrivas av.
+import { formatSek, sekToOre } from '../src/core/money.js';
 
 function validDraft(overrides = {}) {
   return {
@@ -326,9 +330,11 @@ test('namnlängden avvisas billigt utan att hela indatan materialiseras', () => 
 
 test('belopp som inte är ett tal avvisas', () => {
   const notNumbers = [
-    // Strängar som inte matchar AMOUNT_PATTERN.
-    'abc', '', '   ', '12 kr', '50 kr', ',5', '.5', '1 234,50', '1,2,3', '1e3', '-',
-    '1234567890123456', '-1234567890123456',
+    // Strängar som varken matchar AMOUNT_PATTERN eller AMOUNT_HINT_PATTERN. De
+    // strängar som ser ut som ett skrivet belopp — '12 kr', ',5', '1 234,50',
+    // '1,2,3' och siffersträngar längre än 15 tecken — får sedan paket 8 den
+    // vägledande texten i stället och prövas av AMOUNT_HINT_CASES nedan.
+    'abc', '', '   ', '1e3', '-', 'kr',
     // Alla andra typer än number och string.
     undefined, null, true, false, {}, [], [199],
     // Tal som inte är finita.
@@ -370,7 +376,12 @@ test('för stort belopp avvisas', () => {
 // Varje rad körs både som sträng och som tal och ska ge identiskt utfall.
 const AMOUNT_REJECTED_CASES = [
   ['abc', NaN, 'Beloppet måste vara ett tal.'],
-  ['50 kr', Infinity, 'Beloppet måste vara ett tal.'],
+  // Strängen på den här raden var '50 kr' till och med paket 7. Sedan paket 8
+  // ger den den vägledande texten (ARKITEKTUR.md, facittabellen under "Den
+  // vägledande texten för ett skrivet belopp"), och paret hade då inte längre
+  // samma message. '1e3' står i samma tabell med standardtexten och är därför
+  // det par Infinity behåller; '50 kr' prövas i AMOUNT_HINT_CASES nedan.
+  ['1e3', Infinity, 'Beloppet måste vara ett tal.'],
   ['', null, 'Beloppet måste vara ett tal.'],
   ['0', 0, 'Beloppet måste vara större än 0 kr.'],
   ['0,000', 0, 'Beloppet måste vara större än 0 kr.'],
@@ -414,6 +425,87 @@ test('facit: godkända belopp ger samma normaliserade värde som sträng och som
     assert.equal(fromString.value.amountSek, expected, `sträng: ${asString}`);
     assert.equal(fromNumber.value.amountSek, expected, `tal: ${asNumber}`);
     assert.equal(typeof fromString.value.amountSek, 'number');
+  }
+});
+
+// ---------------------------- paket 8: den vägledande texten för ett belopp
+
+// Facittabellen i ARKITEKTUR.md under "Den vägledande texten för ett skrivet
+// belopp". Avvisningen står kvar — AMOUNT_PATTERN är orörd — men en sträng som
+// ser ut som ett skrivet belopp får en text som säger hur det ska skrivas i
+// stället för bara att det inte är ett tal.
+//
+// Texten skrivs tecken för tecken som ägaren i src/core/entry.js skriver den,
+// så att en sökning på hela strängen hittar varje ställe den prövas
+// (LARDOMAR.md 2026-09-14). Varje tecken i den är ASCII.
+const AMOUNT_HINT_MESSAGE =
+  'Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000 eller 139,50.';
+
+// Raderna nedan bär båda blanktecknen, och de skrivs olika av ett skäl:
+// U+0020 står som tecknet självt, eftersom det syns i en genomläsning, medan
+// U+00A0 står som escapen \u00a0 — ett tecken som inte syns skrivs alltid
+// som escape (LARDOMAR.md 2026-09-11). Ägaren src/core/entry.js har samma
+// mening om sitt mönster, och där står båda som escaper: i en teckenklass
+// syns inte heller mellanslaget.
+const AMOUNT_HINT_CASES = [
+  // U+0020, det tangentbordet ger.
+  '12 000',
+  '12\u00a0000',
+  '1\u00a0234,50\u00a0kr',
+  '50 kr',
+  '12 kr',
+  '1 234,50',
+  '1,2,3',
+  ',5',
+  '.5',
+  '-12 000',
+  '1234567890123456',
+  '-1234567890123456',
+  // Nedre sidan av AMOUNT_HINT_MAX_LENGTH. Raden är obligatorisk tillsammans
+  // med '1'.repeat(41) nedan: utan paret går gränsen att flytta utan att något
+  // faller.
+  '1'.repeat(40)
+];
+
+const AMOUNT_PLAIN_CASES = ['', '   ', 'abc', '1e3', '-', 'kr', '1'.repeat(41)];
+
+test('ett skrivet belopp ger den vägledande texten i stället för standardtexten', () => {
+  for (const amountSek of AMOUNT_HINT_CASES) {
+    assert.deepEqual(
+      messagesFor(validateEntryDraft(validDraft({ amountSek })), 'amountSek'),
+      [AMOUNT_HINT_MESSAGE],
+      `amountSek: ${JSON.stringify(amountSek)}`
+    );
+  }
+});
+
+test('en sträng som inte ser ut som ett belopp ger standardtexten', () => {
+  for (const amountSek of AMOUNT_PLAIN_CASES) {
+    assert.deepEqual(
+      messagesFor(validateEntryDraft(validDraft({ amountSek })), 'amountSek'),
+      ['Beloppet måste vara ett tal.'],
+      `amountSek: ${JSON.stringify(amountSek)}`
+    );
+  }
+});
+
+// Rundgången formatSek -> validateEntryDraft. Den prövades av inget testfall i
+// projektet, och det är därför felet kunde stå kvar i sju paket: testerna matar
+// in belopp de själva skrivit och jämför utdata, aldrig det omvända varvet.
+// Varje utdata ur formatSek slutar med \u00a0kr, så ok: true får aldrig
+// förekomma — men texten ska säga hur beloppet skrivs, aldrig bara att det inte
+// är ett tal. Beloppen och strängarna kommer från sina ägare i src/core/, inga
+// strängar skrivs av för hand.
+test('appens egen beloppsutdata matad tillbaka ger den vägledande texten', () => {
+  for (const [, asNumber] of AMOUNT_ACCEPTED_CASES) {
+    const visat = formatSek(sekToOre(asNumber));
+    const resultat = validateEntryDraft(validDraft({ amountSek: visat }));
+    assert.equal(resultat.ok, false, `formatSek-utdatan ${visat} godkändes som indata`);
+    assert.deepEqual(
+      messagesFor(resultat, 'amountSek'),
+      [AMOUNT_HINT_MESSAGE],
+      `formatSek-utdatan ${visat} gav inte den vägledande texten`
+    );
   }
 });
 

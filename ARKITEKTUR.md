@@ -356,6 +356,7 @@ programmeringsmisstag kan orsaka står i ett eget avsnitt längre ned
 |------|---------------------|--------------------------|
 | `name` | inte sträng, eller tom efter `trim()` | `Namnet får inte vara tomt.` |
 | `name` | fler än 60 tecken efter `trim()` | `Namnet får vara högst 60 tecken.` |
+| `amountSek` | normaliseringen (steg 1 nedan) ger inget finit tal, **och** råvärdet är en sträng som ser ut som ett skrivet belopp (villkoret står i steg 1) | `Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000 eller 139,50.` |
 | `amountSek` | normaliseringen (steg 1 nedan) ger inget finit tal | `Beloppet måste vara ett tal.` |
 | `amountSek` | ≤ 0 | `Beloppet måste vara större än 0 kr.` |
 | `amountSek` | > 9999999.99 | `Beloppet får vara högst 9 999 999,99 kr.` |
@@ -366,9 +367,11 @@ programmeringsmisstag kan orsaka står i ett eget avsnitt längre ned
 | `startDate` | år utanför 1970–2099 | `Startdatum måste ligga mellan 1970-01-01 och 2099-12-31.` |
 | `category` | inte något av de sex värdena | `Välj en giltig kategori.` |
 
-Notera att `amountSek`-raderna står i ordningen **tal → större än 0 → maxgräns →
-decimaler**. Maxgränsen står före decimalregeln med flit; motiveringen finns
-under "Steg 2" nedan.
+Notera att `amountSek`-raderna står i ordningen **skrivet belopp → tal → större
+än 0 → maxgräns → decimaler**. Maxgränsen står före decimalregeln med flit;
+motiveringen finns under "Steg 2" nedan. De två första raderna delar samma
+villkor i steg 1 och skiljs bara av hur råvärdet ser ut: den vägledande texten är
+den smalare raden och står därför först.
 
 `amountSek`-kedjan i steg 2 har därutöver ett **fjärde** steg, som prövar om
 kravet "större än 0" på det avrundade värde som faktiskt lagras. Det steget har
@@ -484,14 +487,15 @@ eller som tal.
 
 #### Steg 1 — normalisering till `number`
 
-Utfallet är antingen ett **finit `number`** eller felet
-`Beloppet måste vara ett tal.` Inget annat felmeddelande kan uppstå i det här
-steget.
+Utfallet är antingen ett **finit `number`** eller ett av de två meddelanden som
+hör till steget: `Beloppet måste vara ett tal.` eller den vägledande texten för
+ett skrivet belopp. Vilket av de två som gäller avgörs av tabellen under
+rubriken längre ned; ingen värderegel kan uppstå här.
 
 | Råvärdets typ | Vad som görs | Utfall |
 |---------------|--------------|--------|
 | `number` | – | `Number.isFinite(raw)` → `raw`. Annars (`NaN`, `Infinity`, `-Infinity`) → `Beloppet måste vara ett tal.` |
-| `string` | `raw.trim()`, matcha mot `AMOUNT_PATTERN`, byt `,` mot `.`, kör `Number(...)` | Matchar mönstret → talet. Matchar inte → `Beloppet måste vara ett tal.` |
+| `string` | `raw.trim()`, matcha mot `AMOUNT_PATTERN`, byt `,` mot `.`, kör `Number(...)` | Matchar mönstret → talet. Matchar inte → en av de två texterna, enligt "Den vägledande texten för ett skrivet belopp" |
 | allt annat (`undefined`, `null`, `boolean`, objekt, array) | – | `Beloppet måste vara ett tal.` |
 
 ```js
@@ -514,10 +518,142 @@ decimaler — det gör steg 2. Därför är mönstret medvetet tillåtande:
   normaliserade talet i steg 2, aldrig på strängen. Det är det som gör att
   `'0,000'` och `0` hamnar på samma regel.
 
-Följande strängar matchar inte och ger `Beloppet måste vara ett tal.`:
-`''`, `'   '`, `'abc'`, `',5'`, `'.5'`, `'1 234,50'` (mellanslag som
-tusentalsavgränsare stöds inte), `'1,2,3'`, `'1e3'`, `'-'`, `'50 kr'`, samt
-strängar med fler än 15 heltalssiffror.
+Strängar som inte matchar `AMOUNT_PATTERN` är ogiltiga, och **tusentalsavgränsare
+stöds inte**: `'1 234,50'`, `'12 000'` och `'50 kr'` är alla ogiltiga, liksom
+`''`, `'   '`, `'abc'`, `',5'`, `'.5'`, `'1,2,3'`, `'1e3'`, `'-'` och strängar
+med fler än 15 heltalssiffror.
+
+##### Den vägledande texten för ett skrivet belopp (bindande) [paket 8]
+
+`Beloppet måste vara ett tal.` är sant men inte till någon hjälp för `12 000`,
+som är det normala svenska skrivsättet för tolvtusen — och dessutom det skrivsätt
+appen **själv** väljer när den visar ett belopp. `formatSek(sekToOre(12000))` ger
+`12\u00a0000,00\u00a0kr`, och klistras den strängen tillbaka in i formuläret
+avvisas den med ett meddelande som säger att den inte är ett tal. Appens utdata
+är alltså inte giltig indata, och texten säger inte vad användaren ska göra
+(`LARDOMAR.md`, 2026-09-22, appen visar belopp som "12 000,00 kr" men avvisar
+"12 000").
+
+**Beslut: avvisningen står kvar, meddelandet blir handlingsbart.** Strängen är
+bindande ordagrant, och varje tecken i den är ASCII:
+
+```js
+'Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000 eller 139,50.'
+```
+
+De två exemplen i texten är valda för att båda ska vara **giltig indata**: en
+vägledning som visar ett format appen avvisar vore samma fel en gång till.
+
+**Regeln "samma värde, samma `message` oavsett ingångstyp" står kvar orörd.**
+Den nya raden skiljer inte på `number` och `string` för något värde som kan
+uttryckas i båda formerna: varje sträng som `AMOUNT_PATTERN` godkänner
+normaliseras till ett tal och når regelkedjan precis som förut, och `'-50'` ger
+fortfarande samma svar som `-50`. Raden gäller bara strängar som **inte** är tal
+alls, och de har ingen motsvarighet bland talen — `12 000` finns inte som
+`number`. Det som avgör är alltså inte råvärdets typ utan värdets form, och det
+är skillnaden mot det fel `LARDOMAR.md` (2026-08-18, felordningen för amountSek)
+beskriver.
+
+**Villkoret, skrivet som det ska stå i koden.** Steg 1 avgör först om strängen
+alls är ett tal, och först därefter vilken av de två texterna som gäller:
+
+```js
+export const AMOUNT_HINT_PATTERN = /^-?[\d.,\u0020\u00a0]*\d[\d.,\u0020\u00a0]*(?:kr)?$/i;
+export const AMOUNT_HINT_MAX_LENGTH = 40;
+```
+
+Ordningen i steg 1 för ett råvärde som inte gav ett finit tal:
+
+| # | Villkor | `message` |
+|---|---------|-----------|
+| 1 | `typeof raw !== 'string'` | `Beloppet måste vara ett tal.` |
+| 2 | `trimmed.length > AMOUNT_HINT_MAX_LENGTH` | `Beloppet måste vara ett tal.` |
+| 3 | `AMOUNT_HINT_PATTERN.test(trimmed)` | den vägledande texten |
+| 4 | inget av ovanstående | `Beloppet måste vara ett tal.` |
+
+**Rad 2 är en snabbväg av samma slag som steg 3 i `checkName`, och den är inte
+valfri.** `AMOUNT_HINT_PATTERN` läser hela strängen, medan `AMOUNT_PATTERN`
+avgör sitt svar på de första tecknen. Utan längdgränsen skulle ett `amountSek`
+på 50 000 000 tecken kosta en genomläsning av hela indatan för att svara — och
+`LARDOMAR.md` (2026-08-23) mätte att `amountSek` i dag avvisar just den
+storleken på under 60 ms. Gränsen `40` är vald som en billig övre uppskattning:
+det längsta någon rimligen skriver som ett belopp är ett minustecken, femton
+siffror med avgränsare, ett decimaltecken, femton decimaler och ` kr`. En sträng
+längre än så får standardtexten, och det är rätt: den är inget någon har skrivit
+som ett belopp.
+
+**Varför `\u0020` och `\u00a0` står som escaper** och inte som tecknen själva:
+det ena av dem syns inte i en genomläsning, och ett mönster där man inte kan se
+vilket blanktecken som avses är oläsbart (`LARDOMAR.md`, 2026-09-14, U+2013 står
+rått i ARKITEKTUR.md). Båda tecknen ska finnas med — appen visar det hårda, och
+tangentbordet ger det vanliga.
+
+**Facit, bindande och obligatoriska testfall.** Varje rad körs som sträng:
+
+| Råvärde | `message` |
+|---|---|
+| `'12 000'` (U+0020) | den vägledande texten |
+| `'12\u00a0000'` | den vägledande texten |
+| `'1\u00a0234,50\u00a0kr'` | den vägledande texten |
+| `'50 kr'` | den vägledande texten |
+| `'1,2,3'` | den vägledande texten |
+| `',5'` | den vägledande texten |
+| `'-12 000'` | den vägledande texten |
+| `''` | `Beloppet måste vara ett tal.` |
+| `'   '` | `Beloppet måste vara ett tal.` |
+| `'abc'` | `Beloppet måste vara ett tal.` |
+| `'1e3'` | `Beloppet måste vara ett tal.` |
+| `'-'` | `Beloppet måste vara ett tal.` |
+| `'kr'` | `Beloppet måste vara ett tal.` |
+| `'1'.repeat(41)` | `Beloppet måste vara ett tal.` |
+| `'1'.repeat(40)` | den vägledande texten |
+| `12000` (tal) | giltigt |
+| `NaN`, `Infinity`, `null`, `{}` | `Beloppet måste vara ett tal.` |
+
+Raderna `'1'.repeat(40)` och `'1'.repeat(41)` ligger på var sin sida om
+`AMOUNT_HINT_MAX_LENGTH` och är obligatoriska: utan dem går gränsen att flytta
+utan att något faller. `'kr'` är med därför att mönstret kräver minst en siffra —
+en sträng utan siffra är inget skrivet belopp.
+
+**Invarianten som saknades, och som nu är ett testfall.** Rundgången
+`formatSek` → `validateEntryDraft` prövas av inget testfall i projektet, och det
+är därför felet kunde stå kvar i sju paket: testerna matar in belopp de själva
+skrivit som `'12000'` och jämför utdata mot `'12\u00a0000,00\u00a0kr'`, aldrig
+det omvända varvet. Kravet är bindande och ligger i `tests/entry.test.js`: för
+varje belopp i facittabellen under "Facit — samma värde, samma fel i båda
+ingångstyperna" som är giltigt, kör `formatSek(sekToOre(v))` och mata tillbaka
+resultatet i `validateEntryDraft`. Utfallet ska vara **den vägledande texten**
+för var och en — aldrig `Beloppet måste vara ett tal.`, och aldrig `ok: true`,
+eftersom varje utdata från `formatSek` slutar med `\u00a0kr`. Testfilen importerar
+`formatSek` och `sekToOre` från `../src/core/money.js` för det; inga strängar
+skrivs av för hand, eftersom den bindande strängen har en ägare i `src/`
+(`LARDOMAR.md`, 2026-09-14, samma bindande användartext fick två skrivsätt).
+
+**Mutationer som ska köras när raden byggs**, en i taget, var och en med `EXIT=1`
+och kryssraden inklistrad:
+
+| Mutation | Fälls av |
+|---|---|
+| `if (AMOUNT_HINT_PATTERN.test(trimmed)) {` → `if (false) {` | facitraderna med den vägledande texten, och rundgångstestet |
+| `if (trimmed.length > AMOUNT_HINT_MAX_LENGTH) {` → `if (false) {` | raden `'1'.repeat(41)` |
+| `AMOUNT_HINT_MAX_LENGTH = 40` → `41` | raden `'1'.repeat(41)` |
+
+Uttrycken skrivs med det namn de bär där villkoret står, och kontrollen är
+`grep -c "<uttrycket före pilen>" src/core/entry.js` med minst `1` för var och
+en.
+
+**Vad som inte ändras.** `AMOUNT_PATTERN` är orörd: appen fortsätter avvisa
+`12 000`. *Att i stället acceptera blanksteg som tusentalsavgränsare, genom att
+strippa dem före matchningen, förkastades av användaren* — det ändrar vilka
+värden som är giltiga i projektets mest granskade kod, med en facittabell, en
+regelkedja i fyra steg och en invariant mot `isEntry` som alla vilar på att
+normaliseringen är en enda smal väg. Priset för beslutet är att användaren måste
+skriva om sitt belopp, och det priset betalas med en text som säger hur. Att det
+är ett val och inte ett förbiseende står här, så att nästa läsare inte behöver
+gissa. `amountTooLarge`-texten, som skriver gränsen som `9 999 999,99 kr` med
+vanliga blanksteg, är också orörd: den påstår inget om hur man skriver ett
+belopp utan anger en gräns, och skriver någon av den strängen i fältet får hen
+numera just den vägledande texten.
 
 #### Steg 2 — regelkedjan
 
@@ -573,10 +709,28 @@ både strängen och talet och ge identisk `message` (respektive identiskt
 (2026-08-18, beloppsgränsen) om att varje rad i felmeddelandetabellen ska ha ett
 test för båda vägarna.
 
+**Kravet på identisk `message` gäller värden som finns i båda ingångstyperna**,
+och det avgör vilka strängar som duger som exempel här. En sträng som den
+vägledande texten i steg 1 träffar har ingen motsvarighet bland talen —
+`50 kr` finns inte som `number` — och ett sådant par kan därför aldrig ge samma
+svar. Villkoret på en sträng i den här tabellen är alltså: den ska antingen
+matcha `AMOUNT_PATTERN` och nå regelkedjan, eller falla på steg 1 **utan** att
+träffa `AMOUNT_HINT_PATTERN`. `'abc'` och `''` saknar siffra, `'1e3'` har ett
+tecken utanför mönstrets teckenuppsättning; alla tre hamnar därför på
+standardtexten, precis som `NaN`, `Infinity` och `null` gör.
+
+Raden med `Infinity` hade `'50 kr'` som strängexempel fram till paket 8. Det
+exemplet duger inte längre: `'50 kr'` får den vägledande texten, medan `Infinity`
+får standardtexten, alltså två olika svar på en rad som kräver ett. Strängen är
+utbytt mot `'1e3'`, som står i facittabellen under "Den vägledande texten för ett
+skrivet belopp" med standardtexten och därmed parar ihop sig med `Infinity` igen.
+`'50 kr'` är inte borttappat — det prövas i den tabellen, som en av raderna med
+den vägledande texten.
+
 | Sträng in | Tal in | `v` efter steg 1 | Vinnande regel | Resultat |
 |-----------|--------|------------------|----------------|----------|
 | `'abc'` | `NaN` | – | steg 1 | `Beloppet måste vara ett tal.` |
-| `'50 kr'` | `Infinity` | – | steg 1 | `Beloppet måste vara ett tal.` |
+| `'1e3'` | `Infinity` | – | steg 1 | `Beloppet måste vara ett tal.` |
 | `''` | `null` | – | steg 1 | `Beloppet måste vara ett tal.` |
 | `'0'` | `0` | `0` | 1 | `Beloppet måste vara större än 0 kr.` |
 | `'0,000'` | `0` | `0` | 1 | `Beloppet måste vara större än 0 kr.` |
@@ -609,6 +763,20 @@ Raderna `'0,00000001'` (`1e-8`) och `'0,0000000099'` (`9.9e-9`) är paret på va
 sin sida om regel 3:s tolerans och är obligatoriska av just det skälet: en
 toleransjämförelse ska ha testfall på båda sidor om sin gräns. `'0,01'` är den
 nedre giltiga gränsen — ett öre — och visar var kedjan slutar avvisa.
+
+**Kontrollen som ska köras varje gång kedjan för `amountSek` ändras — bindande.**
+Filen har nu tre tabeller som svarar på vad ett värde ger: felmeddelandetabellen
+under "Valideringsregler och exakta felmeddelanden", facittabellen under "Den
+vägledande texten för ett skrivet belopp" och den här. Ett nytt steg i kedjan kan
+göra en rad i vilken som helst av dem falsk utan att någon rör raden, och det har
+hänt: paket 8:s vägledande text gjorde raden `'50 kr'` här osann, eftersom samma
+sträng plötsligt fick ett annat svar än sitt tal. Kontrollen är den `LARDOMAR.md`
+(2026-08-23, två facit i samma fil ger olika svar för samma belopp) föreskriver,
+och den kördes inte när steget lades till: **kör varje värde ur alla tre
+tabellerna genom hela kedjan och kräv att tabellerna ger samma svar.** För
+strängarna i den här tabellen gäller dessutom villkoret ovan — en sträng som
+träffar `AMOUNT_HINT_PATTERN` hör inte hemma här. Utfallet klistras in i paketets
+redovisning, rad för rad; ett skäl att inte köra räknas aldrig som en körning.
 
 ### Kanonisk lagringsform — det enda `isEntry` kräver utöver regelkedjan
 
@@ -2837,12 +3005,13 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   - **Punkt (21) till (27) står av samma skäl under "Kommande dragningar i
     gränssnittet", och punkt (28) till (31) under "Radelementets klass är ett
     kontrakt med `style.css`"**, båda i avsnittet om `src/web/app.js`. Punkt (32)
-    och (33) står i punkten om den injicerade klockan ovan, hos de krav de prövar.
-    De är lika obligatoriska som punkterna här. Uppräkningen ovan är alltså inte
-    fullständig för filen: den slutar vid (20), och fortsättningen har sitt hem
-    där regeln den prövar står. Numren (1) till (33) är den enda serien för
-    `tests/app.test.js`; `tests/schedule.test.js` har en egen serie med prefixet
-    `S` under "Härledning av nästa dragningsdatum".
+    och (33) står i punkten om den injicerade klockan ovan, hos de krav de prövar,
+    och punkt (34) till (36) under "Vyn efter en borttagning". De är lika
+    obligatoriska som punkterna här. Uppräkningen ovan är alltså inte fullständig
+    för filen: den slutar vid (20), och fortsättningen har sitt hem där regeln den
+    prövar står. Numren (1) till (36) är den enda serien för `tests/app.test.js`;
+    `tests/schedule.test.js` har en egen serie med prefixet `S` under "Härledning
+    av nästa dragningsdatum".
   - **Mutationer som paket 6 ska köra, utöver syntaxfelsmutationen nedan:**
     (a) byt `totalMonthlyOre(entries)` i `app.js` mot en kolumnsumma över
     `monthlyOre` → punkt (14) ska falla med `EXIT=1`; (b) **varje** rad som sätter `#empty-state` till den tomma strängen tas bort,
@@ -3212,6 +3381,24 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
   testfall utskrivet per rad. Ett skäl att inte köra om räknas aldrig som en
   körning (`LARDOMAR.md`, 2026-09-22, "deras rader är äkta ensamma fällare"
   skrevs om fem tabeller utan att någon av dem kördes om).
+
+  **En facittabell som gör flera utfall bindande ska ha en mutationsrad per rad i
+  facit, inte en per testfall paketet råkar skriva.** De två formerna ser lika ut
+  när paketet skrivs och skiljer sig först i efterhand: en lista som följer
+  testfallen växer med det som byggdes, medan en lista som följer facit visar vad
+  som **inte** byggdes. Skillnaden är mätt i det här projektet. Facit för vyn
+  efter en borttagning har en rad per statuskod; mutationslistan fick en rad per
+  nytt testfall, och de två rader som säger att vyn ska stå **oförändrad** blev
+  skrivna utan skydd — mutationen "hämta om vid varje misslyckat svar" gav hela
+  sviten `fail 0` och `EXIT=0` (granskarens körning, `LARDOMAR.md` 2026-09-23).
+  **En rad som säger att något ska stå oförändrat behöver ett test lika mycket
+  som en rad som säger att något ska ändras**, och den är bara svårare att komma
+  ihåg, eftersom ingenting syns när den håller. Formen som gör den prövbar står
+  under "Vyn efter en borttagning": räkna anropen som inte ska ske, och låt det
+  anrop mutationen inför förstöra vyn, så att kryssraden pekar ut vad användaren
+  förlorar. Kontrollen innan ett paket lämnas vidare är mekanisk: för varje
+  facittabell paketet inför eller ändrar, para ihop varje rad med den punkt som
+  skyddar den och skriv ut paren — en rad utan punkt stoppar paketet.
 - **Validering ska ha egna tester.** Följer av `LARDOMAR.md`. Ett paket som tar
   emot användarinput utan testad validering är inte klart.
 - **Fält som kan komma i flera typer testas i alla typer.** Varje rad i
@@ -3451,6 +3638,9 @@ export const ENTRY_FIELDS;       // ['amountSek', 'category', 'id', 'interval', 
 export const NAME_MAX_LENGTH;    // 60
 export const AMOUNT_MAX_SEK;     // 9999999.99
 export const AMOUNT_PATTERN;     // /^-?\d{1,15}([.,]\d{1,15})?$/
+// [paket 8] Avgör bara vilken av steg 1:s två texter som gäller, aldrig om ett värde är giltigt.
+export const AMOUNT_HINT_PATTERN;    // /^-?[\d.,\u0020\u00a0]*\d[\d.,\u0020\u00a0]*(?:kr)?$/i
+export const AMOUNT_HINT_MAX_LENGTH; // 40
 export const MIN_YEAR;           // 1970
 export const MAX_YEAR;           // 2099
 
@@ -4478,6 +4668,109 @@ misslyckas, lämnar inget av den gamla listans innehåll i vyn. Mutationen som s
 fällas av (17) är "ta bort anropet som nollställer vyn i den misslyckade grenen"
 → `EXIT=1`.
 
+#### Vyn efter en borttagning [paket 8]
+
+Regeln ovan gäller en **hämtning** som misslyckas. Vad vyn ska visa när en
+**borttagning** misslyckas har inte stått någonstans i den här filen, och
+beslutet fanns bara som en kommentar i ett testfall. Följden mätte
+slutgranskningen med två flikar mot samma datafil: en borttagning i den ena och
+ett klick på samma rad i den andra gav `#form-error = "Posten finns inte."`
+samtidigt som raden stod kvar i listan, i båda totalerna och bland kommande
+dragningar — ett belopp 12 000 kr för högt per månad och en dragning för en post
+som inte finns, bredvid texten som säger att den inte finns. `clearView`s egen
+kommentar namnger det tillståndet ordagrant som det den finns för att förhindra,
+men slutsatsen drogs bara för `loadAndRender` (`LARDOMAR.md`, 2026-09-22, en
+borttagning som ger 404 lämnar posten kvar).
+
+**Facit, en rad per utfall av `DELETE /api/entries/<id>`:**
+
+| Utfall | Feltext | Vyn |
+|---|---|---|
+| `204` | ingen | hämtas om med `loadAndRender()` |
+| `404` | serverns `Posten finns inte.` genom `showErrors` | **hämtas om** |
+| `500` | lagringens svenska text genom `showErrors` | oförändrad |
+| `fetch` avvisas | `GENERAL_ERROR` | oförändrad |
+
+**Skälet att `404` behandlas annorlunda än `500`** är att de säger olika saker.
+Ett `404` är ett **definitivt besked om datafilen**: servern har läst den och
+sagt att posten inte finns, alltså har filen ändrats sedan vyn hämtades, och då
+är vyn inaktuell i sin helhet — inte bara på raden användaren klickade. Ett `500`
+och ett avvisat `fetch` säger tvärtom att appen **inte vet** något nytt om
+datafilen, och då får den inte gissa: en omhämtning som misslyckas skulle nollställa
+vyn och ta bort information användaren fortfarande kan läsa. Samma skillnad
+styr redan `updateEntries` på serversidan, där `404` avgörs inuti köplatsen av
+den som läser filen.
+
+**Ordningen är bindande, och den indata som visar det är utskriven:**
+`showErrors(...)` körs **före** omhämtningen. Skulle omhämtningen också
+misslyckas skriver `loadAndRender` sin egen text och nollställer vyn, och då är
+det den nyare upplysningen användaren ser. I omvänd ordning skulle lagringens
+text skrivas först och därefter skrivas över av `Posten finns inte.`, alltså en
+tom vy med en text om en post — den indata som skiljer är `DELETE` som ger `404`
+följt av en omhämtning som ger `500`.
+
+**Varje rad i facit har en punkt som skyddar den.** Tabellen gör fyra utfall
+bindande, och tre av dem sitter i samma `if`-kedja i `removeEntry`; en rad utan
+punkt är därför inte en lucka i ett testfall utan en rad vem som helst kan ändra
+med grön svit:
+
+| Rad i facit | Punkt |
+|---|---|
+| `204` | (24) |
+| `404` | (34) |
+| `500` | (35) |
+| `fetch` avvisas | (36) |
+
+| Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|
+| (34) | `en borttagning som ger 404 hämtar om listan och visar serverns text` | `if (response.status === 404) {` → `if (false) {` |
+| (34) | `en borttagning som ger 404 följd av en misslyckad omhämtning visar det nyare felet` | i `removeEntry`, inte i `submitForm`: `showErrors(await readJson(response));` flyttas efter 404-grenen |
+| (35) | `en borttagning som ger 500 lämnar vyn orörd och visar lagringens text` | `if (response.status === 404) {` → `if (true) {` |
+| (36) | `ett avvisat fetch vid Ta bort lämnar vyn orörd och visar den allmänna texten` | i `removeEntry`s `catch`-gren, inte i `submitForm` eller `loadAndRender`: raden `FORM_ERROR.textContent = GENERAL_ERROR;` följs av `await loadAndRender();` |
+
+Punkt (34):s första fall ska asserta **alla tre** vyelementen efter svaret, inte
+bara felrutan: `#entry-list` har en rad färre, `#total-monthly` och
+`#total-yearly` är den kvarvarande listans totaler jämförda mot ett anrop av
+`totalMonthlyOre` och `totalYearlyOre`, och `#upcoming-list` saknar den
+borttagna postens namn. En assertion på bara `#form-error` räknas inte — den
+passerar med den kod som gav fyndet. Planen för `fetch`-attrappen svarar `404` på
+`DELETE` och en kortare lista på den `GET` som följer, alltså samma form som
+punkt (24) använder.
+
+**Punkt (35) och (36) skyddar de två rader som säger att vyn ska stå
+oförändrad**, och de kom till efter granskningen av paket 8: mutationen "hämta om
+vid varje misslyckat svar" gav hela sviten `tests 358, pass 358, fail 0` och
+`EXIT=0`, alltså noll kryssrader, trots att just den ändringen är det alternativ
+beslutsloggen räknar upp som förkastat (granskarens körning). Orsaken var mätt:
+inget testfall lät `DELETE` självt svara `500` eller avvisas — varje `500` i
+filen låg på `POST`-vägen eller på en omhämtning efter ett `DELETE` som redan
+lyckats.
+
+**Formen är gemensam för de två fallen och är det som gör dem till prov.** En
+vy som ska stå oförändrad syns inte när regeln håller, så testet måste göra
+skillnaden synlig, och punkterna nedan gäller samtidigt:
+
+1. **Räkna hämtningarna.** Planen räknar sina `GET`, och fallet kräver att
+   antalet är oförändrat efter klicket på Ta bort. Det är den assertion som
+   fäller mutationen direkt.
+2. **Låt en omhämtning som ändå sker förstöra vyn.** Planen svarar `500` på varje
+   `GET` efter den första. Med mutationen kör `loadAndRender` då `clearView`, och
+   raderna, båda totalerna och kortet Kommande dragningar töms — alltså faller
+   också elementassertionerna, och kryssraden pekar ut vad användaren förlorar
+   i stället för bara ett tal. Utan den fällan skulle en plan som svarar samma
+   lista varje gång dölja hela skillnaden.
+
+Elementassertionerna är desamma i båda fallen: `#entry-list` har kvar sina rader,
+`#total-monthly` och `#total-yearly` bär den **ursprungliga** listans totaler
+jämförda mot ett anrop av `totalMonthlyOre` och `totalYearlyOre`, och
+`#upcoming-list` har kvar sina rader. Feltexten skiljer dem åt: (35) kräver
+lagringens svenska text ur svaret, (36) kräver `GENERAL_ERROR`. I (36) avvisas
+`DELETE`-anropet av `fetch`-attrappen, alltså utan svar och utan statuskod.
+
+Det andra fallet svarar `404` på `DELETE` och `500` på den följande `GET`, och
+kräver lagringens text i `#form-error` plus en nollställd vy enligt "Vyn när en
+hämtning misslyckas".
+
 #### Hur `showErrors` letar upp fälten [paket 5]
 
 **`fieldErrors` bär alltid bara de fem formulärfälten** — `name`, `amountSek`,
@@ -5035,6 +5328,21 @@ rättningen, en ny siffra duger aldrig. **Räknar det något annat** — ett bel
 ett antal anrop i ett scenario, en mätning som redovisas med sitt kommando —
 lämnas träffen. Raden som skriver ut kommandot ovan matchar inte kommandot:
 efter varje räkneord i alterneringen följer ett `|`, inte ett mellanslag.
+
+**Ett tal som beskriver sviten är en mätning och aldrig ett facit (bindande för
+den här filen, och för `README.md`).** Antalet tester, antalet fallerande fall
+och en täckningsprocent hör till den körning som gav dem, och ett sådant tal
+åldras av precis den handling projektet uppmuntrar: **någon lägger till ett
+testfall.** Det är samma mekanism som gör en äldre mutationsrads ensamhet falsk
+när en ny punkt skrivs, och den har nu slagit till sju gånger i den här filen.
+Därför gäller ett av två skrivsätt, aldrig något tredje. Antingen står talet i
+**dåtid** tillsammans med kommandot, körningen och vem som körde den — då är det
+sant för alltid, eftersom det beskriver ett tillfälle. Eller så skrivs det
+**inte alls**, och i stället skrivs den egenskap som inte åldras: `npm test` ska
+ge `fail 0` och avsluta med exitkod 0, och `ℹ tests`-raden i läsarens egen
+körning är enda facit för hur många de är. En order eller ett krav som en annan
+agent ska följa får aldrig bära ett sådant tal i presens — det är just den formen
+som har varit fel varje gång.
 
 - **Node.js med inbyggd HTTP-server och webbläsaren som gränssnitt** — enda
   körsätt som ger ett grafiskt gränssnitt med noll beroenden och som är
@@ -7089,3 +7397,152 @@ efter varje räkneord i alterneringen följer ett `|`, inte ett mellanslag.
   tas bort, och ett okänt id ska ge ett kast och aldrig `null`. (påverkat av
   lärdom: **ja**, `2026-09-04 — test: två konstruktioner i storage.js körs aldrig
   och överlever mutation`)
+- **Ett `404` från `DELETE` följs av en omhämtning; `500` och ett avvisat `fetch`
+  lämnar vyn orörd** [paket 8] — slutgranskningen mätte att en borttagning av en
+  post som en annan flik redan tagit bort lämnar raden kvar i listan, i båda
+  totalerna och bland kommande dragningar, bredvid texten som säger att posten
+  inte finns. Regeln för vyn efter en **borttagning** fanns inte i den här filen
+  alls; beslutet låg som en kommentar i ett testfall, och det var skrivet för
+  alla misslyckade svar. Skillnaden som saknades är vad svaret säger om
+  **datafilen**: `404` är ett definitivt besked om att filen har ändrats sedan vyn
+  hämtades, medan `500` och ett avvisat anrop säger att appen inte vet något nytt.
+  *Att hämta om vid varje misslyckat svar förkastades:* en omhämtning som själv
+  misslyckas nollställer vyn, och då tar appen bort information användaren
+  fortfarande kan läsa, på grundval av ett svar som inte sade något om filen.
+  *Att lämna allt orört och i stället skriva en text som ber användaren ladda om
+  förkastades:* appen har redan beskedet och kan visa rätt läge, och en app som
+  ber användaren göra jobbet döljer en rättning som är fyra rader. Ordningen
+  mellan `showErrors` och omhämtningen är skriven som bindande med den indata där
+  den ändrar svaret — `404` följt av en `GET` som ger `500` — och den indatan är
+  det andra av punkt (34):s två testfall. Att fallet bara nås med två vyer mot
+  samma datafil är skälet att det överlevde sju paket; testfallen bygger det
+  läget med `fetch`-attrappen i stället, alltså utan en andra process.
+  **Byggaren ska:** lägga 404-grenen i `removeEntry` efter `showErrors(...)`
+  enligt facittabellen; skriva punkt (34):s två testfall med assertioner på alla
+  tre vyelementen i det första; köra de två mutationerna i tabellen var för sig
+  med `EXIT=1` och kryssraden inklistrad; köra `grep -c` på båda uttrycken före
+  pilen mot `src/web/app.js` med minst `1`; och köra `npm test` med `fail 0` och
+  exit 0. (påverkat av lärdom: **ja**, `2026-09-22 — gränssnitt: en borttagning
+  som ger 404 lämnar posten kvar i listan, i båda totalerna och bland kommande
+  dragningar`, och `2026-09-07 — gränssnitt: withoutField-grenen i app.js kan
+  inget serversvar nå`)
+- **Beloppet fortsätter avvisas, men meddelandet säger vad användaren ska skriva**
+  [paket 8] — `12 000` är det normala svenska skrivsättet och dessutom appens
+  eget utmatningsformat, och det avvisades med `Beloppet måste vara ett tal.`,
+  en text som är sann men inte till någon hjälp. *Att låta `AMOUNT_PATTERN`
+  acceptera blanksteg som tusentalsavgränsare förkastades av användaren* som för
+  ingripande: det ändrar vilka värden som är giltiga i projektets mest granskade
+  kod — en facittabell, en regelkedja i fyra steg och en invariant mot `isEntry`
+  vilar alla på att normaliseringen är en enda smal väg. Det valet står utskrivet
+  i avsnittet, så att nästa läsare ser att avvisningen är ett beslut och inte ett
+  förbiseende. Kvar står en egen rad i felmeddelandetabellen med en text som
+  namnger skillnaden och visar två exempel som båda är giltig indata — en
+  vägledning som visar ett format appen avvisar vore samma fel en gång till.
+  Raden är skriven om **värdets form** och inte om råvärdets typ, så regeln
+  "samma värde, samma `message` oavsett ingångstyp" står orörd. Två saker kom
+  till utöver texten. Villkoret fick en längdgräns av samma slag som snabbvägen i
+  `checkName`, eftersom mönstret läser hela strängen och `amountSek` annars
+  skulle förlora den billiga avvisningen `LARDOMAR.md` 2026-08-23 mätte. Och
+  rundgången `formatSek` → `validateEntryDraft` blev ett obligatoriskt testfall:
+  den saknades i projektet, och det är därför felet kunde stå i sju paket —
+  testerna matar in belopp de själva skrivit och jämför utdata, aldrig det
+  omvända varvet. **Byggaren ska:** lägga till de två konstanterna och villkoret i
+  `src/core/entry.js` enligt tabellen i steg 1; lägga till meddelandet i
+  `MESSAGES` med en nyckel i samma form som de övriga; skriva facittabellens rader
+  och rundgångstestet i `tests/entry.test.js` med `formatSek` och `sekToOre`
+  importerade från ägaren; köra de tre mutationerna var för sig med `EXIT=1` och
+  kryssraden inklistrad; köra `grep -c` på varje uttryck före pilen mot
+  `src/core/entry.js` med minst `1`; och köra `npm test` med `fail 0` och exit 0.
+  (påverkat av lärdom: **ja**, `2026-09-22 — validering: appen visar belopp som
+  "12 000,00 kr" men avvisar "12 000" med "Beloppet måste vara ett tal."`,
+  `2026-09-16 — test: Object.hasOwn-spärren i schedule.js överlever mutation, och
+  testkommentaren namnger ett skydd assertionen inte ger`, och `2026-09-14 —
+  test: samma bindande användartext fick två skrivsätt i tests/app.test.js`)
+- **De två raderna som säger "oförändrad" fick punkt (35) och (36), och
+  mutationslistan följer numera facit och inte testfallen** — facit för vyn efter
+  en borttagning gjorde fyra utfall bindande, men bara `204` och `404` hade en
+  punkt. Granskarens körning visar vad det kostade: mutationen "hämta om vid
+  varje misslyckat svar" — `404`-grenen utvidgad till `500` plus ett
+  `await loadAndRender()` i `catch`-grenen — gav `tests 358, pass 358, fail 0` och
+  `EXIT=0`, alltså noll kryssrader för ordagrant det alternativ som står som
+  förkastat i den här loggen. Orsaken var mätt och är inte slumpen: inget
+  testfall lät `DELETE` självt svara `500` eller avvisas. *Att lita på att de två
+  raderna följer av de andra förkastades:* de sitter i samma `if`-kedja, så en rad
+  utan punkt är en rad vem som helst kan ändra med grön svit. Formen som gör en
+  "oförändrad"-rad prövbar står utskriven i avsnittet — räkna anropen som inte ska
+  ske, och låt det anrop mutationen inför förstöra vyn — eftersom en assertion på
+  en vy som ser likadan ut före och efter annars är sann av sig själv. Regeln som
+  följer står under "Teststrategi": en mutationsrad per rad i facit, aldrig en per
+  testfall paketet råkar skriva, och varje facittabell redovisas med sina par av
+  rad och punkt. **Byggaren ska:** skriva punkt (35) och (36) enligt formen i
+  avsnittet; köra de två nya mutationerna var för sig med `EXIT=1` och kryssraden
+  inklistrad; köra om granskarens sammansatta mutation och visa att den numera ger
+  `EXIT=1`; köra `grep -c` på båda uttrycken mot `src/web/app.js`; och köra
+  `npm test` med `fail 0` och exit 0. (påverkat av lärdom: **ja**, `2026-09-23 —
+  test: två av fyra rader i facit för vyn efter en borttagning skyddas av inget
+  test`, och `2026-09-10 — test: raden som tömmer #empty-state i clearView
+  överlever mutation`)
+- **Åldrade påståenden utanför `ARKITEKTUR.md` som paket 8 orsakade, och som
+  ägarna rättar** — granskningen fann dem, och de skrivs upp här så att de inte
+  glöms bort mellan agenterna. `README.md` säger att felmeddelandet för ett
+  mellanslag bara ger standardtexten och råder användaren att leta efter
+  mellanslag; efter rättningen är det omvänt, och texten är alltså falsk för
+  användaren, som är den läsare den finns för. Samma fil angav dessutom antalet
+  tester som ett fast tal, och det talet var förbi redan när granskningen läste
+  det. Båda hör till **dokumentatorn** och står som två egna rader i ordern under
+  punkten `README.md` har två avsnitt vars facit de här besluten ändrar. En
+  kommentar över `AMOUNT_HINT_CASES` i `tests/entry.test.js` påstår att båda
+  blanktecknen står som escaper, medan raderna under skriver U+0020 rått; ägaren
+  i `src/core/entry.js` har samma mening och där stämmer den. Den hör till
+  **byggaren** och rättas i samma paket. Ingen av de tre kräver ett beslut: facit
+  finns redan, och det är påståendena som ska följa facit. (påverkat av lärdom:
+  **ja**, `2026-09-02 — dokumentation: ARKITEKTUR.md:s exempelsträng för formatSek
+  är inte den koden ger`, och `2026-09-14 — dokumentation: fem antal skrevs in i
+  ARKITEKTUR.md utan kommandot, och två av fem stämmer inte`)
+- **Den vägledande texten gjorde en rad i paket 2:s facittabell falsk, och
+  korskontrollen mellan tabellerna kördes inte** — raden `'50 kr'` / `Infinity`
+  kräver identisk `message` för strängen och talet, och efter paket 8:s beslut
+  ger strängen den vägledande texten medan talet ger standardtexten. Byggaren
+  hittade det och löste det på rätt ställe: paret bytte sträng till `'1e3'`, som
+  fortfarande ger samma svar som `Infinity`, och `'50 kr'` prövas i stället i den
+  nya facittabellen — ingen rad tappades. Dokumentet hade dock kvar den gamla
+  raden, alltså två facit som gav olika svar för samma värde, och det är ordagrant
+  felet i `LARDOMAR.md` 2026-08-23. Rättat här: raden är utbytt, skälet utskrivet,
+  och villkoret på vilka strängar som duger i den tabellen står nu som en regel —
+  en sträng ska antingen matcha `AMOUNT_PATTERN` eller falla på steg 1 **utan**
+  att träffa `AMOUNT_HINT_PATTERN`. Varje övrig sträng i tabellen prövades mot den
+  nya kedjan i samma svep: `'abc'` och `''` saknar siffra och står kvar, och
+  resten matchar `AMOUNT_PATTERN` och når regelkedjan som förut, så raden om
+  `Infinity` var den enda som blivit falsk. *Att i stället skriva om invarianten
+  förkastades:* "samma värde, samma `message` oavsett ingångstyp" är sann och ska
+  vara det — det var exemplet som inte dög, inte regeln. Den kontroll som skulle
+  ha fångat detta när steget lades till står nu utskriven i samma avsnitt som
+  tabellerna, med kravet att utfallet klistras in rad för rad.
+  (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation: två facit i samma fil
+  ger olika svar för samma belopp`, och `2026-09-22 — validering: appen visar
+  belopp som "12 000,00 kr" men avvisar "12 000" med "Beloppet måste vara ett
+  tal."`)
+- **`README.md` har två avsnitt vars facit de här besluten ändrar** — dokumentatorn
+  har beskrivit båda felen för användaren som kända och orättade, och en sådan
+  text blir falsk i samma stund koden ändras. Det är samma form som en åldrad
+  markör i den här filen, med skillnaden att den står i en annan fil och att
+  kommando A, B och C inte träffar den; därför står facit här i stället.
+  **Dokumentatorn ska:** i "Så skriver du ett belopp" behålla att `12 000`
+  avvisas, stryka meningen om att felmeddelandet inte pekar ut mellanslaget, och
+  i stället skriva vad appen svarar — den vägledande texten, ordagrant som den
+  står i felmeddelandetabellen; i stycket om att appens utdata inte går att
+  klistra tillbaka skriva samma sak, alltså att appen säger vad man ska skriva;
+  stryka stycket "Känt fel vid borttagning av en post som redan är borta" och i
+  stället skriva att listan, totalerna och kortet hämtas om när servern svarar att
+  posten inte finns; och behålla varningen om två flikar, men utan hänvisning till
+  det strukna felet. Därutöver det granskningen av paket 8 hittade i samma fil:
+  meningen om att felmeddelandet inte pekar ut mellanslaget står kvar på ett andra
+  ställe i samma avsnitt och säger numera motsatsen till vad appen gör, och
+  antalet tester står som ett fast tal, som körningen sedan länge har passerat —
+  **talet stryks och skrivs inte om till ett nytt**. Kravet som ska stå i stället
+  är det som inte åldras: `npm test` ska ge `fail 0` och avsluta med exitkod 0,
+  och `ℹ tests`-raden i läsarens egen körning är enda facit för hur många de är.
+  Ingen av ändringarna görs förrän koden är ändrad och `npm test` ger `fail 0`
+  och exit 0. (påverkat av lärdom: **ja**, `2026-09-04 —
+  dokumentation: "Kvar i paket 3" står kvar i ARKITEKTUR.md och är fortfarande
+  falsk`)

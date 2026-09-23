@@ -382,7 +382,10 @@ test('en borttagning som ger 404 visar serverns text i den allmänna rutan', asy
   await flush();
 
   assert.equal(dom.formError.textContent, 'Posten finns inte.');
-  // Listan står kvar: en misslyckad borttagning tar inte bort raden i vyn.
+  // Raden står kvar därför att omhämtningen svarar med samma lista igen: den
+  // här planen beskriver en datafil där posten fortfarande finns. Vad vyn visar
+  // när datafilen verkligen har ändrats avgörs av punkt (34) längst ned, som
+  // svarar med en kortare lista på den GET som följer.
   assert.equal(dom.list.children.length, 1);
 });
 
@@ -1241,5 +1244,227 @@ test('laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra a
     globalThis.fetch,
     FETCH_FORE_TESTERNA,
     'globalThis.fetch är inte värdet från före testfallen: attrappen står kvar'
+  );
+});
+
+// ------------------------------- paket 8: vyn efter en misslyckad borttagning
+
+// (34) Ett 404 på DELETE är ett definitivt besked om datafilen: servern har
+// läst den och sagt att posten inte finns, alltså har filen ändrats sedan vyn
+// hämtades, och då är vyn inaktuell i sin helhet — inte bara på raden
+// användaren klickade. Slutgranskningen mätte läget med två flikar mot samma
+// datafil: raden stod kvar i listan, i båda totalerna och bland kommande
+// dragningar, bredvid texten som säger att posten inte finns (LARDOMAR.md
+// 2026-09-22). Testfallet bygger samma läge med fetch-attrappen, alltså utan en
+// andra process.
+//
+// Alla tre vyelementen asserteras och inte bara felrutan: en assertion på bara
+// #form-error passerar med den kod som gav fyndet.
+test('en borttagning som ger 404 hämtar om listan och visar serverns text', async (t) => {
+  const poster = dragningsposter();
+  const borttagen = poster[0];
+  const kvar = poster.slice(1);
+  let hamtningar = 0;
+  const { dom, anrop } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return { status: 200, json: { entries: hamtningar === 1 ? poster : kvar } };
+    }
+    return { status: 404, json: { error: 'Posten finns inte.' } };
+  });
+
+  // Utgångsläget är det motsatta av det förväntade: tre rader ska bli två, och
+  // båda totalerna räknar ännu med posten som är borta ur datafilen.
+  assert.equal(dom.list.children.length, 3);
+  assert.equal(dom.falt('upcoming-list').children.length, 3);
+  assert.equal(dom.falt('total-monthly').textContent, formatSek(totalMonthlyOre(poster)));
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter 404:an');
+  assert.equal(anrop[1].method, 'DELETE');
+  assert.equal(anrop[1].url, `/api/entries/${borttagen.id}`);
+
+  assert.equal(dom.formError.textContent, 'Posten finns inte.');
+  assert.equal(
+    dom.list.children.length,
+    2,
+    'postlistan har fler rader än datafilen har poster: den borttagna står kvar'
+  );
+  assert.equal(
+    dom.falt('total-monthly').textContent,
+    formatSek(totalMonthlyOre(kvar)),
+    'månadstotalen räknar med en post som datafilen inte har'
+  );
+  assert.equal(
+    dom.falt('total-yearly').textContent,
+    formatSek(totalYearlyOre(kvar)),
+    'årstotalen räknar med en post som datafilen inte har'
+  );
+
+  const namnen = dom
+    .falt('upcoming-list')
+    .children.map((rad) => celltext(rad, 'upcoming-name'));
+  assert.deepEqual(namnen, upcoming(kvar, FRYST_IDAG).map((item) => item.entry.name));
+  assert.equal(
+    namnen.includes(borttagen.name),
+    false,
+    'en dragning för posten som datafilen inte har står kvar i kortet'
+  );
+});
+
+// (34) Ordningen mellan showErrors och omhämtningen. Den indata där den ändrar
+// svaret är ett DELETE som ger 404 följt av en GET som ger 500: loadAndRender
+// nollställer då vyn och skriver lagringens text sist, och det är det nyare
+// beskedet användaren ser. Med 404-grenen före showErrors skrivs lagringens
+// text först och därefter över av "Posten finns inte." — en tom vy med en text
+// om en post.
+test('en borttagning som ger 404 följd av en misslyckad omhämtning visar det nyare felet', async (t) => {
+  const poster = dragningsposter();
+  let hamtningar = 0;
+  const { dom } = await starta(t, (post) => {
+    if (post.method === 'GET') {
+      hamtningar += 1;
+      return hamtningar === 1
+        ? { status: 200, json: { entries: poster } }
+        : { status: 500, json: { error: 'Datafilen är skadad och kunde inte läsas: X' } };
+    }
+    return { status: 404, json: { error: 'Posten finns inte.' } };
+  });
+
+  // Utgångsläget är det motsatta av det förväntade: tre rader i båda korten och
+  // två kända totaler.
+  assert.equal(dom.list.children.length, 3);
+  assert.equal(dom.falt('upcoming-list').children.length, 3);
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  assert.equal(hamtningar, 2, 'listan hämtades inte om efter 404:an');
+  assert.equal(
+    dom.formError.textContent,
+    'Datafilen är skadad och kunde inte läsas: X',
+    'den allmänna rutan visar det äldre beskedet om posten i stället för det nyare om datafilen'
+  );
+  // Vyn nollställd enligt "Vyn när en hämtning misslyckas".
+  assert.equal(dom.list.children.length, 0);
+  assert.equal(dom.falt('upcoming-list').children.length, 0);
+  assert.equal(dom.falt('total-monthly').textContent, UNKNOWN_TOTAL, 'månadstotalen visar inte UNKNOWN_TOTAL');
+  assert.equal(dom.falt('total-yearly').textContent, UNKNOWN_TOTAL, 'årstotalen visar inte UNKNOWN_TOTAL');
+});
+
+// (35) och (36) skyddar de två raderna i facittabellen som säger att vyn ska
+// stå OFÖRÄNDRAD. En vy som inte ändras syns inte när regeln håller, så båda
+// fallen är byggda så att skillnaden blir synlig, och de två greppen gäller
+// samtidigt:
+//
+//  1. Planen räknar sina GET, och fallet kräver att antalet är oförändrat efter
+//     klicket. Det är den assertion som fäller mutationen direkt.
+//  2. Planen svarar 500 på varje GET efter den första. Sker en omhämtning ändå
+//     kör loadAndRender clearView, och raderna, båda totalerna och kortet töms
+//     — så även elementassertionerna faller, och kryssraden pekar ut vad
+//     användaren förlorar i stället för bara ett tal. Utan den fällan skulle en
+//     plan som svarar samma lista varje gång dölja hela skillnaden, och
+//     elementassertionerna vore sanna av sig själva (LARDOMAR.md 2026-09-10,
+//     raden som tömmer #empty-state i clearView överlever mutation).
+//
+// Granskningen av paket 8 mätte varför de behövs: mutationen "hämta om vid
+// varje misslyckat svar" gav hela sviten fail 0 och EXIT=0, trots att just det
+// alternativet står som förkastat i beslutsloggen. Inget testfall lät då DELETE
+// självt svara 500 eller avvisas.
+const LAGRINGSFEL = 'Datafilen är skadad och kunde inte läsas: X';
+
+// Plan åt (35) och (36): första GET ger hela listan, varje GET därefter ger 500,
+// och DELETE besvaras av anroparen. Räknaren lämnas tillbaka så att fallet kan
+// kräva att ingen omhämtning skedde.
+function planSomStraffarOmhamtning(poster, svaraPaDelete) {
+  const raknare = { hamtningar: 0 };
+  const plan = (post) => {
+    if (post.method === 'GET') {
+      raknare.hamtningar += 1;
+      return raknare.hamtningar === 1
+        ? { status: 200, json: { entries: poster } }
+        : { status: 500, json: { error: LAGRINGSFEL } };
+    }
+    return svaraPaDelete();
+  };
+  return { plan, raknare };
+}
+
+// Vyn bär fortfarande hela den ursprungliga listan: inget svar har sagt något
+// nytt om datafilen, och då får appen inte gissa.
+function kravVynOrord(dom, poster) {
+  assert.equal(
+    dom.list.children.length,
+    poster.length,
+    'postlistan nollställdes trots att svaret inte sade något om datafilen'
+  );
+  assert.equal(
+    dom.falt('total-monthly').textContent,
+    formatSek(totalMonthlyOre(poster)),
+    'månadstotalen ändrades trots att svaret inte sade något om datafilen'
+  );
+  assert.equal(
+    dom.falt('total-yearly').textContent,
+    formatSek(totalYearlyOre(poster)),
+    'årstotalen ändrades trots att svaret inte sade något om datafilen'
+  );
+  assert.equal(
+    dom.falt('upcoming-list').children.length,
+    poster.length,
+    'kortet Kommande dragningar tömdes trots att svaret inte sade något om datafilen'
+  );
+}
+
+test('en borttagning som ger 500 lämnar vyn orörd och visar lagringens text', async (t) => {
+  const poster = dragningsposter();
+  const { plan, raknare } = planSomStraffarOmhamtning(poster, () => ({
+    status: 500,
+    json: { error: LAGRINGSFEL }
+  }));
+  const { dom } = await starta(t, plan);
+
+  assert.equal(raknare.hamtningar, 1);
+  kravVynOrord(dom, poster);
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  // Vyn prövas före räknaren: sker en omhämtning ändå tömmer 500:an på nästa
+  // GET hela vyn, och då ska kryssraden peka ut vad användaren förlorar i
+  // stället för bara ett tal. Räknaren står sist som bakstopp.
+  kravVynOrord(dom, poster);
+  assert.equal(dom.formError.textContent, LAGRINGSFEL);
+  assert.equal(
+    raknare.hamtningar,
+    1,
+    'listan hämtades om efter ett 500: ett svar som inte säger något om datafilen fick appen att gissa'
+  );
+});
+
+test('ett avvisat fetch vid Ta bort lämnar vyn orörd och visar den allmänna texten', async (t) => {
+  const poster = dragningsposter();
+  // Anropet avvisas av attrappen, alltså utan svar och utan statuskod — samma
+  // sak som ett nät som inte svarar.
+  const { plan, raknare } = planSomStraffarOmhamtning(
+    poster,
+    () => new Error('natet svarar inte')
+  );
+  const { dom } = await starta(t, plan);
+
+  assert.equal(raknare.hamtningar, 1);
+  kravVynOrord(dom, poster);
+
+  dom.taBortKnappar()[0].utlos('click');
+  await flush();
+
+  // Samma ordning som i (35), och av samma skäl.
+  kravVynOrord(dom, poster);
+  assert.equal(dom.formError.textContent, GENERAL_ERROR);
+  assert.equal(
+    raknare.hamtningar,
+    1,
+    'listan hämtades om efter ett avvisat anrop: appen vet inget nytt om datafilen'
   );
 });

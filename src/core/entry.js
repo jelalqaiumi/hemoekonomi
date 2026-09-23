@@ -47,6 +47,25 @@ export const AMOUNT_MAX_SEK = 9999999.99;
 // ger ett finit tal långt under Number.MAX_SAFE_INTEGER.
 export const AMOUNT_PATTERN = /^-?\d{1,15}([.,]\d{1,15})?$/;
 
+// Avgör bara VILKEN av steg 1:s två texter som gäller, aldrig om ett värde är
+// giltigt: allt AMOUNT_PATTERN underkänner är fortfarande ogiltigt. Mönstret
+// säger "det här ser ut som ett skrivet belopp" — siffror med avgränsare och
+// ett valfritt kr — och då får användaren texten som säger hur beloppet ska
+// skrivas i stället för att bara få veta att det inte är ett tal.
+//
+// Båda blanktecknen står som escaper: \u0020 är det tangentbordet ger
+// och \u00a0 det appen själv visar i formatSek-strängen. Ett mönster där man inte
+// kan se vilket blanktecken som avses är oläsbart (LARDOMAR.md 2026-09-14).
+export const AMOUNT_HINT_PATTERN = /^-?[\d.,\u0020\u00a0]*\d[\d.,\u0020\u00a0]*(?:kr)?$/i;
+
+// Snabbväg av samma slag som längdspärren i checkName: AMOUNT_HINT_PATTERN
+// läser hela strängen, medan AMOUNT_PATTERN avgör sitt svar på de första
+// tecknen. Utan gränsen kostar ett amountSek på 50 000 000 tecken en
+// genomläsning av hela indatan för att svara (LARDOMAR.md 2026-08-23). 40 är en
+// billig övre uppskattning: ett minustecken, femton siffror med avgränsare, ett
+// decimaltecken, femton decimaler och ' kr'.
+export const AMOUNT_HINT_MAX_LENGTH = 40;
+
 export const MIN_YEAR = 1970;
 export const MAX_YEAR = 2099;
 
@@ -61,6 +80,7 @@ const MESSAGES = {
   nameEmpty: 'Namnet får inte vara tomt.',
   nameTooLong: `Namnet får vara högst ${NAME_MAX_LENGTH} tecken.`,
   amountNotNumber: 'Beloppet måste vara ett tal.',
+  amountHint: 'Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000 eller 139,50.',
   amountNotPositive: 'Beloppet måste vara större än 0 kr.',
   amountTooManyDecimals: 'Beloppet får ha högst två decimaler.',
   amountTooLarge: `Beloppet får vara högst ${formatAmountLimitSek(AMOUNT_MAX_SEK)} kr.`,
@@ -241,7 +261,7 @@ function checkAmountSek(raw) {
   // Steg 1. Enda felet som kan uppstå här är "måste vara ett tal".
   const v = normalizeAmountSek(raw);
   if (v === null) {
-    return { message: MESSAGES.amountNotNumber };
+    return { message: amountNotNumberMessage(raw) };
   }
 
   // Steg 2, i tabellordning. Maxgränsen står före decimalregeln med flit:
@@ -273,6 +293,25 @@ function checkAmountSek(raw) {
   // Lagrat värde har alltid högst två decimaler och är fritt från flyttalsskräp.
   // Uttrycket har en ägare — samma funktion som isEntry prövar mot.
   return { value: canonicalAmountSek(v) };
+}
+
+// Vilken av steg 1:s två texter ett råvärde som inte gav ett finit tal ska få.
+// Ordningen är bindande (ARKITEKTUR.md, "Den vägledande texten för ett skrivet
+// belopp"): typen först, längden därefter, formen sist. Raden skiljer inte på
+// number och string för något värde som kan uttryckas i båda formerna — den
+// gäller bara strängar som inte är tal alls, och '12 000' finns inte som number.
+function amountNotNumberMessage(raw) {
+  if (typeof raw !== 'string') {
+    return MESSAGES.amountNotNumber;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > AMOUNT_HINT_MAX_LENGTH) {
+    return MESSAGES.amountNotNumber;
+  }
+  if (AMOUNT_HINT_PATTERN.test(trimmed)) {
+    return MESSAGES.amountHint;
+  }
+  return MESSAGES.amountNotNumber;
 }
 
 // Returnerar ett finit tal, eller null när råvärdet inte är ett tal alls.

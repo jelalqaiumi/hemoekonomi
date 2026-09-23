@@ -3341,3 +3341,190 @@ Kontrollen körs innan paketet lämnas vidare: sök upp varje mening som innehå
 ordet "körning" följt av verbet "ger", kör om den körningen och jämför med det
 utskrivna värdet.
 **⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-22 — gränssnitt: en borttagning som ger 404 lämnar posten kvar i listan, i båda totalerna och bland kommande dragningar
+**Vad gick fel:** Två flikar mot samma datafil, borttagning av `Hyra` i flik 1 och
+därefter klick på `Ta bort` för samma rad i flik 2: datafilen innehåller
+`["Elavtal"]` med de sanna totalerna `800,00 kr` och `9 600,00 kr`, men flik 2
+visar samtidigt `#form-error = "Posten finns inte."`, raderna
+`["Hyra","Elavtal"]`, `Totalt per månad = "12 800,00 kr"`,
+`Totalt per år = "153 600,00 kr"` och en kommande dragning
+`Hyra 2026-09-30 Om 8 dagar` — alltså ett belopp som är 12 000 kr för högt per
+månad och en dragning för en post som inte finns, bredvid en text som säger att
+posten inte finns. Ett andra klick ger samma svar och samma vy (`2 rader`); bara
+en sidomladdning eller en annan lyckad ändring läker läget, eftersom
+`removeEntry` i `src/web/app.js` rad 324–329 anropar `loadAndRender()` bara vid
+`204` och går till `showErrors` i varje annat fall.
+**Varför:** Beslutet att låta raden stå kvar finns bara som en kommentar i ett
+testfall — `tests/app.test.js` rad 385, "Listan står kvar: en misslyckad
+borttagning tar inte bort raden i vyn" — och `ARKITEKTUR.md` har ingen regel alls
+för vad vyn ska göra efter en misslyckad borttagning (`grep -n "misslyckad
+borttagning" ARKITEKTUR.md` ger noll träffar). Regeln är dessutom skriven för
+*alla* misslyckade svar, medan `404` är det enda av dem som är ett definitivt
+besked: vid `500` vet appen inte vad datafilen innehåller och får inte gissa, men
+vid `404` har servern sagt att posten är borta. `clearView` i samma fil, rad
+169–177, namnger ordagrant det tillstånd som nu uppstår som det den finns för att
+förhindra — "totaler som räknar med en post som redan är borta ur datafilen, och
+med dragningar för samma post" — men slutsatsen drogs bara för `loadAndRender`,
+inte för `removeEntry`. Att fallet bara nås med två flikar gjorde det osynligt:
+sviten har inget testfall där två vyer lever mot samma datafil.
+**Regel framåt:** Ett `404` från `DELETE /api/entries/<id>` är ett besked om att
+datafilen har ändrats sedan vyn hämtades, och ska därför följas av en omhämtning:
+`removeEntry` ska anropa `loadAndRender()` efter `showErrors(...)` när
+`response.status === 404`, så att raden, totalerna och kortet Kommande dragningar
+stämmer med disken när feltexten visas. `500` ska behålla dagens beteende —
+appen vet då inget nytt om datafilen. Regeln skrivs först i `ARKITEKTUR.md` som
+en egen rad per statuskod under gränssnittets ansvarslista, med den vy som gäller
+för var och en, innan koden ändras. Testfallet är obligatoriskt och ska asserta
+alla tre elementen efter ett `404`: `#entry-list` har en rad färre,
+`#total-monthly` och `#total-yearly` är den kvarvarande listans totaler, och
+`#upcoming-list` saknar den borttagna postens namn — en assertion på bara
+`#form-error` räknas inte, eftersom den passerar med dagens kod.
+
+### 2026-09-22 — validering: appen visar belopp som "12 000,00 kr" men avvisar "12 000" med "Beloppet måste vara ett tal."
+**Vad gick fel:** `formatSek(sekToOre(12000))` ger strängen `12 000,00 kr`
+(mellanrummet är U+00A0), och det är så varje belopp presenteras i listan, i
+totalrutan och i kostnaden per post. Skrivs samma tal tillbaka i formuläret
+avvisas det: körda fall genom `validateEntryDraft` gav `"12 000"` (U+0020) →
+`Beloppet måste vara ett tal.`, `"12 000"` → samma, och `"1 234,50 kr"`,
+alltså en ordagrann kopia av appens egen utdata, → samma. Felmeddelandet säger
+att värdet inte är ett tal, fast `12 000` är det normala svenska skrivsättet för
+tolvtusen och dessutom det skrivsätt appen själv valt för utmatning; texten säger
+ingenting om vad användaren ska göra i stället. `"12000"`, `"139,5"`, `"139.50"`
+och `"  50  "` godkänns, så regeln är att tusentalsavgränsare inte stöds.
+**Varför:** `AMOUNT_PATTERN` (`/^-?\d{1,15}([.,]\d{1,15})?$/`) och beslutet står i
+`ARKITEKTUR.md` rad 517–519, som uttryckligen räknar upp att
+"tusentalsavgränsare stöds inte" — koden följer alltså dokumentet, och
+mönstret har testfall. Det som aldrig prövades är sambandet mellan *utmatningens*
+format och *inmatningens*: de två avsnitten skrevs var för sig, `formatSek` ägs
+av `money.js` och `AMOUNT_PATTERN` av `entry.js`, och ingen mening i
+`ARKITEKTUR.md` ställer frågan om appens egen utdata är giltig indata. Felet syns
+inte i något testfall, eftersom testerna matar in belopp de själva skrivit som
+`'12000'` och jämför utdata mot `'12 000,00 kr'` — aldrig det omvända
+varvet, där utdatan matas tillbaka in.
+**Regel framåt:** Varje format en app *visar* ska antingen godtas som indata
+eller mötas av ett felmeddelande som namnger skillnaden. Konkret: antingen ska
+`AMOUNT_PATTERN` acceptera blanksteg som tusentalsavgränsare (U+0020 och U+00A0)
+genom att strippa dem före matchningen, eller så ska meddelandet för en sträng
+som består av siffror, blanksteg, komma, punkt och `kr` bytas mot en egen rad i
+felmeddelandetabellen som säger vad som gäller — förslagsvis
+`Skriv beloppet med siffror utan mellanslag, till exempel 12000 eller 139,50.` —
+och det valet skrivs i `ARKITEKTUR.md` innan koden ändras. Kontrollen är
+obligatorisk och ska finnas som testfall i `tests/entry.test.js`: för varje belopp
+i tabellen över giltiga värden, kör `formatSek(sekToOre(v))` och mata tillbaka
+resultatet i `validateEntryDraft` — antingen ska det ge `ok: true` med samma tal,
+eller ska det ge det nya, vägledande meddelandet. Ett rundgångstest av den formen
+saknas i projektet och ska skrivas för varje par av formaterare och tolk.
+
+### 2026-09-23 — test: de två "oförändrad"-raderna i facittabellen för vyn efter en borttagning skyddas av inget test
+**Vad gick fel:** `ARKITEKTUR.md` rad 4669–4675 är paket 8:s nya bindande facit
+med en rad per utfall av `DELETE /api/entries/<id>`, och två av de fyra raderna
+säger att vyn ska stå **oförändrad** (`500` och ett avvisat `fetch`). Ingen av
+dem har ett test. Körda mutationer i en kopia av trädet, en i taget:
+`if (response.status === 404) {` (`src/web/app.js` rad 343) →
+`if (response.status === 404 || response.status === 500) {` ger
+`tests 42, pass 42, fail 0` och `EXIT=0`; `await loadAndRender();` inlagt före
+`return;` i `removeEntry`s `catch` (rad 320) ger samma sak. Den avgörande
+körningen är de två tillsammans, alltså precis det alternativ samma dokument på
+rad 7334 säger är förkastat — "*Att hämta om vid varje misslyckat svar
+förkastades:* en omhämtning som själv misslyckas nollställer vyn": 404-grenen
+ersatt av ett villkorslöst `await loadAndRender();` **och** en omhämtning i
+`catch`-grenen ger på hela sviten `ℹ tests 358`, `ℹ pass 358`, `ℹ fail 0` och
+`EXIT=0`, utan en enda kryssrad. De två rader paketet självt byggde är däremot
+skyddade: `if (response.status === 404) {` → `if (false) {` ger `EXIT=1` med
+`✖ en borttagning som ger 404 hämtar om listan och visar serverns text` och
+`✖ en borttagning som ger 404 följd av en misslyckad omhämtning visar det nyare
+felet`, och `showErrors(await readJson(response));` flyttad efter 404-grenen ger
+`EXIT=1` med det andra av de två.
+**Varför:** Mutationslistan på rad 4699–4700 har en rad per **nytt testfall**,
+inte en rad per **rad i facittabellen**, så de två utfall paketet lämnade
+oförändrade fick ingen mutation. Alla sex `status: 500` i `tests/app.test.js`
+(rad 221, 235, 554, 609, 824, 853 och 1331) ligger antingen på `POST`-vägen
+eller på en **omhämtning** efter ett `DELETE` som gav `204` eller `404` — inget
+testfall låter `DELETE` självt svara `500`. Att grannfallet är oförändrat sedan
+paket 5 lästes som att det redan var täckt, men det som täcktes var att texten
+visas, aldrig att vyn *inte* hämtas om. Det är samma grundorsak som
+`2026-09-12` (renderUpcomings två nollställningar): mutationslistan hämtades ur
+dokumentet i stället för ur facittabellen, och ett tillstånd som ingen kodrad
+skriver får ingen assertion. Nionde gången ett delvillkor visar sig oskyddat av
+något test.
+**Regel framåt:** En facittabell med en rad per utfall ska ha en mutation per
+**rad**, inte per testfall — också för de rader där beteendet är "gör ingenting".
+En rad vars utfall är "oförändrad" prövas med mutationen som *inför* handlingen
+(här `await loadAndRender()` i den grenen), aldrig bara med mutationen som tar
+bort den. Konkret för punkt (34): `tests/app.test.js` ska få ett testfall där
+`DELETE` svarar `500` och `GET` räknas, med `assert.equal(hamtningar, 1)` plus
+oförändrad `#entry-list`, oförändrade totaler och oförändrad `#upcoming-list`,
+och ett motsvarande fall för ett avvisat `fetch` vid Ta bort. Står ett
+förkastat alternativ utskrivet i beslutsloggen ("*Att X förkastades*") ska X
+köras som mutation innan paketet lämnas vidare; överlever det med `fail 0` är
+avgränsningen bara en mening och inte ett skydd.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-09-23 — dokumentation: paket 8:s nya beloppstext gjorde README.md:s beskrivning av samma fel falsk i samma ändring
+**Vad gick fel:** `README.md` rad 185–187 lyder "Felmeddelandet för ett
+mellanslag säger bara `Beloppet måste vara ett tal.` och pekar alltså inte ut
+mellanslaget. Ser du det meddelandet trots att du tycker att du skrev ett tal:
+leta efter ett mellanslag." Efter paket 8 säger appen något annat. Körd:
+`validateEntryDraft` med `amountSek: '12 000'` ger
+`Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000
+eller 139,50.`, och samma text för `'12 000'`, `'50 kr'`, `'1 234,50 kr'`
+och `'-12 000'` — alltså exakt de strängar stycket handlar om. Rådet i README är
+därmed omvänt: den som letar efter texten `Beloppet måste vara ett tal.` efter
+att ha skrivit ett mellanslag hittar den inte. Samma fil har ett andra påstående
+som inte stämmer: rad 96–97 säger "Senaste körningen gav `tests 353`, `pass
+353`, `fail 0`", medan `npm test` på det granskade trädet ger `ℹ tests 358`,
+`ℹ pass 358`, `ℹ fail 0` och `EXIT=0` — de fem som fattas är paket 8:s egna nya
+testfall.
+**Varför:** Paket 8 bytte en sträng som visas för användaren och sökte efter det
+gamla påståendet i `ARKITEKTUR.md` och i testfilerna, men inte i `README.md`,
+som skrevs i mellantiden och inte är med i de sökningar projektets lärdomar
+räknar upp (`LARDOMAR.md` 2026-09-11 föreskriver
+`grep -rn … ARKITEKTUR.md LARDOMAR.md CLAUDE.md src tests` — `README.md` saknas i
+listan). Att rättningen var en *förbättring* av texten döljer det: en text som
+blir bättre läses inte som en ändring med följdverkningar. `README.md` ägs av
+dokumentatorn, som kör efter granskaren, men filen låg i trädet när paketet
+lämnades och beskriver nu ett beteende appen inte har.
+**Regel framåt:** `README.md` ingår i varje sökning som gäller en sträng mot
+användaren, på samma villkor som `ARKITEKTUR.md`, `src` och `tests`: byts eller
+läggs en användarvänd sträng till ska `grep -rn "<den gamla strängen>" README.md
+ARKITEKTUR.md CLAUDE.md src tests` köras före och efter ändringen och båda
+utfallen klistras in, och varje träff i `README.md` som citerar den gamla texten
+rättas eller skrivs upp som en öppen uppgift i paketets redovisning. Ett antal
+i `README.md` skrivs aldrig utan sitt kommando — skriv `npm test` ger
+`ℹ tests <N>` med körningen inklistrad, eller skriv meningen utan siffra; ett
+tal som är en slutsats av en körning åldras utan att någon rör raden
+(`LARDOMAR.md` 2026-09-14).
+
+### 2026-09-23 — test: kommentaren över AMOUNT_HINT_CASES påstår att båda blanktecknen står som escaper, men fem av raderna skriver U+0020 rått
+**Vad gick fel:** `tests/entry.test.js` rad 444–447 lyder "Båda blanktecknen står
+som escaper:   är det tangentbordet ger och ` ` det appen själv visar. Ett
+tecken som inte syns i en genomläsning skrivs alltid som escape (LARDOMAR.md
+2026-09-11)". Testdatan direkt under gör inte det: `'12 000'`, `'50 kr'`,
+`'12 kr'`, `'1 234,50'` och `'-12 000'` i `AMOUNT_HINT_CASES` (rad 448–466)
+skriver blanksteget som ett rått U+0020, och kommentarsraden **på nästa rad**
+säger det själv — `// '12 000' med U+0020, det tangentbordet ger.` Ordet som
+skulle vara escapen är dessutom borta ur meningen: `cat -A` ger
+`escaper:   M-CM-$r`, alltså tre bara blanksteg där ` ` skulle ha stått, och
+meningen är bruten mitt i en bisats över tre rader. Ägaren i `src/core/entry.js`
+rad 56 har samma mening och där stämmer den — mönstret skriver verkligen
+`[\d.,  ]`.
+**Varför:** Meningen kopierades från `entry.js`, där den är sann om ett
+reguljärt uttryck, till en testfil, där den står över en lista med
+strängliteraler och därmed handlar om något annat. Vid kopieringen förlorade
+texten just den escape den handlar om, och förlusten syns inte i en
+genomläsning: ` ` som blir tre blanksteg ser ut som vanlig typografi.
+Sakligt är testdatan rätt — `LARDOMAR.md` 2026-09-14 slår fast att escape gäller
+tecken som inte går att se, aldrig vanliga tecken — så felet är enbart att
+kommentaren beskriver en fil som inte ser ut så. Det är samma form som
+`2026-09-10` (kommentaren i `app.js` räknar upp två av filens fem användarvända
+strängar) och `2026-09-10` (kommentaren i `loadAndRender` namnger fel gren).
+**Regel framåt:** En kommentar som påstår hur raderna under den är *skrivna*
+("står som escaper", "skrivs med", "alla tre är") ska verifieras mot just de
+raderna i samma ändring, med sökningen utskriven — här
+`grep -n $'\x20\x30\x30\x30' tests/entry.test.js` eller en uppräkning av vilka
+rader som bär vilket tecken. Kopieras en kommentar från `src/` till `tests/` ska
+den läsas om mot den nya omgivningen innan den klistras in: en mening som
+beskriver ett reguljärt uttryck beskriver inte en lista med strängar. Innehåller
+meningen själv en escape ska raden köras genom `cat -A` efter kopieringen, så att
+en escape som tappats bort syns.

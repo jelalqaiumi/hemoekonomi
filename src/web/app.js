@@ -327,6 +327,22 @@ async function removeEntry(id, button) {
     }
 
     showErrors(await readJson(response));
+
+    // 404 är ett definitivt besked om datafilen: servern har läst den och sagt
+    // att posten inte finns, alltså har filen ändrats sedan vyn hämtades, och
+    // då är vyn inaktuell i sin helhet — inte bara på raden användaren
+    // klickade. 500 och ett avvisat anrop säger tvärtom att appen inte vet
+    // något nytt om filen, och då står vyn kvar (ARKITEKTUR.md, "Vyn efter en
+    // borttagning").
+    //
+    // Grenen står efter showErrors, och ordningen är bindande. Den indata där
+    // den ändrar svaret är ett DELETE som ger 404 följt av en GET som ger 500:
+    // loadAndRender nollställer då vyn och skriver lagringens text sist, vilket
+    // är det nyare beskedet. I omvänd ordning hade "Posten finns inte." skrivits
+    // över lagringens text — en tom vy med en text om en post.
+    if (response.status === 404) {
+      await loadAndRender();
+    }
   } finally {
     button.disabled = false;
   }
