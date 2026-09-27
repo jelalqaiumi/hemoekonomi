@@ -14,11 +14,12 @@ import { ORE_PER_SEK, normalizeZero } from './money.js';
 // De sammansatta konstanterna fryses. En ägare till en regel är verkningslös om
 // vilken importör som helst kan skriva om ägarens värde — ENTRY_FIELDS.push(...)
 // skulle annars flytta datamodellens gräns för hela processen.
-export const INTERVALS = Object.freeze(['monthly', 'quarterly', 'yearly']);
+export const INTERVALS = Object.freeze(['monthly', 'quarterly', 'semiannual', 'yearly']);
 
 export const INTERVAL_LABELS = Object.freeze({
   monthly: 'Månadsvis',
   quarterly: 'Kvartalsvis',
+  semiannual: 'Halvårsvis',
   yearly: 'Årsvis'
 });
 
@@ -84,7 +85,7 @@ const MESSAGES = {
   amountNotPositive: 'Beloppet måste vara större än 0 kr.',
   amountTooManyDecimals: 'Beloppet får ha högst två decimaler.',
   amountTooLarge: `Beloppet får vara högst ${formatAmountLimitSek(AMOUNT_MAX_SEK)} kr.`,
-  interval: 'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis eller årsvis.',
+  interval: 'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.',
   dateFormat: 'Startdatum måste anges som ÅÅÅÅ-MM-DD.',
   dateInvalid: 'Startdatum är inget giltigt datum.',
   dateOutOfRange: `Startdatum måste ligga mellan ${MIN_YEAR}-01-01 och ${MAX_YEAR}-12-31.`,
@@ -228,7 +229,10 @@ export function isEntry(value) {
   return validateEntryDraft(value).ok;
 }
 
-function checkName(raw) {
+// Exporterad sedan etapp 3: src/core/item.js validerar månadspostens fält med
+// samma ägare, i stället för med en andra kopia av villkoret. Samma mönster som
+// isPlainObject fick i paket 3 när cost.js behövde den.
+export function checkName(raw) {
   if (typeof raw !== 'string') {
     return { message: MESSAGES.nameEmpty };
   }
@@ -257,7 +261,10 @@ function checkName(raw) {
 // steg 2 kör en ordnad regelkedja på talet. Ingen regel i kedjan får titta på
 // råvärdets typ eller på hur strängen såg ut — samma värde ska ge samma
 // meddelande oavsett om det kom in som sträng eller som tal.
-function checkAmountSek(raw) {
+// Exporterad sedan etapp 3: src/core/item.js validerar månadspostens fält med
+// samma ägare, i stället för med en andra kopia av villkoret. Samma mönster som
+// isPlainObject fick i paket 3 när cost.js behövde den.
+export function checkAmountSek(raw) {
   // Steg 1. Enda felet som kan uppstå här är "måste vara ett tal".
   const v = normalizeAmountSek(raw);
   if (v === null) {
@@ -350,7 +357,10 @@ function checkStartDate(raw) {
   return { value: raw };
 }
 
-function checkCategory(raw) {
+// Exporterad sedan etapp 3: src/core/item.js validerar månadspostens fält med
+// samma ägare, i stället för med en andra kopia av villkoret. Samma mönster som
+// isPlainObject fick i paket 3 när cost.js behövde den.
+export function checkCategory(raw) {
   if (typeof raw !== 'string' || !CATEGORIES.includes(raw)) {
     return { message: MESSAGES.category };
   }

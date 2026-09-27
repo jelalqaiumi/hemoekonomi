@@ -133,6 +133,11 @@ hemochekonomi/
                                  ingen klocka själv (paket 7).
 ```
 
+**Trädet ovan är paket 1–8.** Etapp 1 och 2 lägger till filer och tar bort två;
+trädet för dem står under "Del 2: månadsbudget med konto och inloggning" och är
+facit för de filerna. Det upprepas inte här, så att en fil har exakt ett hem i
+den här filen.
+
 **Paketmärkningen är bindande.** Varje fil i trädet är märkt med det paket där
 den skapas. En fil som inte finns är korrekt så länge dess paket inte är
 påbörjat, och ett fel så snart paketet är klart — den skillnaden ska aldrig
@@ -230,9 +235,26 @@ på ett fryst objekt kastar `TypeError` i stället för att tyst ignoreras.
 | `crypto.randomUUID()` | Finns både i Node och i webbläsare på `http://localhost` (secure context). Noll beroenden. | `uuid`-paketet, löpnummer (krockar efter borttagning). |
 | `Intl.NumberFormat('sv-SE', …)` | Inbyggd i Node och webbläsaren. Ger `"1\u00a0234,50\u00a0kr"` utan egen formateringskod — hårt blanksteg (U+00A0) på båda platserna, se `money.js` under "Gränssnitt". Ett negativt belopp får minustecknet U+2212, inte bindestrecket U+002D: `formatSek(-0)` gav `"\u22120,00\u00a0kr"` i granskarens körning. | Egen strängpillning, `numeral`/`dinero.js`. |
 
+Raderna nedan tillkom i **etapp 1 och 2** (månadsbudget med konto och
+inloggning, se "Del 2"). De ändrar inget i raderna ovan utom lagringsvalet, vars
+gamla rad står kvar oförändrad som historik: JSON-filen var rätt val för sex fält
+och en person, och blev fel val när samma fil skulle bära flera användare, flera
+tabeller och en månadsvy.
+
+| Val | Varför | Vad vi valde bort |
+|-----|--------|-------------------|
+| **`node:sqlite` (`DatabaseSync`)** som lagring i stället för `entries.json` | Inbyggd i Node, alltså fortfarande noll beroenden. Ger transaktioner, främmandenycklar, index och filtrering per användare och månad — allt som JSON-filen tvingade appen att läsa hela filen för att göra. Användarens körning på den här maskinen (Node v24.19.0, **utan experimentflagga**): `new DatabaseSync(':memory:')`, `CREATE TABLE`, `prepare().run()` och `.get()` gav `{"id":1,"ore":123450}`. Klassen är **synkron** — inga `await` i datalagret. | `better-sqlite3` (byggs mot en C++-kompilator vid `npm install`), `sql.js` (hela SQLite som WebAssembly, megabyte i onödan), att behålla JSON-filen (kan inte filtrera per användare, saknar transaktioner över flera tabeller, och varje skrivning skriver om hela filen). |
+| **`node:crypto`** för engångskoder, hashning och sessionstoken: `randomInt`, `randomBytes`, `scryptSync`, `timingSafeEqual`, `createHash`, `randomUUID` | Inbyggd. Användarens körning: `crypto.randomInt(0, 1000000)` gav `930991`, och `scryptSync`, `timingSafeEqual` och `randomUUID` finns alla. `scrypt` är en avsiktligt långsam nyckelutledning, vilket är precis vad en sexsiffrig hemlighet behöver. | `bcrypt`/`argon2` (native byggsteg), `jsonwebtoken` (ett beroende för något en sessionstabell gör bättre: en rad går att återkalla, ett signerat token gör det inte). |
+| **Globalt `fetch` mot Resends HTTP-API** för utskick av engångskoden | Inbyggt i Node (verifierat i "Körsätt i korthet"). Ett `POST` med JSON är hela integrationen. Utan `RESEND_API_KEY` skrivs koden i serverloggen i stället, så hela inloggningsflödet går att köra och testa utan e-postkonto. | `nodemailer` (ett beroende plus SMTP-uppsättning), Resends egen SDK (samma anrop, ett beroende till), egen SMTP-klient. |
+| **Engångskod via e-post i stället för lösenord** | Ingen lösenordslagring, ingen glömt-lösenord-väg, ingen andra hemlighet att läcka. Koden är kortlivad och engångs. | Lösenord (kräver hashning, byteflöde, återställning och styrkeregler — fyra funktioner i stället för en), OAuth hos Google eller GitHub (tredjepartsberoende, egen registrering hos leverantören, och ett konto användaren inte har valt). |
+| **Sessioner som rader i en tabell, med en `httpOnly`-cookie som bär ett slumpat token** | En session går att återkalla vid utloggning genom en `UPDATE`. Tokenet bär ingen information och går inte att läsa av klienten. | Signerad cookie eller JWT (går inte att återkalla före sin utgång), sessioner i processminne (försvinner vid omstart och fungerar inte med två processer). |
+| **Drift på Fly.io, en enda instans, databasfilen på en monterad volym** | Fly.io kör en vanlig långlivad Node-process, så `start()` med `listen()` är oförändrat körsätt och ingen andra ingång behövs. Certifikat på egen domän ingår, vilket är förutsättningen för `Secure` på sessionscookien. Volymen behövs därför att appens filsystem återställs vid varje driftsättning. | Serverlös drift (varje anrop får ett tomt, tillfälligt filsystem — en SQLite-fil överlever inte mellan anrop, och lagringen hade då måst bytas mot en databas över nätet, alltså asynkrona frågor genom hela datalagret), egen VPS (certifikat, brandvägg och uppdateringar blir projektets arbete). |
+
 **Runtime-beroenden: 0. Dev-beroenden: 0.** `package.json` ska inte ha något
 `dependencies`- eller `devDependencies`-fält. Nytt beroende kräver en ny rad i
-tabellen ovan innan det installeras.
+tabellen ovan innan det installeras. `node:sqlite`, `node:crypto` och globala
+`fetch` är inbyggda i Node och är därför inga beroenden — de kräver ändå var sin
+rad ovan, eftersom en rad är det enda som gör valet granskningsbart.
 
 ### package.json — skrivs av byggaren exakt så här
 
@@ -243,7 +265,7 @@ tabellen ovan innan det installeras.
   "private": true,
   "type": "module",
   "description": "Koll pa hemmets fasta utgifter och prenumerationer.",
-  "engines": { "node": ">=20.17.0" },
+  "engines": { "node": ">=22.5.0" },
   "scripts": {
     "start": "node src/server/server.js",
     "test": "node --test \"tests/**/*.test.js\""
@@ -254,6 +276,14 @@ tabellen ovan innan det installeras.
 De inre citationstecknen i `test`-scriptet är escapade med `\"` och ska stå
 kvar precis så. Tas de bort tolkar Node argumentet som en katalog och kommandot
 misslyckas med `Cannot find module`.
+
+**`engines` höjdes från `>=20.17.0` till `>=22.5.0` i etapp 1.** Skälet är
+`node:sqlite`, som inte finns i Node 20 — en installation som uppfyller det gamla
+kravet kan inte starta appen alls efter etapp 1, och då ska `npm install` säga
+det i stället för att `import 'node:sqlite'` kastar vid första anropet. Talet är
+det lägsta som bär modulen och inget påstående om vad som är testat: den
+verifierade miljön är fortfarande Node v24.19.0, och det är den enda version
+projektets körningar gäller för.
 
 ---
 
@@ -268,7 +298,7 @@ dragning" är uttryckligen inte fält (se `PLAN.md`, beslut 1–5).
 | `id` | `string` | Ja | UUID från `crypto.randomUUID()`. Sätts av `createEntry`, aldrig av användaren. Ändras aldrig. Vad som räknas som giltigt avgörs av `isValidEntryId` — se "Vad som är ett giltigt `id`" nedan, villkoret upprepas inte här. |
 | `name` | `string` | Ja | Trimmad. 1–60 tecken. Lagras trimmad. |
 | `amountSek` | `number` | Ja | Belopp i kronor per betalningstillfälle. > 0, ≤ 9999999.99, högst 2 decimaler. |
-| `interval` | `string` | Ja | Exakt ett av `"monthly"`, `"quarterly"`, `"yearly"`. |
+| `interval` | `string` | Ja | Exakt ett av `"monthly"`, `"quarterly"`, `"semiannual"`, `"yearly"`. `"semiannual"` tillkom i etapp 1, se "Del 2". |
 | `startDate` | `string` | Ja | `"YYYY-MM-DD"`. Verkligt kalenderdatum. Mellan `1970-01-01` och `2099-12-31`. |
 | `category` | `string` | Ja | Exakt ett av `"housing"`, `"subscription"`, `"insurance"`, `"transport"`, `"loan"`, `"other"`. |
 
@@ -327,7 +357,7 @@ aldrig förändras efter att det satts. `isEntry` ställer därför inget krav p
 ### Etiketter mot användaren (svenska)
 
 `interval`: `monthly` → "Månadsvis", `quarterly` → "Kvartalsvis",
-`yearly` → "Årsvis".
+`semiannual` → "Halvårsvis", `yearly` → "Årsvis".
 
 `category`: `housing` → "Boende", `subscription` → "Prenumeration",
 `insurance` → "Försäkring", `transport` → "Transport", `loan` → "Lån",
@@ -361,7 +391,7 @@ programmeringsmisstag kan orsaka står i ett eget avsnitt längre ned
 | `amountSek` | ≤ 0 | `Beloppet måste vara större än 0 kr.` |
 | `amountSek` | > 9999999.99 | `Beloppet får vara högst 9 999 999,99 kr.` |
 | `amountSek` | fler än 2 decimaler | `Beloppet får ha högst två decimaler.` |
-| `interval` | inte något av de tre värdena | `Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis eller årsvis.` |
+| `interval` | inte något av värdena i `INTERVALS` | `Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.` |
 | `startDate` | matchar inte `ISO_DATE_PATTERN` (se `dates.js`) | `Startdatum måste anges som ÅÅÅÅ-MM-DD.` |
 | `startDate` | rätt format men obefintligt datum (t.ex. `2026-02-30`) | `Startdatum är inget giltigt datum.` |
 | `startDate` | år utanför 1970–2099 | `Startdatum måste ligga mellan 1970-01-01 och 2099-12-31.` |
@@ -916,14 +946,17 @@ godkänns av `isEntry`"* finnas som eget test.
 
 ## Betalningsintervall och normalisering
 
-Tre intervall stöds. Inga fler. Vecko- och halvårsintervall är medvetet
-bortvalda: de finns inte i planen och veckointervall går inte att normalisera
-exakt mot ett kalenderår.
+Intervallen står i tabellen nedan, och den är uttömmande.
+Veckointervall är medvetet bortvalt: det går inte att normalisera exakt mot ett
+kalenderår, eftersom ett år inte är ett helt antal veckor. Halvårsvis
+(`semiannual`) var bortvalt i paket 1–8 och **tillkom i etapp 1** — det gick att
+normalisera exakt och efterfrågades av användaren; se "Del 2".
 
 | `interval` | Betalningar per år | Månader per period |
 |------------|--------------------|--------------------|
 | `monthly` | 12 | 1 |
 | `quarterly` | 4 | 3 |
+| `semiannual` | 2 | 6 |
 | `yearly` | 1 | 12 |
 
 **All beloppsaritmetik sker i heltal öre.** Kronor är endast in- och utdata.
@@ -3630,8 +3663,8 @@ klockan.
 import { ISO_DATE_PATTERN, isValidIsoDate, parseIsoDate } from './dates.js';  // inget eget datummönster
 import { ORE_PER_SEK, normalizeZero } from './money.js';                      // [paket 3] konstanten och normalizeZero — inget annat
 
-export const INTERVALS;          // ['monthly', 'quarterly', 'yearly']
-export const INTERVAL_LABELS;    // { monthly: 'Månadsvis', ... }
+export const INTERVALS;          // ['monthly', 'quarterly', 'semiannual', 'yearly'] — 'semiannual' [etapp 1]
+export const INTERVAL_LABELS;    // { monthly: 'Månadsvis', ..., semiannual: 'Halvårsvis' } — [etapp 1] för semiannual
 export const CATEGORIES;         // ['housing', 'subscription', 'insurance', 'transport', 'loan', 'other']
 export const CATEGORY_LABELS;    // { housing: 'Boende', ... }
 export const ENTRY_FIELDS;       // ['amountSek', 'category', 'id', 'interval', 'name', 'startDate'] (sorterad)
@@ -3743,7 +3776,7 @@ posten med ett extra fält.
 import { divideRoundHalfUp, sekToOre } from './money.js';
 import { isPlainObject } from './entry.js';            // [paket 3] ägaren till "vanligt objekt"
 
-export const PAYMENTS_PER_YEAR;                        // { monthly: 12, quarterly: 4, yearly: 1 } — fryst
+export const PAYMENTS_PER_YEAR;                        // { monthly: 12, quarterly: 4, semiannual: 2, yearly: 1 } — fryst; semiannual [etapp 1]
 export const MONTHS_PER_YEAR;                          // 12 — ägare till talet i rollen "månader per år"
 export function yearlyOre(entry: Entry): number;
 export function monthlyOre(entry: Entry): number;      // divideRoundHalfUp(yearlyOre(entry), MONTHS_PER_YEAR)
@@ -3892,7 +3925,7 @@ ett säkert heltal). En lista på tio miljoner poster ska inte skrivas som test.
 ### `src/core/schedule.js` [paket 7]
 
 ```js
-export const MONTHS_PER_PERIOD;                        // { monthly: 1, quarterly: 3, yearly: 12 } — fryst
+export const MONTHS_PER_PERIOD;                        // { monthly: 1, quarterly: 3, semiannual: 6, yearly: 12 } — fryst; semiannual [etapp 1]
 // addMonths är injicerbar enbart för att antalet steg ska gå att mäta, se "Steg 2 görs mätbart" nedan.
 export function nextDueDate(entry: Entry, todayIsoDate: string, addMonths = addMonthsClamped): string;
 
@@ -7546,3 +7579,1129 @@ som har varit fel varje gång.
   och exit 0. (påverkat av lärdom: **ja**, `2026-09-04 —
   dokumentation: "Kvar i paket 3" står kvar i ARKITEKTUR.md och är fortfarande
   falsk`)
+
+---
+
+## Del 2: månadsbudget med konto och inloggning
+
+Paket 1-8 byggde en lokal utgiftslista för en person på en enhet. Del 2 bygger ut
+den till en personlig månadsbudget med konton och inloggning, i två etapper:
+
+| Etapp | Innehåll |
+|-------|----------|
+| **Etapp 1** | Datamodellen: SQLite-schemat, månadsbegreppet, posttypen inkomst/utgift/sparande, versionerade mallar och beräkningen av en månads innehåll. |
+| **Etapp 2** | Konto och inloggning: engångskod via e-post, sessioner, och kopplingen som gör varje läsning och skrivning till en fråga om *den inloggade användarens* rader. |
+
+Avgränsningarna under "Beslut" i `PLAN.md` gäller inte längre fullt ut, och det
+är hela skälet till Del 2. Vilka som är upphävda och vilka som står kvar, en rad
+per beslut:
+
+| Beslut i `PLAN.md` | Gäller i Del 2? |
+|--------------------|-----------------|
+| 1. Bara utgifter, ingen inkomsthantering | **Upphävt** av användaren. Del 2 bär inkomst, utgift och sparande. |
+| 2. Bara en lista över kommande dragningar, inga notiser | Står kvar. Inga mejl utom inloggningskoden, ingen bakgrundskörning. |
+| 3. En person, en enhet, ingen inloggning | **Upphävt** av användaren. Del 2 har konton och inloggning. |
+| 4. Ingen historik över faktiska dragningar | Står kvar. En mall med `from_month` och `to_month` är en historik över *vad som gällde*, aldrig över vad som verkligen drogs. |
+| 5. SEK som enda valuta | Står kvar. |
+
+Det här avsnittet är skrivet efter en lättare process som användaren har godkänt
+för etapp 1 och 2: ingen mutationsprövning av varje delvillkor, och inga
+granskningsrundor i den skala paket 1-8 hade. Kraven på **innehållet** är
+oförändrade - svensk text mot användaren, engelska namn i kod och kolumner,
+belopp i heltal ören, och ett facit per fråga.
+
+### Datamodell: SQLite-schemat (bindande) [etapp 1]
+
+Lagringen är en SQLite-fil som nås med `node:sqlite` (`DatabaseSync`, synkron -
+inga `await` i datalagret). Varje tabell nedan skapas exakt som den står
+skriven. Kolumn- och tabellnamn är engelska och `snake_case`, eftersom det är
+SQL:s form; kärnans fältnamn är `camelCase`, och översättningen mellan de två
+sker på exakt ett ställe, i det lager som skriver SQL.
+
+**Filens plats.** Sökvägen kommer ur miljövariabeln `HEMOCHEKONOMI_DB_FILE`,
+läst med samma villkor som `HEMOCHEKONOMI_DATA_FILE` redan har i
+`src/server/paths.js`: satt till ett värde som innehåller minst ett tecken som
+inte är blanktecken används värdet **ordagrant, utan `trim()`**; osatt, tom
+sträng och bara blanktecken räknas som osatt. Förvalet för lokal körning är
+`hemochekonomi.sqlite` i samma katalog som datafilen låg i, alltså under
+`%APPDATA%\hemochekonomi\`. Funktionen heter `getDatabaseFilePath()` och ligger i
+`src/server/paths.js`, som redan äger frågan "var ligger appens filer".
+
+**Driftsvillkor på Fly.io - bindande, och ett krav byggaren ska verifiera mot
+Fly.ios dokumentation, inte ett mätvärde.** Databasfilen ska ligga på en
+**monterad volym** och inte i appens filsystem, eftersom filsystemet återställs
+vid varje driftsättning: `HEMOCHEKONOMI_DB_FILE` sätts i drift till en sökväg
+under volymens monteringspunkt. Appen ska dessutom köras i **en enda instans**:
+`node:sqlite` mot en fil på en volym tål inte att två maskiner skriver samtidigt.
+Byggaren verifierar mot Fly.ios dokumentation hur en volym knyts till en maskin
+och hur antalet instanser låses till en, och skriver in svaret här tillsammans
+med det kommando som sätter det. Instansvillkoret är också skälet att
+`src/server/lock.js` behålls: låset skyddar mot två *processer på samma maskin*,
+och det problemet finns kvar oavsett hur många maskiner som kör.
+
+**Pragman sätts på varje anslutning, direkt efter att den öppnats:**
+
+```sql
+PRAGMA foreign_keys = ON;    -- av som förval i SQLite; utan raden är varje REFERENCES nedan en kommentar
+PRAGMA journal_mode = WAL;   -- en läsning blockerar inte en skrivning
+PRAGMA busy_timeout = 5000;  -- millisekunder; väntar i stället för att svara SQLITE_BUSY direkt
+```
+
+`PRAGMA foreign_keys` är per anslutning och måste sättas om varje gång en
+anslutning öppnas. `journal_mode = WAL` är en egenskap hos filen och behöver
+bara sättas en gång, men får sättas varje gång - raden är idempotent.
+
+**Schemaversionen står i `PRAGMA user_version`**, satt till `1` av etapp 1. Ingen
+egen tabell för det: versionen är ett heltal, SQLite har redan ett fält för det,
+och en tabell hade varit en rad att hålla i synk. Ett senare schema höjer talet
+och skriver sin ändring som ett steg som körs när det lästa talet är lägre.
+
+**Tidsstämplar.** Varje `*_at`-kolumn är en ISO 8601-tidsstämpel i UTC, exakt den
+sträng `new Date().toISOString()` ger, alltså på formen
+`2026-09-24T18:03:00.000Z`. Den läses på ett ställe: `nowIso(now = new Date())` i
+`src/core/dates.js`, som är samma fil och samma form som `todayIso(now = new
+Date())`. Varje funktion som behöver tiden tar emot värdet som parameter - annars
+går utgångna koder och utgångna sessioner inte att testa. **`CLAUDE.md` ska få en
+mening till under klockregeln** i etapp 1: `todayIso()` ger dagen och `nowIso()`
+tidsstämpeln, båda i `src/core/dates.js`, och ingen annan fil läser klockan.
+
+#### Tabellerna
+
+```sql
+-- Ett konto. Skapas vid första begäran om en inloggningskod; ingen separat
+-- registrering finns.
+CREATE TABLE users (
+  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  email       TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL
+);
+
+-- En utskickad engångskod. Koden lagras ALDRIG i klartext: kolumnen bär
+-- scryptSync(kod, salt, 64) som hex, och saltet står i code_salt.
+CREATE TABLE login_codes (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash      TEXT NOT NULL,
+  code_salt      TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  expires_at     TEXT NOT NULL,
+  consumed_at    TEXT,            -- NULL = inte använd ännu
+  superseded_at  TEXT,            -- NULL = inte ersatt av en nyare kod
+  attempts       INTEGER NOT NULL DEFAULT 0,
+  request_ip     TEXT NOT NULL
+);
+CREATE INDEX idx_login_codes_user ON login_codes (user_id, created_at);
+CREATE INDEX idx_login_codes_ip ON login_codes (request_ip, created_at);
+
+-- En inloggad session. Tokenet finns bara i användarens cookie; tabellen bär
+-- sha256(token) som hex.
+CREATE TABLE sessions (
+  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL,
+  revoked_at  TEXT                -- NULL = giltig; sätts vid utloggning
+);
+CREATE INDEX idx_sessions_user ON sessions (user_id);
+
+-- En återkommande post, versionerad. En version gäller från from_month till och
+-- med to_month; to_month = NULL betyder "gäller framåt utan slut". Alla
+-- versioner av samma post delar series_id.
+CREATE TABLE templates (
+  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  series_id   TEXT NOT NULL,      -- första versionens id
+  kind        TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'saving')),
+  name        TEXT NOT NULL,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
+  category    TEXT NOT NULL,
+  interval    TEXT NOT NULL CHECK (interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
+  start_date  TEXT NOT NULL CHECK (start_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  from_month  TEXT NOT NULL CHECK (from_month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  to_month    TEXT CHECK (to_month IS NULL OR to_month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  created_at  TEXT NOT NULL,
+  CHECK (to_month IS NULL OR to_month >= from_month)
+);
+CREATE INDEX idx_templates_user_period ON templates (user_id, from_month, to_month);
+CREATE INDEX idx_templates_series ON templates (user_id, series_id, from_month);
+
+-- En engångspost: gäller exakt en månad och har inget intervall och ingen dag.
+CREATE TABLE month_items (
+  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  month       TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  kind        TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'saving')),
+  name        TEXT NOT NULL,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
+  category    TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX idx_month_items_user_month ON month_items (user_id, month);
+
+-- En avvikelse för en enskild månad av en mall: antingen ett annat belopp den
+-- månaden, eller att posten hoppas över den månaden. Aldrig båda, aldrig
+-- ingenting.
+CREATE TABLE overrides (
+  id           TEXT PRIMARY KEY,  -- crypto.randomUUID()
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  template_id  TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  month        TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  amount_ore   INTEGER CHECK (amount_ore IS NULL OR amount_ore > 0),
+  skipped      INTEGER NOT NULL DEFAULT 0 CHECK (skipped IN (0, 1)),
+  created_at   TEXT NOT NULL,
+  CHECK ((skipped = 1 AND amount_ore IS NULL) OR (skipped = 0 AND amount_ore IS NOT NULL)),
+  UNIQUE (template_id, month)
+);
+CREATE INDEX idx_overrides_user_month ON overrides (user_id, month);
+```
+
+**Krav byggaren ska köra innan schemat skrivs in i koden, inte ett mätvärde:**
+`interval` är ett kolumnnamn i `templates`. Kör `CREATE TABLE` ovan i
+`new DatabaseSync(':memory:')` och se att det går igenom. Gör det inte det är
+ordet ett nyckelord i den här SQLite-versionen, och kolumnen skrivs då som
+`"interval"` inom dubbla citationstecken på varje ställe den förekommer -
+**namnet byts inte**, eftersom kärnans fält heter `interval` och två namn för
+samma sak är det den här filen förbjuder.
+
+#### Varför kolumnerna ser ut så
+
+- **`id` är alltid en `TEXT` med ett UUID från `crypto.randomUUID()`**, aldrig
+  `INTEGER PRIMARY KEY AUTOINCREMENT`. Skälet står redan i teknikvalstabellen
+  för paket 1-8: ett löpnummer krockar efter borttagning, och id:t syns i
+  adresser. `isValidEntryId` i `src/core/entry.js` är fortfarande enda
+  definitionen av vad ett giltigt id är.
+- **Belopp lagras som `amount_ore INTEGER`**, aldrig som kronor och aldrig som
+  `REAL`. `CLAUDE.md`:s regel gäller i databasen också. Omvandlingen mellan
+  kronor och ören sker bara i `sekToOre` och `oreToSek` i `src/core/money.js`,
+  som redan äger den; SQL räknar aldrig om ett belopp.
+  `CHECK (amount_ore > 0)` är samma gräns som `Beloppet måste vara större än
+  0 kr.` i felmeddelandetabellen, uttryckt en andra gång på ett annat språk - se
+  "Två spärrar i två språk" nedan.
+- **`email` är unik och normaliserad.** Normaliseringen är `raw.trim().toLowerCase()`
+  och görs på **ett** ställe, i valideringen av e-postadressen i kärnan, innan
+  värdet når SQL. `UNIQUE` på kolumnen är därför en spärr mot ett
+  programmeringsmisstag och inte mot två stavningar av samma adress: adressen är
+  redan normaliserad när den skrivs, så `Anna@Example.se ` och `anna@example.se`
+  är samma rad. Kolumnen får inget `COLLATE NOCASE` - det hade varit en andra,
+  svagare kopia av samma regel, på ett språk där den inte går att testa med
+  resten.
+- **`login_codes` knyts till `user_id`, inte till en fri e-poststräng.** Kontot
+  skapas vid den första begäran om en kod, så användaren finns alltid när koden
+  skrivs. Följden är att en kod alltid kan tas bort med kontot
+  (`ON DELETE CASCADE`), och att en kod aldrig kan peka på en adress som inte är
+  någons.
+- **`consumed_at` och `superseded_at` är två kolumner och inte en.** De svarar på
+  olika frågor och ger användaren olika svar: en kod som redan använts är
+  `consumed_at`, och en kod som gjorts ogiltig av att en nyare kod skickades är
+  `superseded_at`. En enda kolumn hade tvingat ihop två svenska felmeddelanden
+  till ett som är fel i hälften av fallen.
+- **`sessions.token_hash` är unik och indexerad, och tokenet finns bara i
+  cookien.** Uppslaget vid varje anrop sker på hashen, som är ett
+  `sha256`-värde av ett token med hög entropi; därför behövs ingen
+  `timingSafeEqual` här, till skillnad från vid jämförelsen av en sexsiffrig
+  kod. `id` finns utöver hashen därför att en primärnyckel inte ska vara ett
+  värde som härleds ur en hemlighet.
+- **`templates.series_id` gör versionerna till en post i gränssnittet.** Utan den
+  går det inte att svara på "visa den här utgiften över tid" eller "ta bort
+  utgiften helt" utan att gissa vilka rader som hör samman. Första versionens
+  `id` är seriens `series_id`, så ingen extra tabell behövs.
+- **`overrides.template_id` pekar på en *version*, inte på en serie.** En
+  avvikelse är ett påstående om beloppet en bestämd månad, och den månaden har
+  exakt en giltig version. `UNIQUE (template_id, month)` gör att en månad inte
+  kan ha två motstridiga avvikelser för samma mall.
+- **`month_items` har ingen dag och inget intervall.** En engångspost gäller en
+  månad, punkt. Vill användaren ha ett datum är posten en mall med
+  `from_month = to_month`.
+- **`category` har inget `CHECK`.** Kategorilistan `CATEGORIES` ägs av
+  `src/core/entry.js` och kan komma att växa; en `CHECK` hade gjort varje tillägg
+  till en schemaändring. `kind` och `interval` har däremot `CHECK`, eftersom de
+  två listorna är slutna och bär beräkningens mening - ett okänt `interval` är
+  det fel `LARDOMAR.md` 2026-09-02 handlar om.
+
+#### Posttypen: inkomst, utgift eller sparande
+
+Typen lagras som `kind TEXT NOT NULL` med exakt ett av tre värden:
+
+| `kind` | Etikett mot användaren | Roll i "kvar att leva på" |
+|--------|------------------------|---------------------------|
+| `income` | Inkomst | läggs till |
+| `expense` | Utgift | dras bort |
+| `saving` | Sparande | dras bort |
+
+`saving` dras bort och läggs inte till: pengar som går till sparande är inte
+pengar som finns kvar att leva på den månaden. Att det ändå är en egen typ och
+inte en utgift är hela poängen - summan per typ går att visa var för sig, så
+användaren ser vad som är utgifter och vad som är sparande.
+
+Alla tre typerna bor i samma tabeller. En egen tabell per typ hade gett tre
+kopior av samma kolumner, tre index och tre vägar genom beräkningen, för en
+skillnad som är ett tecken i en summa.
+
+**Ägaren till listan är `ITEM_KINDS` i `src/core/item.js`**, en ny modul i
+etapp 1, tillsammans med `ITEM_KIND_LABELS` för de svenska etiketterna ovan.
+Konstanterna fryses med `Object.freeze`, precis som `INTERVALS` och
+`CATEGORIES`. Ingen svensk etikett skrivs hårdkodad i `src/web/app.js`. Modulens
+gränssnitt och dess validering skrivs i ett eget avsnitt; det här avsnittet äger
+bara kolumnen och värdena.
+
+#### Månad som `ÅÅÅÅ-MM`
+
+En månad är en sträng på formen `ÅÅÅÅ-MM`, till exempel `2026-10`. Aldrig ett
+tal, aldrig ett `Date`, och aldrig `ÅÅÅÅ-M`. Formen är vald av samma skäl som
+`ÅÅÅÅ-MM-DD` för datum: den sorterar och jämförs korrekt som text, vilket är
+precis vad `from_month <= :month` och `to_month >= :month` i SQL bygger på.
+
+**Giltigheten ägs av `src/core/dates.js`**, som redan äger datumformatet. Ingen
+annan fil skriver ett eget månadsmönster:
+
+| Export i `src/core/dates.js` | Vad den äger |
+|------------------------------|--------------|
+| `ISO_MONTH_PATTERN` | formen, i samma roll som `ISO_DATE_PATTERN` har för ett datum |
+| `isValidIsoMonth(value)` | "är det här en riktig månad": formen plus månadsnumret 01-12 |
+| `monthOfIsoDate(isoDate)` | `'2026-01-31'` ger `'2026-01'` |
+| `firstDayOfMonth(month)` | `'2026-01'` ger `'2026-01-01'` |
+| `compareMonths(a, b)` | ordningen, i samma roll som `compareIsoDates` |
+| `shiftMonth(month, count)` | månaden `count` månader senare; namnet är inte `addMonths`, som redan är taget i en annan roll |
+
+Signaturerna och deras ingångsspärrar skrivs i ett eget avsnitt. Vad som gäller
+här är ägarskapet och de tre ställen månaden valideras:
+
+1. **I kärnan, före varje skrivning.** Valideringen av en mall och av en
+   engångspost avvisar en månad som `isValidIsoMonth` säger nej till, med svensk
+   text, precis som `startDate` avvisas i dag. Årsgränsen 1970-2099 prövas i
+   samma kedja och inte i `isValidIsoMonth`, exakt som för `startDate`: `MIN_YEAR`
+   och `MAX_YEAR` ägs av `src/core/entry.js`.
+2. **I API-lagret, när månaden kommer ur ett anrop.** En månad som inte är giltig
+   ger `400` med svensk text och når aldrig datalagret.
+3. **I schemat, som sista spärr.** `CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]')`
+   fångar ett programmeringsmisstag som tagit sig förbi de två första. Den är
+   avsiktligt svagare än `isValidIsoMonth` - `GLOB` kan inte avgöra att `13` inte
+   är en månad - och det är inget att rätta: en spärr som är sista utposten ska
+   vara billig och får vara grov.
+
+#### Två spärrar i två språk (bindande)
+
+Tre regler står nu på två ställen: `kind`-listan, `interval`-listan och
+beloppsgränsen `> 0` finns både som en ägande konstant i `src/core/` och som ett
+`CHECK` i schemat. Det bryter inte ägarregeln, men det kräver en utskriven
+motivering och ett prov, annars är det just den glidning regeln finns för att
+hindra.
+
+Motiveringen: `CHECK` i schemat är sista utposten mot ett programmeringsmisstag i
+serverkoden, och den skriver aldrig ett meddelande till användaren. Ägaren i
+`src/core/` avgör vad användaren får för svar. De två svarar alltså på olika
+frågor - "får den här raden finnas i filen" respektive "vad ska användaren läsa".
+
+Provet: `tests/db.test.js` läser schemats text och kräver att värdelistan i
+`CHECK (kind IN (...))` är densamma som `ITEM_KINDS`, och att värdelistan i
+`CHECK (interval IN (...))` är densamma som `INTERVALS`. Det är samma sorts prov
+som `tests/cost.test.js` redan har för `PAYMENTS_PER_YEAR` mot `INTERVALS`, och
+det finns av samma skäl: två listor som beskriver samma domän glider isär vid
+första tillägget. Testfilens kravlista skrivs i ett eget avsnitt.
+
+#### Varje rad hör till en användare (bindande)
+
+Regeln, i den form en granskare kan pröva:
+
+1. **Varje `SELECT`, `UPDATE` och `DELETE` mot `templates`, `month_items`,
+   `overrides`, `login_codes` eller `sessions` ska ha `user_id = ?` i sin
+   `WHERE`.** Varje `INSERT` i samma tabeller ska ha `user_id` i sin kolumnlista.
+   Två uppslag är uttryckliga undantag, eftersom de är de satser som *avgör* vem
+   användaren är och därför inte kan filtrera på svaret: uppslaget i `users` på
+   `email` respektive `id`, och uppslaget i `sessions` på `token_hash`. Inga
+   andra undantag finns, och ett nytt undantag kräver en egen rad här.
+2. **`user_id` hämtas alltid ur sessionen.** Aldrig ur anropets kropp, sökväg
+   eller frågesträng. Ett `user_id` i en inkommande JSON-kropp ignoreras tyst -
+   det är inte ett fält appen läser.
+3. **Ett anrop utan giltig session når aldrig datalagret.** Kontrollen sker i
+   routningen, före hanteraren, för varje `/api/`-väg utom
+   inloggningsvägarna och utloggningen. Svaret är `401` med svensk text.
+4. **Ett `id` som finns men tillhör någon annan ger `404`, aldrig `403`.** Att
+   svara `403` vore att bekräfta att raden finns. Det följer automatiskt av
+   punkt 1: satsen med `user_id = ?` hittar ingen rad, och "hittade ingen rad" är
+   redan `404`.
+5. **Kontrollen en granskare kör** är en sökning per tabell efter varje sats som
+   rör den, följd av en läsning av varje träff:
+   `grep -rn "FROM templates\|UPDATE templates\|DELETE FROM templates\|INTO templates" src/`
+   och samma sökning med `month_items`, `overrides`, `login_codes` och
+   `sessions`. Varje träff ska antingen bära `user_id` enligt punkt 1 eller vara
+   ett av de två undantagen i punkten. En träff som är ingetdera stoppar
+   etappen.
+
+#### Hur en månads innehåll räknas fram
+
+Ingenting materialiseras. En månads innehåll finns inte som rader utan räknas
+fram vid läsning, ur mallar som bär sin egen giltighetsperiod. Kedjan, som den
+ska byggas:
+
+```
+monthContents(userId, month):
+
+1. giltiga mallar
+   SELECT * FROM templates
+    WHERE user_id = :userId
+      AND from_month <= :month
+      AND (to_month IS NULL OR to_month >= :month)
+
+2. intervallträff  -- enda stället intervallet avgörs; ingen SQL räknar månader
+   för varje mall t ur steg 1:
+     due = nextDueDate({ interval: t.interval, startDate: t.start_date },
+                       firstDayOfMonth(month))
+     behåll t bara om monthOfIsoDate(due) === month, och bär med due som dueDate
+
+3. avvikelser
+   SELECT * FROM overrides WHERE user_id = :userId AND month = :month
+   för varje kvarvarande mall t, med o = avvikelsen för t.id om den finns:
+     o saknas          -> amountOre = t.amount_ore, overridden = false
+     o.skipped = 1     -> mallen utgår ur månaden
+     annars            -> amountOre = o.amount_ore, overridden = true
+
+4. engångsposter
+   SELECT * FROM month_items WHERE user_id = :userId AND month = :month
+   dueDate = null, overridden = false
+
+5. raderna = resultatet av steg 3 + resultatet av steg 4
+
+6. summorna, i heltal ören
+   incomeOre  = summan av amountOre för raderna med kind = 'income'
+   expenseOre = summan av amountOre för raderna med kind = 'expense'
+   savingOre  = summan av amountOre för raderna med kind = 'saving'
+   remainingOre = incomeOre - expenseOre - savingOre      -- "kvar att leva på"
+```
+
+**Steg 2 är beslut 5 i uppdraget: intervallogiken återanvänds och skrivs inte om.**
+`nextDueDate` i `src/core/schedule.js` äger redan regeln för vilka datum en post
+med kvartals-, halvårs- eller årsintervall faktiskt dras, inklusive klampningen
+för startdatum den 29-31. Frågan "dras den här posten i den här månaden" ställs
+därför som "ligger den första dragningen den 1:a i månaden eller senare
+fortfarande i samma månad". Den formen ger klampningen gratis: en kvartalspost
+med `start_date` `2026-01-31` får `2026-04-30` i april, eftersom
+`nextDueDate` klampar, och `monthOfIsoDate('2026-04-30')` är `'2026-04'`.
+`nextDueDate` prövar bara `interval` och `startDate` i posten den får, så ett
+objekt med de två fälten räcker - och det är avsiktligt, inte en genväg.
+
+**`remainingOre` är enda definitionen av "kvar att leva på".** Den räknas i
+heltal ören, i ett uttryck, och aldrig som en kedja av avrundade
+mellanresultat - samma regel som månadstotalen i paket 3 har. Talet kan bli
+negativt, och det är ett giltigt svar: en månad kan gå med underskott.
+Visningen sker med `formatSek`, som redan skriver ett negativt belopp med
+minustecknet U+2212 MINUS SIGN, aldrig med bindestrecket U+002D. Varje
+jämförelse mot den strängen skrivs med unicode-escapen för kodpunkten 2212, på
+den form som redan står under `src/core/money.js` i "Gränssnitt", aldrig med
+råtecknet.
+
+#### Utskrivet exempel: priset höjs från 199 till 249 från och med oktober 2026
+
+Utgångsläget är en rad i `templates`, den enda versionen av serien:
+
+| `id` | `series_id` | `name` | `amount_ore` | `interval` | `start_date` | `from_month` | `to_month` |
+|------|-------------|--------|--------------|------------|--------------|--------------|------------|
+| `A` | `A` | Spotify Family | `19900` | `monthly` | `2026-01-31` | `2026-01` | `NULL` |
+
+Ändringen är två satser i **en** transaktion:
+
+```sql
+BEGIN;
+  UPDATE templates SET to_month = '2026-09'
+   WHERE id = 'A' AND user_id = :userId;
+
+  INSERT INTO templates
+    (id, user_id, series_id, kind, name, amount_ore, category,
+     interval, start_date, from_month, to_month, created_at)
+  VALUES
+    ('B', :userId, 'A', 'expense', 'Spotify Family', 24900, 'subscription',
+     'monthly', '2026-01-31', '2026-10', NULL, :now);
+COMMIT;
+```
+
+Läget efteråt:
+
+| `id` | `series_id` | `amount_ore` | `from_month` | `to_month` |
+|------|-------------|--------------|--------------|------------|
+| `A` | `A` | `19900` | `2026-01` | `2026-09` |
+| `B` | `A` | `24900` | `2026-10` | `NULL` |
+
+Vad de två raderna ger per månad, genom kedjan ovan:
+
+| Månad | Steg 1 väljer | Belopp |
+|-------|---------------|--------|
+| `2026-08` | `A` (`2026-01 <= 2026-08 <= 2026-09`); `B` faller bort, `from_month` är senare | `19900` |
+| `2026-09` | `A`; `B` faller bort | `19900` |
+| `2026-10` | `B`; `A` faller bort, `to_month` är tidigare | `24900` |
+| `2026-11` | `B` | `24900` |
+
+**Varför september och tidigare blir oförändrade:** ingen rad som beskriver en
+tidigare månad har rörts. Version `A` bär fortfarande `19900`, och den enda
+ändringen på den är *när den slutar gälla*. Eftersom en månads innehåll räknas
+fram vid läsning finns det inga materialiserade rader för oktober och framåt som
+någon kan glömma att uppdatera - och inga för augusti och september som någon
+kan råka skriva om. Det är hela skälet till versionerade mallar i stället för
+kopierade poster: kravet "att ändra en återkommande post får aldrig skriva om
+tidigare månaders siffror" blir en egenskap hos modellen i stället för en regel
+någon måste komma ihåg.
+
+Tre närliggande ändringar följer samma form och skrivs här, så att de inte
+gissas:
+
+- **Höj priset från och med *nästa* månad** är samma två satser, med
+  `to_month` satt till månaden före.
+- **Avsluta posten från och med november 2026:** sätt `to_month = '2026-10'` på
+  den version som gäller oktober, och ta bort de versioner av samma serie som
+  börjar senare. Ingen rad för oktober eller tidigare rörs.
+- **Ta bort posten som om den aldrig funnits:**
+  `DELETE FROM templates WHERE user_id = :userId AND series_id = :seriesId`.
+  Avvikelserna följer med genom `ON DELETE CASCADE`. Det här är den enda
+  operationen som ändrar historiken, och den finns därför att en post som lagts
+  in av misstag ska gå att få bort helt.
+- **Hoppa över en enskild månad utan att röra serien:** en rad i `overrides` med
+  `skipped = 1` för den månaden och den version som gäller då.
+
+#### Vad som händer med `storage.js`, `paths.js` och `lock.js`
+
+| Fil | Utfall | Etapp |
+|-----|--------|-------|
+| `src/server/storage.js` | **Tas bort**, tillsammans med `tests/storage.test.js` och `tests/helpers/interrupted-save.js`. SQLite äger både atomiciteten och samtidigheten: den atomiska skrivvägen (temporärnamn plus `rename`) och `ioQueue` ersätts av en transaktion per skrivning. `updateEntries`, som fanns för att läs-ändra-skriv skulle ligga i en enda köplats, ersätts av att läsningen och skrivningen ligger i samma transaktion. | Etapp 2, när `api.js` har bytt väg |
+| `src/server/paths.js` | **Behålls.** `getDataFilePath` och `getLockFilePath` ersätts av `getDatabaseFilePath` och ett lås som hör till databasfilen; `getWebDir` och `getCoreDir` är oförändrade. Villkoret för miljövariabeln är oförändrat, ordagrant. | Etapp 1 lägger till `getDatabaseFilePath`; etapp 2 tar bort de två gamla |
+| `src/server/lock.js` | **Behålls oförändrad i sin mekanik**, med låsfilen flyttad till databasfilens sökväg plus `.lock`. Skälet står under "Driftsvillkor på Fly.io": appen ska köras i en enda instans, och låset är det som hindrar två processer på samma maskin från att skriva i samma SQLite-fil. `tests/lock.test.js` behålls med sökvägen bytt. | Etapp 1 |
+| `entries.json` på användarens disk | **Lämnas orörd.** Ingen automatisk migrering byggs: en import skulle behöva ett `user_id` som inte finns förrän någon loggat in, och filen är liten nog att mata in igen. Filen tas inte bort av appen, så den går att läsa för hand. | - |
+
+**Läsvägens och skrivvägens felmeddelanden byter ägare men inte form.** En
+`StorageError` med svensk text är fortfarande det som `api.js` översätter till
+`500 { "error": "<meddelandet>" }`. Vilka rader tabellen får när lagringen är
+SQLite skrivs i ett eget avsnitt tillsammans med datalagrets gränssnitt; vad som
+gäller redan nu är att en rå engelsk text från SQLite aldrig får nå användaren,
+av samma skäl som en rå `EPERM` inte får det i dag.
+
+#### Filer som tillkommer i etapp 1 och 2
+
+Trädet nedan är facit för Del 2:s filer. Paketmärkningen från paket 1-8 gäller
+oförändrad för övriga filer, och ingen fil står på två ställen.
+
+```
+src/core/
+  item.js          Posttypen inkomst/utgift/sparande: ITEM_KINDS,
+                   ITEM_KIND_LABELS, och valideringen av de fält som är nya i
+                   Del 2 (etapp 1).
+  budget.js        En månads innehåll och summorna, inklusive remainingOre
+                   ("kvar att leva på") (etapp 1).
+  dates.js         Utbyggd: månadsbegreppet ÅÅÅÅ-MM och nowIso (etapp 1).
+src/server/
+  db.js            Anslutningen, pragman, schemat och PRAGMA user_version
+                   (etapp 1).
+  budget-store.js  Frågorna mot templates, month_items och overrides. Varje
+                   funktion tar userId (etapp 1).
+  auth-store.js    Frågorna mot users, login_codes och sessions (etapp 2).
+  mail.js          Utskicket av engångskoden: Resend över fetch, eller
+                   serverloggen när RESEND_API_KEY saknas (etapp 2).
+  session.js       Sessionscookien och uppslaget som avgör vem användaren är
+                   (etapp 2).
+tests/
+  item.test.js     Etapp 1.
+  budget.test.js   Etapp 1.
+  db.test.js       Etapp 1.
+  auth.test.js     Etapp 2.
+```
+
+Gränssnitten för filerna ovan, inloggningsflödets vägar och kravlistorna för
+testfilerna skrivs i egna avsnitt. Det här avsnittet är facit för schemat,
+månadsbegreppet, posttypen, ägarregeln per användare och beräkningen av en
+månads innehåll - och för ingenting annat.
+
+---
+
+### Inloggning med engångskod (bindande) [etapp 2]
+
+Ingen lösenordslagring. Konto skapas och används genom en sexsiffrig kod som
+skickas till e-postadressen. Det här avsnittet är facit för kodens livscykel,
+sessionen, felmeddelandena och API-vägarna.
+
+#### Namngivna konstanter
+
+Varje tal nedan är en namngiven konstant i `src/server/auth.js`. En literal på
+anropsstället är ett fel.
+
+| Konstant | Värde | Roll |
+|---|---|---|
+| `CODE_LENGTH` | `6` | Antal siffror i koden. |
+| `CODE_TTL_MS` | `10 * 60 * 1000` | Kodens livslängd. Uppdraget säger högst 10 minuter. |
+| `CODE_MAX_ATTEMPTS` | `5` | Antal gissningar per kod innan den bränns. |
+| `EMAIL_WINDOW_MS` | `60 * 60 * 1000` | Tidsfönster för utskick per e-postadress. |
+| `EMAIL_MAX_PER_WINDOW` | `5` | Utskick per e-postadress inom fönstret. |
+| `IP_WINDOW_MS` | `60 * 60 * 1000` | Tidsfönster för utskick per IP. |
+| `IP_MAX_PER_WINDOW` | `20` | Utskick per IP inom fönstret. Högre än per e-post: en delad utgång (kontor, mobilnät) ska inte spärras av en granne. |
+| `SESSION_TTL_MS` | `30 * 24 * 60 * 60 * 1000` | Sessionens livslängd, 30 dygn. |
+| `SCRYPT_KEYLEN` | `64` | Längd på kodhashen i byte. |
+
+#### Kodens livscykel
+
+1. Koden genereras med `crypto.randomInt` över hela intervallet för `CODE_LENGTH`
+   siffror och nollutfylls till full längd. `randomInt` är kryptografiskt säker;
+   `Math.random` är det inte och får inte användas.
+2. Ett salt om 16 byte skapas med `crypto.randomBytes`. Hashen är
+   `crypto.scryptSync` av koden med saltet och `SCRYPT_KEYLEN`. **Koden lagras
+   aldrig i klartext** — varken i databasen, i en logg eller i ett felmeddelande.
+3. När en ny kod begärs för samma användare sätts `superseded_at` på varje
+   tidigare kod som ännu är oanvänd och ogången. En ersatt kod duger inte längre,
+   även om dess `expires_at` inte har passerat. Skälet: annars kan den som begär
+   tre koder använda den första, och `CODE_MAX_ATTEMPTS` blir då en gräns per kod
+   i stället för per inloggningsförsök.
+4. Vid inmatning jämförs hashen med `crypto.timingSafeEqual`. En vanlig
+   likhetsjämförelse läcker information genom sin körningstid.
+5. Lyckad inloggning sätter `consumed_at`. En kod med `consumed_at` duger aldrig
+   igen.
+
+#### Villkorskedjan vid inmatad kod — första träff vinner
+
+Ordningen är bindande. Flera villkor kan vara sanna samtidigt, och då är det
+raden högst upp som avgör svaret.
+
+| # | Villkor | Svar |
+|---|---|---|
+| 1 | E-posten saknar giltigt format | `400` rad 1 |
+| 2 | Koden är inte sex siffror | `400` rad 2 |
+| 3 | Ingen kod finns för e-posten | `400` rad 3 |
+| 4 | Antalet försök har nått `CODE_MAX_ATTEMPTS` | `429` rad 4 |
+| 5 | `consumed_at` är satt | `400` rad 5 |
+| 6 | `superseded_at` är satt | `400` rad 6 |
+| 7 | `expires_at` har passerat | `400` rad 7 |
+| 8 | Hashen stämmer inte | `400` rad 3, och antalet försök ökas med ett |
+| 9 | Annars | `204` med sessionscookie |
+
+Rad 4 står före rad 5, 6 och 7 med avsikt: är försöken uttömda ska användaren få
+veta det även om koden dessutom hunnit gå ut, annars ser en bränd kod ut som en
+vanlig utgången kod och användaren begär en ny i onödan.
+
+Rad 8 ger **samma text som rad 3**. En felaktig kod och en kod som inte finns får
+aldrig skiljas åt i svaret; annars blir formuläret ett sätt att ta reda på vilka
+e-postadresser som har konto.
+
+#### Felmeddelanden — ordagrant
+
+| Rad | Svensk text |
+|---|---|
+| 1 | `Ange en giltig e-postadress.` |
+| 2 | `Koden ska vara sex siffror.` |
+| 3 | `Koden stämmer inte. Begär en ny kod och försök igen.` |
+| 4 | `För många försök på den här koden. Begär en ny kod.` |
+| 5 | `Koden är redan använd. Begär en ny kod.` |
+| 6 | `En nyare kod har skickats. Använd den senaste koden.` |
+| 7 | `Koden har gått ut. Begär en ny kod.` |
+| 8 | `För många koder till den här adressen. Försök igen om en stund.` |
+| 9 | `För många koder från den här anslutningen. Försök igen om en stund.` |
+| 10 | `Det gick inte att skicka koden. Försök igen.` |
+
+Texterna ägs av `src/server/auth.js` och skrivs ordagrant där. Ingen text får
+avslöja om en e-postadress finns i databasen.
+
+#### Att begära en kod avslöjar inte om kontot finns
+
+Vägen för att begära en kod svarar **alltid `202`**, oavsett om e-posten har ett
+konto eller inte. Finns inget konto skapas det i samma anrop — registrering och
+inloggning är samma väg. Text 8 och 9 är de enda undantagen: en spärr måste kunna
+säga ifrån, och den gäller adressen eller anslutningen, inte kontots existens.
+
+#### Sessionen
+
+- Token är `crypto.randomUUID()`. Endast en `sha256`-hash av tokenet lagras, i
+  `sessions.token_hash`. En läckt databas ger alltså inte inloggning. Hashen
+  behöver ingen `scrypt`: tokenet är redan tillräckligt med slump, till skillnad
+  från en sexsiffrig kod.
+- Cookien heter `hemochekonomi_session` och sätts med `HttpOnly`, `Path=/`,
+  `SameSite=Lax` och `Max-Age` ur `SESSION_TTL_MS`.
+- `Secure` sätts när miljön är drift, alltså på Fly.io där HTTPS alltid gäller.
+  Vid lokal körning över `http://127.0.0.1` skulle `Secure` göra att webbläsaren
+  aldrig skickar tillbaka cookien, och inloggningen hade då varit omöjlig att
+  prova lokalt.
+- `SameSite=Lax` och inte `Strict`: `Strict` gör att cookien inte följer med när
+  användaren kommer till appen från en länk i e-posten.
+- Utloggning sätter `revoked_at` och skickar en cookie som upphör omedelbart.
+- Ett anrop med en cookie vars session saknas, har `revoked_at` satt eller vars
+  `expires_at` passerat behandlas som **inte inloggad**: `401` med texten
+  `Du är inte inloggad.` Cookien rensas i samma svar.
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `POST /api/auth/kod` | `{ "email": string }` | `202` utan kropp. `400` rad 1. `429` rad 8 eller 9. `500` rad 10 om utskicket misslyckas. |
+| `POST /api/auth/logga-in` | `{ "email": string, "code": string }` | `204` med sessionscookie. `400` rad 1, 2, 3, 5, 6 eller 7. `429` rad 4. |
+| `POST /api/auth/logga-ut` | ingen | `204` med rensad cookie. Svarar `204` även utan giltig session — utloggning ska aldrig misslyckas. |
+| `GET /api/mig` | ingen | `200` med e-postadressen. `401` om inte inloggad. |
+
+Varje statuskod som koden kan ge står i tabellen. En väg får inte svara med en
+kod som inte står på dess rad.
+
+#### Klientens IP-adress
+
+IP-gränserna räknas per klientadress, och bakom Fly.io är anslutningens
+fjärradress alltid proxyns. Klientens adress läses därför ur `X-Forwarded-For`,
+**första** kommaseparerade värdet, trimmat.
+
+Huvudet får litas på **endast** när miljövariabeln `TRUST_PROXY` är satt till
+`1`. Utan den används anslutningens fjärradress. Skälet: utan proxy kan vem som
+helst sätta huvudet själv och därmed kringgå både `IP_MAX_PER_WINDOW` och
+`EMAIL_MAX_PER_WINDOW`. Variabeln sätts i Fly.io-konfigurationen och ska inte
+vara satt vid lokal körning.
+
+#### E-post: utvecklingsläge och drift
+
+| Miljövariabel | Roll |
+|---|---|
+| `RESEND_API_KEY` | Satt: koden mejlas via Resends HTTPS-API med globalt `fetch`. Osatt: utvecklingsläge. |
+| `RESEND_FROM` | Avsändaradress. Krävs när `RESEND_API_KEY` är satt. |
+| `TRUST_PROXY` | `1` bakom Fly.ios proxy, annars osatt. |
+| `HEMOCHEKONOMI_DB_FILE` | Sökväg till SQLite-filen. På Fly.io en sökväg på den monterade volymen. |
+| `NODE_ENV` | `production` i drift; styr `Secure` på cookien. |
+
+I utvecklingsläge skrivs koden på `stdout` tillsammans med e-postadressen och
+uppgiften att den gäller i tio minuter. Det är den enda platsen i projektet där
+en kod får stå i klartext, och den finns för att inloggningsflödet ska gå att
+prova och testa utan e-postkonto.
+
+Misslyckas utskicket i drift svarar vägen `500` med rad 10, och koden raderas ur
+`login_codes` i samma transaktion. En kod som användaren inte kan ta emot får
+inte ligga kvar och räkna mot `EMAIL_MAX_PER_WINDOW`.
+
+#### Kravlista för `tests/auth.test.js` [etapp 2]
+
+Numreringen är egen för filen och skrivs `(A1)` och framåt i testkoden.
+
+| # | Testfall | Kräver |
+|---|---|---|
+| (A1) | en giltig kod loggar in | `204`, cookie med `HttpOnly` och `SameSite=Lax`, och vägen för inloggad användare ger `200` med e-posten |
+| (A2) | en utgången kod avvisas | tiden flyttas förbi `CODE_TTL_MS`; `400` med rad 7 ordagrant |
+| (A3) | en felaktig kod avvisas och räknar upp försöket | `400` med rad 3; antalet försök ökat med ett |
+| (A4) | en återanvänd kod avvisas | först `204`, sedan samma kod igen: `400` med rad 5 |
+| (A5) | för många försök bränner koden | `CODE_MAX_ATTEMPTS` felaktiga försök, därefter **rätt** kod: `429` med rad 4 |
+| (A6) | en ersatt kod avvisas | två koder begärs, den första matas in: `400` med rad 6 |
+| (A7) | okänd e-post avslöjas inte | en begäran för en adress utan konto ger `202`, och en felaktig kod för den ger rad 3 — samma text som för en adress med konto |
+| (A8) | för många utskick per e-post | `EMAIL_MAX_PER_WINDOW` utskick, därefter ett till: `429` med rad 8 |
+| (A9) | för många utskick per IP | `IP_MAX_PER_WINDOW` utskick från samma adress: `429` med rad 9 |
+| (A10) | utloggning återkallar sessionen | utloggning ger `204`, och vägen för inloggad användare med samma cookie ger därefter `401` |
+| (A11) | `X-Forwarded-For` litas inte på utan `TRUST_PROXY` | två anrop med olika värden i huvudet räknas som samma klient när variabeln är osatt |
+| (A12) | en annan användares data är onåbar | två konton, och ett anrop med användare A:s cookie mot B:s poster ger `404` eller tom lista, aldrig B:s data |
+
+Klockan får inte läsas direkt i testerna. `CODE_TTL_MS` prövas genom att tiden
+injiceras på samma sätt som dagens datum redan injiceras i `tests/app.test.js` —
+se `tests/helpers/frozen-dates.js`.
+
+---
+
+### Databasens fel når aldrig användaren på engelska (bindande) [etapp 2]
+
+`node:sqlite` kastar på engelska: `FOREIGN KEY constraint failed`,
+`CHECK constraint failed: amount_ore > 0`, `SQLITE_CANTOPEN`. `CLAUDE.md` kräver
+att all text mot användaren är svensk, och `src/server/storage.js` har sedan
+paket 4 mönstret att varje felväg omsluts och kastas vidare som ett eget fel med
+svensk text och `cause` satt till originalet. Databasen följer samma mönster.
+
+#### `DatabaseError`
+
+`src/server/db.js` exporterar `DatabaseError`, som ärver `Error`. Kraven är
+desamma som på `StorageError`:
+
+- `.message` är **alltid** svensk text och skickas rakt ut till användaren.
+- `.cause` är originalfelet från `node:sqlite`, aldrig del av `.message`.
+- Ingen sökväg och ingen SQL-text står i `.message`. En sökväg avslöjar
+  serverns filsystem för den som läser felet i webbläsaren, och SQL-texten
+  avslöjar schemat.
+
+Skillnaden mot `StorageError`, som är medveten: `StorageError` skriver ut
+datafilens sökväg, eftersom den appen kördes lokalt av en person som äger filen.
+Den här appen nås över internet av flera användare, och då är sökvägen inte
+användarens information.
+
+#### Felen — ordagrant
+
+| # | Situation | Svensk text |
+|---|---|---|
+| 1 | Databasen går inte att öppna eller skapa | `Databasen kunde inte öppnas. Kontakta den som driftar appen.` |
+| 2 | En läsning misslyckas | `Det gick inte att läsa dina uppgifter. Försök igen.` |
+| 3 | En skrivning misslyckas | `Det gick inte att spara. Försök igen.` |
+| 4 | Ett `CHECK`- eller `UNIQUE`-villkor bryts | `Uppgifterna kunde inte sparas: något värde är ogiltigt.` |
+
+Rad 4 är ett **programmeringsfel, inte ett användarfel**. All indata valideras i
+`src/core/` innan den når datalagret, så ett brutet `CHECK` betyder att
+valideringen har ett hål. Texten är därför medvetet allmän, och felet ska loggas
+på servern med `cause` intakt så att det går att hitta. Det som når användaren
+säger bara att det inte gick.
+
+#### Var omslutningen sitter
+
+Varje exporterad funktion i datalagret som kör en fråga omsluter sina
+`node:sqlite`-anrop och kastar `DatabaseError`. Samma krav som redan gäller
+`loadEntries` och `saveEntries`: **ingen** `node:sqlite`-metod får anropas utan
+att dess fel fångas. En funktion som läcker ett engelskt fel är ett fel även om
+den fungerar.
+
+`api.js` fångar `DatabaseError` och svarar `500` med `{ "error": <meddelandet> }`,
+på samma sätt som den redan fångar `StorageError`.
+
+#### Testkrav
+
+`tests/db.test.js` ska pröva, utöver det den redan gör:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (D1) | en sökväg som inte går att öppna | `error instanceof DatabaseError`, och `.message` är rad 1 ordagrant |
+| (D2) | felet bär originalet | `.cause` är satt och är felet från `node:sqlite` |
+| (D3) | ingen sökväg läcker | `.message` innehåller inte sökvägen som gavs |
+| (D4) | ingen engelsk text läcker | `.message` innehåller varken `constraint failed`, `SQLITE_` eller `unable to open` |
+
+---
+
+### Månadens summering: kvar att leva på (bindande) [etapp 3]
+
+#### `src/core/budget.js` — ny modul, ren kärna
+
+Ingen `node:`-import. Modulen äger beräkningen och ingenting annat: den tar emot
+en lista poster och svarar med summorna. Den läser ingen databas och ingen klocka.
+
+```
+sumByKind(items, kind)   -> heltal ören
+monthTotals(items)       -> { incomeOre, expenseOre, savingOre, leftOre }
+```
+
+`leftOre = incomeOre - expenseOre - savingOre`. Det är hela regeln, och den står
+på exakt ett ställe i projektet.
+
+**Räkningen sker i heltal ören.** Ingen division, ingen avrundning, inget
+flyttal — en summa av heltal är exakt. `money.js` äger omvandlingen till text,
+och `budget.js` anropar den aldrig.
+
+**`leftOre` får vara negativt.** Det är hela poängen: en månad där utgifter och
+sparande överstiger inkomsten ska visa ett minusbelopp, inte noll och inte ett
+fel. Ingen spärr mot negativa `leftOre` får skrivas.
+
+**`leftOre` får aldrig vara `-0`.** `0 - 0 - 0` ger `0`, men subtraktion kan ge
+`-0` i andra fall, och `formatSek(-0)` gav `"\u22120,00\u00a0kr"` i en tidigare
+granskning — alltså minustecken före noll kronor. `money.js` äger
+normaliseringen med `normalizeZero`; `budget.js` ska använda den eller göra
+motsvarande, och det ska finnas ett testfall.
+
+**Ingångsspärrar — bindande, första träff vinner:**
+
+| # | Villkor | Svensk text |
+|---|---|---|
+| 1 | `items` är inte en array | `monthTotals kräver en lista med poster.` |
+| 2 | En post är inte ett objekt | `monthTotals kräver poster som objekt.` |
+| 3 | En posts `kind` är inte `income`, `expense` eller `saving` | `monthTotals kräver ett känt slag, fick "<värdet>".` |
+| 4 | En posts `amountOre` är inte ett säkert heltal | `monthTotals kräver ett belopp i heltal ören.` |
+| 5 | En summa lämnar det säkra heltalsområdet | `monthTotals kräver att summan är ett säkert heltal.` |
+
+Rad 5 prövas efter varje addition, av samma skäl som `totalYearlyOre` i
+`cost.js`: en summa som lämnar området avrundas tyst.
+
+Tom lista ger `{ incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 }` — aldrig
+ett fel och aldrig `NaN`.
+
+#### En månads innehåll — kedjan
+
+Ordningen är bindande och står som pseudokod, inte som prosa, eftersom två steg
+kan röra samma post.
+
+```
+1. Läs mallarna som är giltiga månaden M för användaren:
+     from_month <= M  OCH  (to_month IS NULL ELLER to_month >= M)
+2. Behåll de mallar vars intervall faktiskt ger en dragning i M.
+     Avgörs av MONTHS_PER_PERIOD och start_date i src/core/schedule.js.
+     En månadspost träffar varje månad; en kvartalspost var tredje
+     räknat från start_date, och så vidare.
+3. För varje kvarvarande mall: finns en override för (mall, M)?
+     skipped = 1  -> posten ingår inte i månaden
+     amount_ore  -> posten ingår med override-beloppet
+     ingen rad   -> posten ingår med mallens belopp
+4. Lägg till månadens engångsposter ur month_items.
+5. Sortera: slag (income, expense, saving), därefter namn i svensk ordning
+     med Intl.Collator('sv'), därefter id.
+```
+
+Steg 2 är skälet att intervallogiken inte skrivs om: `schedule.js` äger redan
+klampningen för den 29–31 och hoppet över flera perioder.
+
+**En återkommande post markeras i svaret** med ett fält som säger att den kommer
+från en mall, plus mallens `series_id`. Gränssnittet behöver det för ikonen, och
+etapp 4 behöver det för "ändra från och med denna månad".
+
+#### Datalagret — `src/server/months.js`
+
+Ny modul. Varje funktion tar `userId` som **första** argument och har
+`user_id = ?` i varje `WHERE`. En funktion utan det är ett fel även om den
+fungerar, eftersom nästa användare av modulen då ärver hålet.
+
+```
+readMonth(userId, month)                  -> { items, totals }
+addMonthItem(userId, month, draft)        -> den skapade posten
+updateMonthItem(userId, itemId, draft)    -> den ändrade posten
+removeMonthItem(userId, itemId)           -> true om något togs bort
+```
+
+`readMonth` kör kedjan ovan och anropar `monthTotals` för summorna. Varje
+`node:sqlite`-anrop omsluts och kastar `DatabaseError` enligt det avsnittet.
+
+**En post som inte tillhör användaren ska bete sig som om den inte finns.**
+`updateMonthItem` och `removeMonthItem` mot ett id som ägs av någon annan ger
+samma svar som mot ett id som inte existerar — aldrig ett fel som avslöjar att
+raden finns. Skälet är detsamma som att inloggningen inte avslöjar om en
+e-postadress har konto.
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `GET /api/manad/<ÅÅÅÅ-MM>` | ingen | `200` med poster och summor. `400` vid fel månadsformat. `401` utan session. `500` vid `DatabaseError`. |
+| `POST /api/manad/<ÅÅÅÅ-MM>` | `{ kind, name, amountSek, category }` | `201` med posten. `400` med `fieldErrors`. `401`. `500`. |
+| `PUT /api/poster/<id>` | samma som `POST` | `200` med posten. `400`. `401`. `404` om posten inte finns eller tillhör någon annan. `500`. |
+| `DELETE /api/poster/<id>` | ingen | `204`. `401`. `404`. `500`. |
+
+Varje statuskod koden kan ge står på sin rad. `401` ges av sessionsspärren innan
+vägen körs, inte av vägen själv.
+
+**Beloppet tas emot i kronor som sträng eller tal** och valideras med samma kedja
+som `checkAmountSek` i `entry.js` redan äger — inklusive den vägledande texten för
+`12 000`. Ingen andra beloppsvalidering skrivs.
+
+#### Kravlista för testerna [etapp 3]
+
+`tests/budget.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (B1) | kvar att leva på räknas rätt | inkomst 30000 kr, utgifter 18500 kr, sparande 5000 kr ger `leftOre` 650000 |
+| (B2) | negativt kvar visas som negativt | utgifter över inkomsten ger negativt `leftOre`, inget fel |
+| (B3) | tom lista ger nollor | alla fyra fälten `0`, ingen är `-0` |
+| (B4) | `leftOre` är aldrig `-0` | asserteras med `Object.is(left, -0) === false` |
+| (B5) | varje ingångsspärr | ett fall per rad i spärrtabellen, hela meddelandet asserterat |
+| (B6) | summan i heltal | ett belopp nära `Number.MAX_SAFE_INTEGER` ger rad 5 |
+
+`tests/months.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M1) | en engångspost syns bara i sin månad | lagd i oktober, saknas i september och november |
+| (M2) | en månadsmall syns i varje månad från `from_month` | tre månader i rad |
+| (M3) | en kvartalsmall syns var tredje månad | från `start_date`, prövat över sex månader |
+| (M4) | en halvårsmall syns var sjätte månad | sex månader isär |
+| (M5) | `to_month` stänger serien | månaden efter `to_month` saknar posten |
+| (M6) | en override ändrar beloppet bara i sin månad | grannmånaderna oförändrade |
+| (M7) | `skipped` tar bort posten ur månaden | och bara ur den |
+| (M8) | en annan användares poster syns aldrig | två konton, tom lista för det andra |
+| (M9) | `updateMonthItem` mot någon annans id | samma svar som mot ett id som inte finns |
+| (M10) | summorna följer posterna | `readMonth` ger samma summor som `monthTotals` på dess egna poster |
+
+Månaden får aldrig läsas ur klockan i ett test. Dagens månad injiceras på samma
+sätt som dagens datum redan injiceras genom `tests/helpers/frozen-dates.js`.
+
+---
+
+### Månaden som begrepp: nya exporter i `src/core/dates.js` (bindande) [etapp 3]
+
+En månad är strängen `ÅÅÅÅ-MM`. `dates.js` äger formatet, precis som den redan
+äger `ÅÅÅÅ-MM-DD` genom `ISO_DATE_PATTERN` och `isValidIsoDate`. Ingen annan fil
+skriver ett eget månadsmönster, och ingen annan fil klipper en månad ur ett datum
+med `slice`.
+
+#### Exporterna
+
+```
+ISO_MONTH_PATTERN                -> mönstret för fyra siffror, bindestreck, två siffror
+isValidIsoMonth(value)           -> boolean
+firstDayOfMonth(month)           -> månadens första dag som ÅÅÅÅ-MM-01
+monthOfIsoDate(isoDate)          -> datumets månad som ÅÅÅÅ-MM
+shiftMonth(month, deltaMonths)   -> månaden flyttad ett antal månader
+compareMonths(a, b)              -> -1, 0 eller 1
+```
+
+`isValidIsoMonth` kräver både formatet **och** att månadsdelen är `01` till `12`.
+Strängen `2026-13` matchar mönstret men är ingen månad, precis som `2026-02-31`
+matchar `ISO_DATE_PATTERN` utan att vara ett datum. Mönstret ensamt räcker alltså
+aldrig — samma skäl som gav `isValidIsoDate` sitt existensberättigande.
+
+`shiftMonth` räknar i månader, inte i dagar: december plus en månad ger januari
+året efter, och januari minus en månad ger december året före. Den har ingen
+klampning att göra — en månad har ingen dag.
+
+`compareMonths` jämför strängarna, vilket är korrekt just för det här formatet:
+`ÅÅÅÅ-MM` sorterar i samma ordning alfabetiskt som kronologiskt, eftersom både år
+och månad är nollutfyllda. Det står utskrivet här så att nästa läsare inte tror
+att raden är en genväg.
+
+#### Ingångsspärrar — bindande, första träff vinner
+
+Varje funktion kastar `RangeError`. Texterna står ordagrant.
+
+| Funktion | Villkor | Svensk text |
+|---|---|---|
+| `firstDayOfMonth` | `!isValidIsoMonth(month)` | `firstDayOfMonth kräver en månad på formen ÅÅÅÅ-MM, fick "<värdet>".` |
+| `monthOfIsoDate` | `!isValidIsoDate(isoDate)` | `monthOfIsoDate kräver ett datum på formen ÅÅÅÅ-MM-DD, fick "<värdet>".` |
+| `shiftMonth` | `!isValidIsoMonth(month)` | `shiftMonth kräver en månad på formen ÅÅÅÅ-MM, fick "<värdet>".` |
+| `shiftMonth` | `!Number.isSafeInteger(deltaMonths)` | `shiftMonth kräver ett heltal månader, fick "<värdet>".` |
+| `compareMonths` | `!isValidIsoMonth(a)` eller `!isValidIsoMonth(b)` | `compareMonths kräver en månad på formen ÅÅÅÅ-MM, fick "<värdet>".` |
+
+`<värdet>` skrivs med `String(värdet)`, samma form som modulens befintliga texter
+använder.
+
+**Ingen av funktionerna läser klockan.** `todayIso()` är fortfarande projektets
+enda klockläsning. Vill en anropare veta dagens månad skriver den
+`monthOfIsoDate(todayIso())`, och då står klockläsningen kvar på sitt enda ställe.
+
+#### Anropare i `src/` — varför alla sex byggs nu
+
+`LARDOMAR.md` förbjuder en export utan anropare. Var och en har en:
+
+| Export | Anropare i etapp 3 |
+|---|---|
+| `ISO_MONTH_PATTERN` | `isValidIsoMonth` |
+| `isValidIsoMonth` | API-vägarnas spärr för fel månadsformat, och `months.js` |
+| `firstDayOfMonth` | kedjans steg 2 i `months.js` |
+| `monthOfIsoDate` | kedjans steg 2 i `months.js` |
+| `shiftMonth` | månadsväljarens två knappar i `src/web/app.js` |
+| `compareMonths` | jämförelsen av `from_month` och `to_month` i `months.js` |
+
+#### Testkrav för månadshalvan av `tests/dates.test.js`
+
+| # | Fall | Kräver |
+|---|---|---|
+| (MD1) | `isValidIsoMonth` godkänner en giltig månad | januari och december i ett år ger `true` |
+| (MD2) | månadsdelen `00` och `13` avvisas | båda ger `false`, trots att mönstret matchar |
+| (MD3) | fel form avvisas | en ensiffrig månad, ett fullt datum, tom sträng, `null`, ett tal och en sträng med exponent ger alla `false` |
+| (MD4) | `firstDayOfMonth` ger den första | februari ger den första februari |
+| (MD5) | `monthOfIsoDate` ger månaden | sista februari ger februari |
+| (MD6) | `shiftMonth` över årsskiftet | december plus en ger januari nästa år, januari minus en ger december föregående år |
+| (MD7) | `shiftMonth` med noll | ger samma månad tillbaka |
+| (MD8) | `shiftMonth` över flera år | trettio månader framåt och trettio bakåt, båda med utskrivet facit |
+| (MD9) | `compareMonths` ordnar kronologiskt | tidigare före senare ger `-1`, omvänt `1`, lika ger `0` |
+| (MD10) | varje spärr | ett fall per rad i spärrtabellen, hela meddelandet asserterat |
+
+---
+
+### Månadens API — de två texter som saknades (bindande) [etapp 3]
+
+| Situation | Svensk text | Statuskod |
+|---|---|---|
+| Månaden i vägen är inte `ÅÅÅÅ-MM` | `Månaden måste anges som ÅÅÅÅ-MM.` | `400` |
+| Posten finns inte, eller tillhör någon annan | `Posten finns inte.` | `404` |
+
+Texten för `404` är **densamma** som `api.js` redan använder för den gamla
+borttagningsvägen. Skälet att återanvända den i stället för att skriva en ny:
+användaren ska inte kunna se skillnad på en post som aldrig funnits och en som
+tillhör någon annan, och två olika strängar för samma svar vore två facit.
+
+Månadsspärren prövas **innan** datalagret nås. En ogiltig månad ska aldrig bli en
+SQL-fråga.
+
+#### Månaden injiceras inte i testerna
+
+`readMonth(userId, month)` och varje API-väg tar månaden som argument eller ur
+sökvägen. Ingen av dem läser klockan, och därför behövs **ingen**
+`frozen-months`-hjälpare. Kravet på injicering i avsnittet ovan gäller
+`src/web/app.js`, som läser `todayIso()` för att öppna den aktuella månaden — och
+den filen har redan sin injicering genom `tests/helpers/frozen-dates.js`.
+
+---
+
+### Månadspostens validering (bindande) [etapp 3]
+
+#### Var den bor: `validateMonthItemDraft` i `src/core/item.js`
+
+En månadspost har fyra fält från användaren: `kind`, `name`, `amountSek` och
+`category`. Tre av dem har redan en ägare i `src/core/entry.js` — `checkName`,
+`checkAmountSek` och `checkCategory` — men de är modullokala. De **exporteras** nu,
+på samma sätt som `isPlainObject` exporterades i paket 3 när `cost.js` behövde
+den. Skälet är detsamma: alternativet är en andra kopia av samma villkor, och en
+andra kopia glider isär från den första.
+
+```
+validateMonthItemDraft(draft) -> { ok: true, value } | { ok: false, errors }
+```
+
+`value` är `{ kind, name, amountOre, category }` — **ören, inte kronor.**
+Omvandlingen sker här, med `sekToOre` i `money.js`, eftersom `item.js` är kärna
+och får importera kärna. Då finns kronor bara i det användaren skrev och i det
+`formatSek` skriver ut; allt däremellan är heltal ören.
+
+`errors` har samma form som `validateEntryDraft` redan använder: en lista med
+`{ field, message }`. API-lagret skickar den vidare som `fieldErrors` utan att
+bygga om den.
+
+**Fältordningen är bindande** och avgör i vilken ordning felen står i listan:
+`kind`, `name`, `amountSek`, `category`. Alla fyra prövas, så att ett formulär med
+fyra fel visar fyra meddelanden samtidigt — samma beteende som den gamla
+formulärvägen redan har.
+
+#### Den text som saknades
+
+| Fält | Villkor | Svensk text |
+|---|---|---|
+| `kind` | `!isItemKind(draft.kind)` | `Välj inkomst, utgift eller sparande.` |
+
+Formen följer `interval`-raden i felmeddelandetabellen: den räknar upp de
+tillåtna alternativen i stället för att bara säga att värdet är fel. Texten
+nämner inte de engelska nycklarna `income`, `expense` och `saving` — användaren
+ser aldrig dem.
+
+De tre övriga fälten ger exakt de texter deras ägare redan ger, inklusive den
+vägledande beloppstexten för `12 000`. Ingen text skrivs om.
+
+#### Kronor blir ören i kärnan, aldrig i datalagret
+
+`months.js` tar `amountOre` och rör aldrig kronor. `addMonthItem` och
+`updateMonthItem` får alltså ett utkast som redan är validerat och omräknat.
+Ordningen i API-vägen är bindande:
+
+```
+1. sessionsspärren      -> 401 om ingen giltig session
+2. månadsspärren        -> 400 om månaden inte är ÅÅÅÅ-MM
+3. validateMonthItemDraft -> 400 med fieldErrors
+4. months.js            -> 201 eller 200
+```
+
+Steg 1 före steg 2 är redan byggt och prövat av ett testfall. Steg 3 före steg 4
+betyder att en ogiltig post aldrig blir en SQL-fråga.
+
+#### Kravlista
+
+| # | Fall | Kräver |
+|---|---|---|
+| (V1) | ett giltigt utkast | `ok: true`, och `value.amountOre` är heltal ören för det skrivna kronbeloppet |
+| (V2) | ogiltigt `kind` | `ok: false` med `kind`-texten ordagrant |
+| (V3) | fyra fel samtidigt | fyra poster i `errors`, i fältordningen |
+| (V4) | beloppet med mellanslag | den vägledande texten, alltså ägarens och ingen egen |
+| (V5) | `POST` med ogiltigt utkast | `400` med `fieldErrors`, och ingen rad i databasen |
+| (V6) | `POST` med giltigt utkast | `201`, posten i svaret, och den syns i `GET` för samma månad |
+| (V7) | `PUT` mot någon annans id | `404` med `Posten finns inte.` |
+| (V8) | `PUT` ändrar beloppet | `200`, och `GET` visar det nya beloppet och nya summor |
+
+---
+
+### Två rättelser i det jag skrev tidigare
+
+#### `compareMonths` anropas av månadsväljaren, inte av `months.js`
+
+Anropartabellen sade att `compareMonths` anropas av jämförelsen av `from_month`
+och `to_month` i `months.js`. Det var fel: den jämförelsen är bindande skriven som
+SQL i kedjans steg 1, och att göra om den i JavaScript vore en andra kopia av
+samma filter. Byggaren byggde därför ingen anropare, och det var riktigt.
+
+Rätt anropare är `src/web/app.js`: månadsväljaren behöver avgöra om en månad
+ligger före eller efter en annan, och historiköversikten i etapp 5 behöver ordna
+tolv månader. Båda är senare uppdrag, så `compareMonths` och `shiftMonth` står
+tills dess utan anropare i `src/` — med den här raden som skäl.
+
+#### Kollatorns språk går inte att skydda på den här maskinen
+
+`new Intl.Collator('sv')` i `months.js` överlever mutationen till
+`new Intl.Collator()`, och orsaken är mätt: maskinens förval är `sv-SE`, så
+utfallet kan inte skilja de två skrivsätten. Testet är skrivet i den form
+`LARDOMAR.md` 2026-09-12 föreskriver, och den formen räcker inte här.
+
+Beslutet är att **behålla `'sv'` utan ett skydd som håller oavsett maskin**, och
+skälet är att priset inte är värt det: alternativen är att injicera kollatorn i
+`readMonth` eller att exportera den, och båda lägger en parameter i
+produktionskoden vars enda syfte är att ett test ska kunna byta språk.
+`src/core/schedule.js` har samma oskyddade rad sedan paket 7 och samma
+motivering. Raden står kvar därför att en användare med engelsk webbläsare annars
+får engelsk sortering av svenska namn.
+
+Det här är alltså en känd lucka, utskriven, och inte ett förbiseende.

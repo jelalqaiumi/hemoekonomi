@@ -10,6 +10,7 @@ const SRC_DIR = path.dirname(SERVER_DIR);
 
 const DATA_DIR_NAME = 'hemochekonomi';
 const DATA_FILE_NAME = 'entries.json';
+const DATABASE_FILE_NAME = 'hemochekonomi.sqlite';
 
 // Läser miljövariabeln vid varje anrop, aldrig en gång vid modulladdning: en
 // cachad sökväg gör lagringen otestbar, eftersom testerna sätter
@@ -24,6 +25,21 @@ export function getDataFilePath() {
   }
   const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
   return path.join(appData, DATA_DIR_NAME, DATA_FILE_NAME);
+}
+
+// Databasfilen [etapp 1]. Samma villkor för miljövariabeln som
+// getDataFilePath: läses vid varje anrop, tom sträng och bara blanktecken
+// räknas som osatt, och ett satt värde används ordagrant utan trim().
+// Förvalet ligger i samma katalog som datafilen, alltså under
+// %APPDATA%\hemochekonomi\ — men sökvägen härleds inte ur getDataFilePath():
+// den som sätter HEMOCHEKONOMI_DATA_FILE ska inte flytta databasen med den.
+export function getDatabaseFilePath() {
+  const override = process.env.HEMOCHEKONOMI_DB_FILE;
+  if (typeof override === 'string' && override.trim() !== '') {
+    return override;
+  }
+  const appData = process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(appData, DATA_DIR_NAME, DATABASE_FILE_NAME);
 }
 
 export function getWebDir() {

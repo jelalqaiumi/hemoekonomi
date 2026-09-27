@@ -41,7 +41,7 @@ function messagesFor(result, field) {
 }
 
 test('konstanterna följer datamodellen', () => {
-  assert.deepEqual(INTERVALS, ['monthly', 'quarterly', 'yearly']);
+  assert.deepEqual(INTERVALS, ['monthly', 'quarterly', 'semiannual', 'yearly']);
   assert.deepEqual(CATEGORIES, ['housing', 'subscription', 'insurance', 'transport', 'loan', 'other']);
   assert.deepEqual(ENTRY_FIELDS, ['amountSek', 'category', 'id', 'interval', 'name', 'startDate']);
   assert.equal(NAME_MAX_LENGTH, 60);
@@ -53,6 +53,7 @@ test('konstanterna följer datamodellen', () => {
   assert.deepEqual(INTERVAL_LABELS, {
     monthly: 'Månadsvis',
     quarterly: 'Kvartalsvis',
+    semiannual: 'Halvårsvis',
     yearly: 'Årsvis'
   });
   assert.deepEqual(CATEGORY_LABELS, {
@@ -72,7 +73,7 @@ test('de exporterade konstanterna är frysta och går inte att mutera', () => {
   assert.deepEqual(ENTRY_FIELDS, ['amountSek', 'category', 'id', 'interval', 'name', 'startDate']);
 
   assert.throws(() => INTERVALS.push('weekly'), TypeError);
-  assert.deepEqual(INTERVALS, ['monthly', 'quarterly', 'yearly']);
+  assert.deepEqual(INTERVALS, ['monthly', 'quarterly', 'semiannual', 'yearly']);
 
   assert.throws(() => CATEGORIES.push('food'), TypeError);
   assert.deepEqual(CATEGORIES, ['housing', 'subscription', 'insurance', 'transport', 'loan', 'other']);
@@ -533,7 +534,7 @@ test('beloppet lagras med högst två decimaler och utan flyttalsskräp', () => 
 test('okänt betalningsintervall avvisas', () => {
   for (const interval of ['weekly', 'MONTHLY', 'månadsvis', '', undefined, null, 1]) {
     assert.deepEqual(messagesFor(validateEntryDraft(validDraft({ interval })), 'interval'), [
-      'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis eller årsvis.'
+      'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.'
     ]);
   }
 });
@@ -581,7 +582,7 @@ test('alla fältfel returneras, ett per fält och i fältordning', () => {
     { field: 'amountSek', message: 'Beloppet måste vara ett tal.' },
     {
       field: 'interval',
-      message: 'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis eller årsvis.'
+      message: 'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.'
     },
     { field: 'startDate', message: 'Startdatum måste anges som ÅÅÅÅ-MM-DD.' },
     { field: 'category', message: 'Välj en giltig kategori.' }

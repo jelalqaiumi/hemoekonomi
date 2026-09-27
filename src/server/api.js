@@ -4,7 +4,22 @@
 // Beloppet tolkas på exakt ett ställe i projektet: createEntry i src/core/entry.js.
 // Den här filen gör ingen parseFloat, ingen Number() och ingen trimning av ett
 // belopp — råvärdet ur anropets JSON skickas vidare orört.
+import { isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
+import { validateMonthItemDraft } from '../core/item.js';
+import {
+  AUTH_MESSAGES,
+  clearedSessionCookie,
+  clientIp,
+  logOut,
+  readSessionToken,
+  requestCode,
+  requireSession,
+  sessionCookie,
+  verifyCode
+} from './auth.js';
+import { getDatabase } from './db.js';
+import { addMonthItem, readMonth, removeMonthItem, updateMonthItem } from './months.js';
 import { loadEntries, updateEntries } from './storage.js';
 
 // Ägs här och läses av server.js för rad S1 ("Ett trasigt anrop får inte döda
@@ -18,12 +33,27 @@ export const UNPARSABLE_MESSAGE = 'Kunde inte tolka anropet.';
 const MESSAGES = Object.freeze({
   unknownPath: 'Okänd adress.',
   methodNotAllowed: 'Metoden stöds inte.',
-  entryNotFound: 'Posten finns inte.'
+  // Samma sträng för "posten finns inte" och "posten tillhör någon annan", med
+  // flit: användaren ska inte kunna se skillnad på de två, och två olika
+  // strängar för samma svar vore två facit (ARKITEKTUR.md, "Månadens API").
+  entryNotFound: 'Posten finns inte.',
+  invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.'
 });
 
 const API_PREFIX = '/api/';
 const ENTRIES_PATH = '/api/entries';
 const ENTRY_PATH_PREFIX = '/api/entries/';
+
+// Månadens två vägar [etapp 3]. Adresserna är svenska, precis som
+// inloggningens: /api/manad/<ÅÅÅÅ-MM> och /api/poster/<id>.
+const MONTH_PATH_PREFIX = '/api/manad/';
+const ITEM_PATH_PREFIX = '/api/poster/';
+
+// Inloggningens fyra vägar [etapp 2].
+const AUTH_CODE_PATH = '/api/auth/kod';
+const AUTH_LOGIN_PATH = '/api/auth/logga-in';
+const AUTH_LOGOUT_PATH = '/api/auth/logga-ut';
+const ME_PATH = '/api/mig';
 
 // Ett eget värde i stället för null eller undefined: en kropp som innehåller
 // exakt "null" är giltig JSON och ska nå createEntry, inte förväxlas med en
@@ -68,25 +98,72 @@ function parseBody(text) {
   }
 }
 
-// Id:t är resten av sökvägen efter /api/entries/, ordagrant. Ingen trimning,
-// ingen avkodning och ingen normalisering: en post som inte matchar exakt finns
-// inte. Ett tomt id och ett id som innehåller / är ingen postväg alls utan
+// Sista ledet i sökvägen efter ett prefix, ordagrant. Ingen trimning, ingen
+// avkodning och ingen normalisering: ett värde som inte matchar exakt finns
+// inte. Ett tomt led och ett led som innehåller / är ingen väg alls utan
 // "annat /api/*", alltså Okänd adress.
-function entryIdFromPath(pathname) {
-  if (!pathname.startsWith(ENTRY_PATH_PREFIX)) {
+//
+// Ägaren till regeln: den stod skriven för hand i entryIdFromPath fram till
+// etapp 3, och månadens två vägar behöver exakt samma regel. Två handskrivna
+// kopior kan glida isär utan att något test märker det (LARDOMAR.md
+// 2026-09-02).
+function segmentAfter(pathname, prefix) {
+  if (!pathname.startsWith(prefix)) {
     return null;
   }
-  const id = pathname.slice(ENTRY_PATH_PREFIX.length);
-  if (id === '' || id.includes('/')) {
+  const segment = pathname.slice(prefix.length);
+  if (segment === '' || segment.includes('/')) {
     return null;
   }
-  return id;
+  return segment;
 }
 
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
-export async function handleApiRequest(req, res, pathname) {
+//
+// now är tidsstämpeln anropet ska räknas mot, injicerad av samma skäl som
+// dagens datum injiceras i src/core/schedule.js: en hanterare som läser klockan
+// själv går inte att testa. Förvalet är projektets enda tidsstämpelläsning,
+// nowIso() i src/core/dates.js, och server.js anropar funktionen med tre
+// argument och får därmed den verkliga klockan.
+export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   if (pathname !== '/api' && !pathname.startsWith(API_PREFIX)) {
     return false;
+  }
+
+  if (pathname === AUTH_CODE_PATH) {
+    if (req.method === 'POST') {
+      await handleRequestCode(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === AUTH_LOGIN_PATH) {
+    if (req.method === 'POST') {
+      await handleLogin(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === AUTH_LOGOUT_PATH) {
+    if (req.method === 'POST') {
+      handleLogout(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === ME_PATH) {
+    if (req.method === 'GET') {
+      handleMe(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
   }
 
   if (pathname === ENTRIES_PATH) {
@@ -102,7 +179,7 @@ export async function handleApiRequest(req, res, pathname) {
     return true;
   }
 
-  const id = entryIdFromPath(pathname);
+  const id = segmentAfter(pathname, ENTRY_PATH_PREFIX);
   if (id !== null) {
     if (req.method === 'DELETE') {
       await handleDelete(res, id);
@@ -112,8 +189,194 @@ export async function handleApiRequest(req, res, pathname) {
     return true;
   }
 
+  const month = segmentAfter(pathname, MONTH_PATH_PREFIX);
+  if (month !== null) {
+    if (req.method === 'GET') {
+      handleReadMonth(req, res, now, month);
+      return true;
+    }
+    if (req.method === 'POST') {
+      await handleCreateMonthItem(req, res, now, month);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  const itemId = segmentAfter(pathname, ITEM_PATH_PREFIX);
+  if (itemId !== null) {
+    if (req.method === 'PUT') {
+      await handleUpdateMonthItem(req, res, now, itemId);
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      handleDeleteMonthItem(req, res, now, itemId);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
   sendJson(res, 404, { error: MESSAGES.unknownPath });
   return true;
+}
+
+// Sessionsspärren, gemensam för månadens vägar. Svaret är användarens id, eller
+// null när funktionen redan har svarat klienten — anroparen returnerar då utan
+// att göra något mer.
+//
+// 401 ges av sessionsspärren innan vägen körs, inte av vägen själv
+// (ARKITEKTUR.md, "API-vägar"). user_id kommer ur sessionen och aldrig ur
+// anropet.
+function sessionUserId(req, res, now) {
+  let guard;
+  try {
+    guard = requireSession(getDatabase(), { token: readSessionToken(req), now });
+  } catch (error) {
+    // db.js, auth.js och months.js kastar bara DatabaseError, och dess .message
+    // är svensk text avsedd att visas för användaren.
+    sendJson(res, 500, { error: error.message });
+    return null;
+  }
+  if (guard.unauthorized === true) {
+    sendUnauthorized(res, guard.message);
+    return null;
+  }
+  return guard.session.userId;
+}
+
+// GET /api/manad/<ÅÅÅÅ-MM>. 200 med poster och summor, 400 vid fel
+// månadsformat, 401 utan session, 500 vid DatabaseError.
+function handleReadMonth(req, res, now, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  // Månadsspärren prövas innan datalagret nås: en ogiltig månad ska aldrig bli
+  // en SQL-fråga. isValidIsoMonth i src/core/dates.js äger frågan, och det här
+  // lagret skriver inget eget månadsmönster.
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  let result;
+  try {
+    result = readMonth(userId, month);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { items: result.items, totals: result.totals });
+}
+
+// DELETE /api/poster/<id>. 204, 401, 404 om posten inte finns eller tillhör
+// någon annan, 500 vid DatabaseError.
+function handleDeleteMonthItem(req, res, now, itemId) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  let removed;
+  try {
+    // Beslutet "finns posten?" fattas av SQL:s WHERE med user_id = ?, inte av en
+    // läsning före: en post som tillhör någon annan matchar då ingen rad, och
+    // svaret blir detsamma som för ett id som aldrig funnits.
+    removed = removeMonthItem(userId, itemId);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!removed) {
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  res.writeHead(204);
+  res.end();
+}
+
+// POST /api/manad/<ÅÅÅÅ-MM>. 201 med posten, 400 med fieldErrors, 401, 500.
+// Ordningen är bindande: sessionsspärren, månadsspärren, valideringen, sedan
+// datalagret. Steg tre före steg fyra betyder att en ogiltig post aldrig blir en
+// SQL-fråga.
+async function handleCreateMonthItem(req, res, now, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
+  // array, en sträng — hanteras av validateMonthItemDraft och ger fältfel.
+  const result = validateMonthItemDraft(draft);
+  if (!result.ok) {
+    // Samma form som den gamla formulärvägen: error är det första felet, och
+    // fieldErrors är listan orörd. Alla fyra fälten kan stå i listan, och alla
+    // fyra finns i formuläret — ingen post har ett field som saknar
+    // motsvarighet, till skillnad från id-felet i createEntry.
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let item;
+  try {
+    item = addMonthItem(userId, month, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 201, { item });
+}
+
+// PUT /api/poster/<id>. 200 med posten, 400, 401, 404 om posten inte finns eller
+// tillhör någon annan, 500. Samma ordning som POST.
+async function handleUpdateMonthItem(req, res, now, itemId) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const result = validateMonthItemDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let item;
+  try {
+    item = updateMonthItem(userId, itemId, result.value);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (item === null) {
+    // Samma text och samma statuskod som för ett id som aldrig funnits.
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  sendJson(res, 200, { item });
+}
+
+// 401 med rensad cookie. En session som saknas, är återkallad eller har gått ut
+// ska inte skickas tillbaka vid nästa anrop. Ägaren till svaret: det stod
+// skrivet för hand i handleMe fram till etapp 3, och månadens vägar behöver
+// samma svar.
+function sendUnauthorized(res, message) {
+  const text = JSON.stringify({ error: message });
+  res.writeHead(401, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    'Set-Cookie': clearedSessionCookie()
+  });
+  res.end(text);
 }
 
 async function handleList(res) {
@@ -195,4 +458,101 @@ async function handleDelete(res, id) {
 
   res.writeHead(204);
   res.end();
+}
+
+// POST /api/auth/kod. Svarar alltid 202 när ingen spärr slår till, oavsett om
+// adressen har ett konto: att begära en kod får inte avslöja om kontot finns.
+// Statuskoderna är de fyra på vägens rad i HTTP-API-tabellen och inga andra —
+// 202, 400 rad 1, 429 rad 8 eller 9, och 500 rad 10 om utskicket misslyckas.
+async function handleRequestCode(req, res, now) {
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: AUTH_MESSAGES.invalidEmail });
+    return;
+  }
+
+  let result;
+  try {
+    result = await requestCode(getDatabase(), {
+      email: body?.email,
+      ip: clientIp(req),
+      now
+    });
+  } catch (error) {
+    // db.js och auth.js kastar bara DatabaseError, och dess .message är svensk
+    // text avsedd att visas för användaren — samma väg som StorageError.
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+
+  if (result.status === 202) {
+    res.writeHead(202);
+    res.end();
+    return;
+  }
+  sendJson(res, result.status, { error: result.message });
+}
+
+// POST /api/auth/logga-in. 204 med sessionscookie, 400 rad 1, 2, 3, 5, 6 eller
+// 7, och 429 rad 4.
+async function handleLogin(req, res, now) {
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: AUTH_MESSAGES.invalidEmail });
+    return;
+  }
+
+  let result;
+  try {
+    result = verifyCode(getDatabase(), {
+      email: body?.email,
+      code: body?.code,
+      now
+    });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+
+  if (result.status !== 204) {
+    sendJson(res, result.status, { error: result.message });
+    return;
+  }
+
+  res.writeHead(204, { 'Set-Cookie': sessionCookie(result.token) });
+  res.end();
+}
+
+// POST /api/auth/logga-ut. Svarar 204 även utan giltig session: utloggning ska
+// aldrig misslyckas. Cookien rensas i samma svar.
+function handleLogout(req, res, now) {
+  try {
+    logOut(getDatabase(), { token: readSessionToken(req), now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  res.writeHead(204, { 'Set-Cookie': clearedSessionCookie() });
+  res.end();
+}
+
+// GET /api/mig. 200 med e-postadressen, 401 om inte inloggad. Vägen går genom
+// requireSession, som är den enda spärren — user_id kommer ur sessionen och
+// aldrig ur anropet.
+function handleMe(req, res, now) {
+  let guard;
+  try {
+    guard = requireSession(getDatabase(), { token: readSessionToken(req), now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+
+  if (guard.unauthorized === true) {
+    // Cookien rensas i samma svar, av ägaren till 401-svaret nedan.
+    sendUnauthorized(res, guard.message);
+    return;
+  }
+
+  sendJson(res, 200, { email: guard.session.email });
 }

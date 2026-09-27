@@ -33,8 +33,8 @@ test('MONTHS_PER_PERIOD och INTERVALS beskriver samma domän', () => {
   assert.deepEqual(Object.keys(MONTHS_PER_PERIOD).sort(), [...INTERVALS].sort());
 });
 
-test('MONTHS_PER_PERIOD har periodlängderna 1, 3 och 12', () => {
-  assert.deepEqual({ ...MONTHS_PER_PERIOD }, { monthly: 1, quarterly: 3, yearly: 12 });
+test('MONTHS_PER_PERIOD har periodlängderna 1, 3, 6 och 12', () => {
+  assert.deepEqual({ ...MONTHS_PER_PERIOD }, { monthly: 1, quarterly: 3, semiannual: 6, yearly: 12 });
 });
 
 test('MONTHS_PER_PERIOD är fryst', () => {
@@ -101,12 +101,42 @@ test('nextDueDate klampar från startdatumets dag i varje period, aldrig från f
   }
 });
 
+// Halvårsvis är sex månader per period: posten dras i startmånaden och sex
+// månader senare, alltså två gånger om året. Varje rad nedan är ett kört värde.
+test('nextDueDate ger halvårspostens dragningar sex månader isär', () => {
+  const halvar = post({ startDate: '2026-03-31', interval: 'semiannual' });
+  const facit = [
+    ['2026-03-01', '2026-03-31', 'starten ligger senare i samma månad'],
+    ['2026-03-31', '2026-03-31', 'start = idag, 0 dagar kvar'],
+    ['2026-04-01', '2026-09-30', 'sex månader fram, klampat: september har 30 dagar'],
+    ['2026-09-30', '2026-09-30', 'dragningsdagen själv'],
+    ['2026-10-01', '2027-03-31', 'nästa period är mars igen, på startdatumets dag'],
+    ['2027-04-01', '2027-09-30', 'klampningen smittar inte vidare till nästa år']
+  ];
+  for (const [today, forvantat, varfor] of facit) {
+    assert.equal(nextDueDate(halvar, today), forvantat, `${today} — ${varfor}`);
+  }
+
+  // En start som inte behöver klampas: dragningarna ligger i januari och juli.
+  const januari = post({ startDate: '2026-01-15', interval: 'semiannual' });
+  assert.equal(nextDueDate(januari, '2026-02-01'), '2026-07-15');
+  assert.equal(nextDueDate(januari, '2026-07-15'), '2026-07-15');
+  assert.equal(nextDueDate(januari, '2026-07-16'), '2027-01-15');
+
+  // Tolv perioder tillbaka: augusti och februari, och februari klampas.
+  assert.equal(
+    nextDueDate(post({ startDate: '2020-08-31', interval: 'semiannual' }), '2026-09-25'),
+    '2027-02-28'
+  );
+});
+
 // Regeln "klampningen räknas om från startDate, aldrig från föregående
 // occurrence" står på två kodvägar: steg 2 (k = Math.floor(diff / step)) och
 // korrigeringsloopen under den. Facittabellen och testet ovan kör bara den
 // första. För monthly kan de två aldrig inträffa samtidigt: loopen körs bara när
 // today ligger efter occurrence, och en klampad occurrence ligger alltid på
-// månadens sista dag. Bara quarterly och yearly når kombinationen, och det
+// månadens sista dag. Bara ett interval vars period är längre än en månad når
+// kombinationen, och det
 // kräver ett today mitt i perioden (LARDOMAR.md 2026-09-12).
 //
 // De två fallen nedan kör alltså loopkroppen med en klampad occurrence, och

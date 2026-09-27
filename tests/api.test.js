@@ -9,6 +9,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { INTERVALS } from '../src/core/entry.js';
 import { handleApiRequest } from '../src/server/api.js';
 import { loadEntries, saveEntries } from '../src/server/storage.js';
 
@@ -293,7 +294,7 @@ test('POST med ogiltiga fält ger 400 med de exakta svenska meddelandena och ska
     [
       { ...GILTIGT_UTKAST, interval: 'weekly' },
       'interval',
-      'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis eller årsvis.'
+      'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.'
     ],
     [{ ...GILTIGT_UTKAST, startDate: '25 januari' }, 'startDate', 'Startdatum måste anges som ÅÅÅÅ-MM-DD.'],
     [{ ...GILTIGT_UTKAST, startDate: '' }, 'startDate', 'Startdatum måste anges som ÅÅÅÅ-MM-DD.'],
@@ -394,7 +395,9 @@ test('POST lägger posten sist och rör inte de poster som redan finns', async (
 test('allt som API:t skapar kan lagringen läsa tillbaka', async (t) => {
   await useTempDataFile(t);
   const skapade = [];
-  for (const interval of ['monthly', 'quarterly', 'yearly']) {
+  // INTERVALS och inte en egen lista: ett nytt intervall ska prövas här utan
+  // att någon uppdaterar raden.
+  for (const interval of INTERVALS) {
     skapade.push(await createEntryViaApi({ ...GILTIGT_UTKAST, interval }));
   }
   assert.deepEqual(await loadEntries(), skapade);

@@ -28,6 +28,7 @@ import { isPlainObject, isValidEntryId } from './entry.js';
 export const MONTHS_PER_PERIOD = Object.freeze({
   monthly: 1,
   quarterly: 3,
+  semiannual: 6,
   yearly: 12
 });
 

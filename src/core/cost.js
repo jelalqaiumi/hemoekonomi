@@ -32,6 +32,7 @@ import { isPlainObject } from './entry.js';
 export const PAYMENTS_PER_YEAR = Object.freeze({
   monthly: 12,
   quarterly: 4,
+  semiannual: 2,
   yearly: 1
 });
 

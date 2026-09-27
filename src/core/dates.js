@@ -5,6 +5,12 @@
 // "fel format" från "obefintligt datum" utan att duplicera regexen.
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+// Formatmönstret för en månad, "YYYY-MM". Samma roll för en månad som
+// ISO_DATE_PATTERN har för ett datum, och enda stället i projektet där
+// månadsformen står skriven: ingen annan fil skriver ett eget månadsmönster och
+// ingen annan fil klipper en månad ur ett datum med slice.
+export const ISO_MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
 // Talet 12 i rollen "antal månader per år", basen i omräkningen mellan ett
 // datum och ett löpande månadsnummer (ARKITEKTUR.md: monthIndex(year, month) =
 // year * 12 + (month - 1)). Står på fyra ställen i filen och behöver därför en
@@ -140,6 +146,90 @@ export function daysBetween(fromIso, toIso) {
   return (utcMs(to) - utcMs(from)) / MS_PER_DAY;
 }
 
+// "Är det här en riktig månad": formen plus månadsnumret 01-12. Mönstret ensamt
+// räcker aldrig — '2026-13' matchar det utan att vara en månad, precis som
+// '2026-02-31' matchar ISO_DATE_PATTERN utan att vara ett datum.
+//
+// Gränsen 1-12 skrivs inte för hand här: den ägs av daysInMonth, som svarar 0
+// för varje månadsnummer utanför den, och det är samma delegering som
+// parseIsoDate och toIsoDate redan gör. Året har alltid fyra siffror när
+// mönstret har matchat, så Number.isInteger-raden i daysInMonth är uppfylld och
+// ett svar över 0 betyder exakt "månadsnumret ligger i 1-12".
+export function isValidIsoMonth(value) {
+  if (typeof value !== 'string' || !ISO_MONTH_PATTERN.test(value)) {
+    return false;
+  }
+  return daysInMonth(Number(value.slice(0, 4)), Number(value.slice(5, 7))) > 0;
+}
+
+// Månadens första dag: '2026-01' ger '2026-01-01'. Dagen är alltid 01, så
+// funktionen har ingen kalenderfråga att ställa — månadens giltighet är hela
+// villkoret.
+export function firstDayOfMonth(month) {
+  if (!isValidIsoMonth(month)) {
+    throw new RangeError(`firstDayOfMonth kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".`);
+  }
+  return `${month}-01`;
+}
+
+// Datumets månad: '2026-01-31' ger '2026-01'. Enda stället i projektet där en
+// månad klipps ur ett datum.
+export function monthOfIsoDate(isoDate) {
+  if (!isValidIsoDate(isoDate)) {
+    throw new RangeError(`monthOfIsoDate kräver ett datum på formen ÅÅÅÅ-MM-DD, fick "${String(isoDate)}".`);
+  }
+  return isoDate.slice(0, 7);
+}
+
+// Månaden flyttad ett antal månader: '2026-12' plus 1 ger '2027-01', och
+// '2026-01' minus 1 ger '2025-12'. Räknar i månader och inte i dagar, och har
+// ingen klampning att göra — en månad har ingen dag.
+//
+// Månadsaritmetiken skrivs inte en andra gång: den ägs av addMonthsClamped, som
+// äger omräkningen mellan ett datum och ett löpande månadsnummer. Vägen går
+// därför över månadens första dag, där klampningen aldrig kan slå till (dag 1
+// finns i varje månad). Följden är facit: ett resultat utanför kalenderns år
+// avvisas av toIsoDate med toIsoDates eget namn i meddelandet, exakt som för
+// addMonthsClamped — körd: shiftMonth('9999-12', 1) ger
+// `toIsoDate kräver ett år med fyra siffror, fick "10000".`
+export function shiftMonth(month, deltaMonths) {
+  if (!isValidIsoMonth(month)) {
+    throw new RangeError(`shiftMonth kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".`);
+  }
+  // Number.isSafeInteger och inte Number.isInteger: 1e300 är ett heltal men
+  // inget säkert, och ett månadsindex räknat ur ett osäkert tal är inte längre
+  // exakt. Predikatet coercar inte, så 1n och Symbol('x') ger false i stället
+  // för att kasta TypeError.
+  if (!Number.isSafeInteger(deltaMonths)) {
+    throw new RangeError(`shiftMonth kräver ett heltal månader, fick "${String(deltaMonths)}".`);
+  }
+  return monthOfIsoDate(addMonthsClamped(firstDayOfMonth(month), deltaMonths));
+}
+
+// -1, 0 eller 1. Strängjämförelsen är hela svaret just för det här formatet:
+// "YYYY-MM" sorterar i samma ordning alfabetiskt som kronologiskt, eftersom både
+// år och månad är nollutfyllda. Raden är alltså ingen genväg, och det är samma
+// skäl som compareIsoDates vilar på.
+//
+// Till skillnad från compareIsoDates namnger meddelandet inte vilket av de två
+// argumenten som föll: texten står ordagrant i spärrtabellen i ARKITEKTUR.md och
+// är densamma för båda. Första träff vinner, så a prövas före b.
+export function compareMonths(a, b) {
+  if (!isValidIsoMonth(a)) {
+    throw new RangeError(`compareMonths kräver en månad på formen ÅÅÅÅ-MM, fick "${String(a)}".`);
+  }
+  if (!isValidIsoMonth(b)) {
+    throw new RangeError(`compareMonths kräver en månad på formen ÅÅÅÅ-MM, fick "${String(b)}".`);
+  }
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
+
 // Projektets enda klockläsning. Alla andra funktioner tar emot dagens datum som
 // parameter — utan den regeln går schedule.js inte att testa.
 // Lokalt datum, inte UTC: "idag" är det datum användaren ser på sin vägg.
@@ -151,6 +241,26 @@ export function todayIso(now = new Date()) {
     throw new RangeError('todayIso kräver ett Date som visar ett datum, fick ett ogiltigt Date.');
   }
   return toIsoDate({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() });
+}
+
+// Tidsstämpeln, i UTC, på exakt den form new Date().toISOString() ger:
+// 2026-09-24T18:03:00.000Z. Projektets andra och enda övriga klockläsning, vid
+// sidan av todayIso: todayIso ger dagen och nowIso tidsstämpeln, och ingen annan
+// fil läser klockan. Varje funktion som behöver tiden tar emot värdet som
+// parameter — annars går utgångna koder och utgångna sessioner inte att testa.
+//
+// UTC och inte lokal tid, till skillnad från todayIso: en tidsstämpel i
+// databasen jämförs med en annan tidsstämpel, och två rader skrivna i olika
+// tidszoner ska sortera rätt. "Idag" är däremot det datum användaren ser på sin
+// vägg, och därför är todayIso lokalt.
+export function nowIso(now = new Date()) {
+  if (!(now instanceof Date)) {
+    throw new RangeError(`nowIso kräver ett Date, fick "${String(now)}".`);
+  }
+  if (Number.isNaN(now.getTime())) {
+    throw new RangeError('nowIso kräver ett Date som visar en tidpunkt, fick ett ogiltigt Date.');
+  }
+  return now.toISOString();
 }
 
 function utcMs(parts) {

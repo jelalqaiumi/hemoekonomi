@@ -25,8 +25,8 @@ function entry(amountSek, interval, id = 'e1') {
   };
 }
 
-test('PAYMENTS_PER_YEAR har de tre intervallen och deras faktorer', () => {
-  assert.deepEqual({ ...PAYMENTS_PER_YEAR }, { monthly: 12, quarterly: 4, yearly: 1 });
+test('PAYMENTS_PER_YEAR har varje intervall och dess faktor', () => {
+  assert.deepEqual({ ...PAYMENTS_PER_YEAR }, { monthly: 12, quarterly: 4, semiannual: 2, yearly: 1 });
 });
 
 test('PAYMENTS_PER_YEAR är fryst', () => {
@@ -40,7 +40,7 @@ test('PAYMENTS_PER_YEAR är fryst', () => {
   assert.throws(() => {
     delete PAYMENTS_PER_YEAR.yearly;
   }, TypeError);
-  assert.deepEqual({ ...PAYMENTS_PER_YEAR }, { monthly: 12, quarterly: 4, yearly: 1 });
+  assert.deepEqual({ ...PAYMENTS_PER_YEAR }, { monthly: 12, quarterly: 4, semiannual: 2, yearly: 1 });
 });
 
 // PAYMENTS_PER_YEAR och INTERVALS beskriver samma domän men bor i var sin modul.
@@ -59,12 +59,15 @@ test('MONTHS_PER_YEAR är 12', () => {
 test('yearlyOre normaliserar 100,00 kr till år för varje intervall', () => {
   assert.equal(yearlyOre(entry(100, 'monthly')), 120000);
   assert.equal(yearlyOre(entry(100, 'quarterly')), 40000);
+  // Halvårsvis: två dragningar per år, alltså 200,00 kr.
+  assert.equal(yearlyOre(entry(100, 'semiannual')), 20000);
   assert.equal(yearlyOre(entry(100, 'yearly')), 10000);
 });
 
 test('yearlyOre räknar i öre och ger alltid ett heltal', () => {
   assert.equal(yearlyOre(entry(0.01, 'monthly')), 12);
   assert.equal(yearlyOre(entry(0.01, 'quarterly')), 4);
+  assert.equal(yearlyOre(entry(0.01, 'semiannual')), 2);
   assert.equal(yearlyOre(entry(0.01, 'yearly')), 1);
   assert.equal(yearlyOre(entry(1234.56, 'monthly')), 1481472);
 });
@@ -88,6 +91,8 @@ test('yearlyOre för ett belopp som inte är ett finit tal kastar RangeError', (
 test('monthlyOre ger avrundningsavsnittets kontrollvärden per intervall', () => {
   assert.equal(monthlyOre(entry(100, 'monthly')), 10000);
   assert.equal(monthlyOre(entry(100, 'quarterly')), 3333);
+  // 200,00 kr/år = 20000 öre/år ger 1666,67 öre/mån, avrundat 1667 öre.
+  assert.equal(monthlyOre(entry(100, 'semiannual')), 1667);
   assert.equal(monthlyOre(entry(100, 'yearly')), 833);
 });
 
@@ -153,7 +158,7 @@ test('tre årsposter à 100,00 kr ger 833 öre per post men 2500 öre i månadst
 });
 
 test('en enda post ger samma månadstotal som postens eget månadsbelopp', () => {
-  for (const interval of ['monthly', 'quarterly', 'yearly']) {
+  for (const interval of INTERVALS) {
     const single = [entry(100, interval)];
     assert.equal(totalMonthlyOre(single), monthlyOre(single[0]), interval);
     assert.equal(totalYearlyOre(single), yearlyOre(single[0]), interval);

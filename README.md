@@ -117,7 +117,7 @@ Fyll i formuläret högst upp och klicka **Spara**:
 |---|---|
 | **Namn** | Fritext, 1–60 tecken. Till exempel `Hyra`. |
 | **Belopp per betalning (kr)** | Beloppet **per dragning**, inte per månad. `12000` eller `139,50`. Se [Så skriver du ett belopp](#så-skriver-du-ett-belopp). |
-| **Betalningsintervall** | Rullgardin med `Månadsvis`, `Kvartalsvis` och `Årsvis`. |
+| **Betalningsintervall** | Rullgardin med `Månadsvis`, `Kvartalsvis`, `Halvårsvis` och `Årsvis`. |
 | **Startdatum** | Den första dragningen, på formen `ÅÅÅÅ-MM-DD`. |
 | **Kategori** | Rullgardin med `Boende`, `Prenumeration`, `Försäkring`, `Transport`, `Lån` och `Övrigt`. |
 
