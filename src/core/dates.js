@@ -230,6 +230,55 @@ export function compareMonths(a, b) {
   return 0;
 }
 
+// Månadernas namn på svenska, i kalenderordning: index 0 är januari. Frusen av
+// samma skäl som INTERVALS och CATEGORIES i entry.js — en importör som skriver
+// om ett värde skulle annars byta ut ett namn i hela appen utan att någon fil
+// visar det.
+//
+// Namnen står i gemener, som svenskan skriver dem i löpande text ("i oktober").
+// Den versala begynnelsebokstaven i månadsväljarens rubrik är monthLabels
+// ansvar och ingen egenskap hos tabellen.
+//
+// Tabellen är ägaren: ingen handskriven lista i src/web/app.js, och inte
+// toLocaleDateString, som hade låtit körmiljöns språk avgöra utfallet — samma
+// skäl som Intl.Collator('sv') i src/server/months.js har sitt utskrivna språk.
+export const MONTH_NAMES = Object.freeze([
+  'januari',
+  'februari',
+  'mars',
+  'april',
+  'maj',
+  'juni',
+  'juli',
+  'augusti',
+  'september',
+  'oktober',
+  'november',
+  'december'
+]);
+
+// Månadens namn i gemener: '2026-10' ger 'oktober'. Uppslaget kan aldrig falla
+// utanför tabellen — isValidIsoMonth har redan avgjort att månadsnumret ligger i
+// 1-12, alltså att indexet ligger i 0-11.
+export function monthName(month) {
+  if (!isValidIsoMonth(month)) {
+    throw new RangeError(`monthName kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".`);
+  }
+  return MONTH_NAMES[Number(month.slice(5, 7)) - 1];
+}
+
+// Månadens namn med versal begynnelsebokstav och året: '2026-09' ger
+// 'September 2026'. Formen står i ARKITEKTUR.md under "Månadsvyn".
+//
+// Ingen egen spärr: monthName äger frågan och kastar med sitt eget namn i
+// meddelandet, samma delegering som readMonth gör till firstDayOfMonth. Varje
+// begynnelsebokstav i MONTH_NAMES är en ASCII-bokstav, så toUpperCase kan inte
+// ändra strängens längd.
+export function monthLabel(month) {
+  const name = monthName(month);
+  return `${name.slice(0, 1).toUpperCase()}${name.slice(1)} ${month.slice(0, 4)}`;
+}
+
 // Projektets enda klockläsning. Alla andra funktioner tar emot dagens datum som
 // parameter — utan den regeln går schedule.js inte att testa.
 // Lokalt datum, inte UTC: "idag" är det datum användaren ser på sin vägg.

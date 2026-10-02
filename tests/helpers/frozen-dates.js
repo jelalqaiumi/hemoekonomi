@@ -22,6 +22,15 @@
 // egen, svagare kopia av "är detta ett objekt").
 import { isValidIsoDate } from '../../src/core/dates.js';
 
+// Resten av modulens gränssnitt, oförändrat. Laddaren pekar om app.js:s enda
+// import av /core/dates.js hit, och app.js läser fyra andra exporter ur samma
+// modul: månadens namn, månadens rubrik, månaden ur ett datum och månaden flyttad
+// ett steg. Utan raden nedan finns de inte i den ompekade modulen, och
+// importen faller. Bara dagens datum är utbytt mot en ställbar sträng; de fyra
+// går rakt vidare till den riktiga filen, så en ändring där når den här
+// körningen.
+export { monthLabel, monthName, monthOfIsoDate, shiftMonth } from '../../src/core/dates.js';
+
 let frusenDag = null;
 
 // Den export app.js når genom laddarens ompekning. Namnet är app.js:s

@@ -56,8 +56,24 @@ class FakeElement {
     this.value = '';
     this.type = '';
     this.disabled = false;
+    // hidden och title är egenskaper app.js sätter: hidden byter vy och döljer
+    // formuläret, title bär texten på märket för en återkommande post.
+    this.hidden = false;
+    this.title = '';
     this.children = [];
     this.listeners = new Map();
+    this.attributes = new Map();
+  }
+
+  // Attributen diagrammets SVG behöver. Ett attribut är inte en egenskap: role,
+  // viewBox och width finns bara som attribut i en SVG, och attrappen håller dem
+  // därför åtskilda från textContent och className.
+  setAttribute(name, value) {
+    this.attributes.set(name, value);
+  }
+
+  getAttribute(name) {
+    return this.attributes.has(name) ? this.attributes.get(name) : null;
   }
 
   append(...nodes) {
@@ -140,69 +156,94 @@ class FakeForm extends FakeElement {
   }
 }
 
-// De fem fälten i formuläret, i samma ordning som index.html.
+// De tre fälten i formuläret. Fältets id i index.html och namnet app.js läser ur
+// FORM.elements är inte samma sträng — beloppet har id item-amount och namnet
+// amountSek — så attrappen registrerar båda, och felrutans id följer namnet,
+// precis som index.html skriver det.
 const FALT = Object.freeze([
-  { name: 'name', tagName: 'input' },
-  { name: 'amountSek', tagName: 'input' },
-  { name: 'interval', tagName: 'select' },
-  { name: 'startDate', tagName: 'input' },
-  { name: 'category', tagName: 'select' }
+  { name: 'name', id: 'item-name', tagName: 'input' },
+  { name: 'amountSek', id: 'item-amount', tagName: 'input' },
+  { name: 'category', id: 'item-category', tagName: 'select' }
 ]);
 
-// Bygger samma id:n som index.html. Testet jämför de två listorna, så en ny rad
+// De tre listorna, i index.html:s ordning. Varje slag ger tre id:n: knappen som
+// öppnar formuläret, listan och tomtexten.
+const LISTOR = Object.freeze(['income', 'expense', 'saving']);
+
+// Bygger samma id:n som index.html. Testet jämför de två listorna, så ett nytt id
 // i index.html som attrappen saknar fälls av tests/app.test.js.
 export function createDom() {
-  const form = new FakeForm('entry-form');
-  const registry = new Map([['entry-form', form]]);
+  const registry = new Map();
 
-  for (const { name, tagName } of FALT) {
-    const falt = new FakeElement(tagName, name);
-    const fel = new FakeElement('p', `error-${name}`);
-    fel.className = 'field-error';
+  const skapa = (tagName, id, egenskaper = {}) => {
+    const element = new FakeElement(tagName, id);
+    Object.assign(element, egenskaper);
+    registry.set(id, element);
+    return element;
+  };
+
+  // Inloggningsvyn. Steg två bär hidden från början, precis som index.html
+  // skriver attributet; app.js byter det när koden är skickad.
+  const loginView = skapa('section', 'login-view');
+  const stepEmail = skapa('div', 'login-step-email');
+  stepEmail.append(
+    skapa('input', 'login-email', { type: 'email' }),
+    skapa('button', 'send-code', { type: 'button', textContent: 'Skicka kod' })
+  );
+  const stepCode = skapa('div', 'login-step-code', { hidden: true });
+  stepCode.append(
+    skapa('p', 'code-sent', { className: 'lead' }),
+    skapa('input', 'login-code', { type: 'text' }),
+    skapa('button', 'log-in', { type: 'button', textContent: 'Logga in' }),
+    skapa('button', 'use-other-email', { type: 'button', textContent: 'Använd en annan adress' })
+  );
+  loginView.append(stepEmail, stepCode, skapa('p', 'login-error', { className: 'form-error' }));
+
+  // Månadsvyn, dold från början: vilken vy som syns avgörs av GET /api/mig.
+  const monthView = skapa('section', 'month-view', { hidden: true });
+  monthView.append(
+    skapa('span', 'user-email'),
+    skapa('button', 'log-out', { type: 'button', textContent: 'Logga ut' }),
+    skapa('button', 'month-prev', { type: 'button', textContent: 'Föregående' }),
+    skapa('h2', 'month-label'),
+    skapa('button', 'month-next', { type: 'button', textContent: 'Nästa' }),
+    skapa('span', 'total-income', { className: 'summary-amount' }),
+    skapa('span', 'total-expense', { className: 'summary-amount' }),
+    skapa('span', 'total-saving', { className: 'summary-amount' }),
+    skapa('span', 'total-left', { className: 'summary-amount' })
+  );
+
+  // Formuläret öppnas av en knapp och är dolt från början.
+  const formCard = skapa('section', 'item-form-card', { hidden: true });
+  const form = new FakeForm('item-form');
+  registry.set('item-form', form);
+  for (const { name, id, tagName } of FALT) {
+    const falt = skapa(tagName, id);
+    const fel = skapa('p', `error-${name}`, { className: 'field-error' });
     form.append(falt, fel);
     form.registrera(name, falt);
-    registry.set(name, falt);
-    registry.set(`error-${name}`, fel);
+  }
+  form.append(
+    skapa('p', 'item-form-error', { className: 'form-error' }),
+    skapa('button', 'item-submit', { type: 'submit', textContent: 'Spara' }),
+    skapa('button', 'item-cancel', { type: 'button', textContent: 'Avbryt' })
+  );
+  formCard.append(form);
+  monthView.append(formCard);
+
+  for (const slag of LISTOR) {
+    monthView.append(
+      skapa('button', `add-${slag}`, { type: 'button', className: 'add' }),
+      skapa('ul', `${slag}-list`, { className: 'item-list' }),
+      skapa('p', `${slag}-empty`, { className: 'empty-state' })
+    );
   }
 
-  const formError = new FakeElement('p', 'form-error');
-  formError.className = 'form-error';
-  form.append(formError);
-  registry.set('form-error', formError);
-
-  const submit = new FakeElement('button', '');
-  submit.type = 'submit';
-  submit.textContent = 'Spara';
-  form.append(submit);
-
-  const list = new FakeElement('ul', 'entry-list');
-  registry.set('entry-list', list);
-
-  // Paket 6: tomläget och totalrutans två beloppselement. Hela utökningen av
-  // attrappen är tre FakeElement till under just de id:n — ingen ny metod och
-  // ingen ny egenskap. Elementen slås upp med falt(), som bara är ett uppslag i
-  // registret.
-  const emptyState = new FakeElement('p', 'empty-state');
-  emptyState.className = 'empty-state';
-  registry.set('empty-state', emptyState);
-
-  const totalMonthly = new FakeElement('span', 'total-monthly');
-  totalMonthly.className = 'total-amount';
-  registry.set('total-monthly', totalMonthly);
-
-  const totalYearly = new FakeElement('span', 'total-yearly');
-  totalYearly.className = 'total-amount';
-  registry.set('total-yearly', totalYearly);
-
-  // Paket 7: kortet med kommande dragningar. Två FakeElement till under just de
-  // id:n index.html skriver ut — ingen ny metod och ingen ny egenskap.
-  const upcomingList = new FakeElement('ul', 'upcoming-list');
-  upcomingList.className = 'upcoming-list';
-  registry.set('upcoming-list', upcomingList);
-
-  const upcomingEmpty = new FakeElement('p', 'upcoming-empty');
-  upcomingEmpty.className = 'empty-state';
-  registry.set('upcoming-empty', upcomingEmpty);
+  monthView.append(
+    skapa('div', 'chart', { className: 'chart' }),
+    skapa('p', 'chart-empty', { className: 'empty-state' }),
+    skapa('p', 'month-error', { className: 'form-error' })
+  );
 
   const document = {
     querySelector(selector) {
@@ -211,20 +252,30 @@ export function createDom() {
     },
     createElement(tagName) {
       return new FakeElement(tagName, '');
+    },
+    // Diagrammet byggs med createElementNS: document.createElement('svg') ger i
+    // webbläsaren ett HTML-element som inte ritas som en SVG, så namnrymden är
+    // inget pynt. Attrappen sparar den, så att ett testfall kan pröva att den är
+    // satt.
+    createElementNS(namespace, tagName) {
+      const element = new FakeElement(tagName, '');
+      element.namespace = namespace;
+      return element;
     }
   };
 
   return {
     document,
     form,
-    list,
-    formError,
-    submit,
+    loginView,
+    monthView,
     ids: [...registry.keys()].sort(),
-    falt: (name) => registry.get(name),
-    faltfel: (name) => registry.get(`error-${name}`).textContent,
-    // Ta bort-knapparna i listan, en per post och i listans ordning.
-    taBortKnappar: () => list.children.map((rad) => rad.querySelector('button[type="button"]')),
+    // Uppslag på id. Namnet är kvar från den gamla vyn, där varje uppslag var ett
+    // formulärfält; funktionen har alltid bara varit ett uppslag i registret.
+    falt: (id) => registry.get(id),
+    faltfel: (field) => registry.get(`error-${field}`).textContent,
+    // Raderna i en lista, i listans ordning.
+    rader: (id) => registry.get(id).children,
     text: (element) => element.textContent
   };
 }

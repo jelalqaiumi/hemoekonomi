@@ -8705,3 +8705,234 @@ motivering. Raden står kvar därför att en användare med engelsk webbläsare 
 får engelsk sortering av svenska namn.
 
 Det här är alltså en känd lucka, utskriven, och inte ett förbiseende.
+
+---
+
+### Gränssnittet: inloggning och månadsvy (bindande) [etapp 3]
+
+#### Den gamla vyn ersätts
+
+`src/web/index.html` och `src/web/app.js` är byggda för den enanvändarlista appen
+var i paket 5 till 8. De skrivs om till inloggning plus månadsbudget. Följden är
+utskriven här så att den inte kommer som en överraskning:
+
+- Den gamla formulärvyn med `#entry-form`, `#entry-list` och korten Summa och
+  Kommande dragningar tas bort ur `index.html`.
+- `tests/app.test.js` prövar den vyn. De testfall som rör element som inte längre
+  finns **tas bort**, inte kommenteras bort. Ett test som prövar en vy som inte
+  finns är sämre än inget test, eftersom det ser ut som täckning.
+- `tests/helpers/dom.js` byggs ut med de nya id:na. `idsFranIndexHtml`-provet är
+  det som fångar en attrapp som glidit isär från sidan, och det ska fortsätta
+  gälla.
+- `src/server/storage.js`, `lock.js` och `entries.json`-vägen **rörs inte** i den
+  här etappen. De behövs i etapp 6 för att flytta över befintliga poster, och
+  `GET /api/entries` får stå kvar tills dess.
+- `src/core/cost.js` och `src/core/schedule.js` behålls oförändrade. Den nya vyn
+  använder dem inte i etapp 3, men etapp 4 behöver intervallogiken och etapp 5
+  behöver kostnadsberäkningen.
+
+#### Två vyer i en sida
+
+Sidan har två tillstånd och ingen router. `app.js` frågar `GET /api/mig` när den
+laddas:
+
+- `401` visar **inloggningsvyn** och döljer månadsvyn.
+- `200` visar **månadsvyn** och döljer inloggningsvyn.
+
+Inget annat avgör vilken vy som syns. Ett `401` från någon annan väg senare i
+körningen visar inloggningsvyn igen — sessionen kan gå ut medan sidan är öppen.
+
+#### Inloggningsvyn
+
+Två steg i samma vy, där steg två ersätter steg ett:
+
+1. Ett fält för e-post och en knapp `Skicka kod`. Svaret är alltid `202`, och
+   vyn säger då `En kod är skickad till <e-post>. Den gäller i tio minuter.`
+2. Ett fält för koden och en knapp `Logga in`. Vid `204` laddas månadsvyn. Vid
+   `400` eller `429` visas serverns text ordagrant — aldrig en egen.
+
+En knapp `Använd en annan adress` går tillbaka till steg ett.
+
+Fältet för koden har `inputmode="numeric"` och `autocomplete="one-time-code"`, så
+att mobiltangentbordet ger siffror och koden kan fyllas i automatiskt.
+
+#### Månadsvyn
+
+**Månadsväljaren** ligger överst: en knapp bakåt, månadens namn, en knapp framåt.
+Namnet skrivs på svenska med versal begynnelsebokstav, till exempel
+`September 2026`. Månadsnamnen ägs av en fryst tabell i `src/core/dates.js` —
+ingen handskriven lista i `app.js`, och inte `toLocaleDateString`, eftersom
+körmiljöns språk då avgör utfallet.
+
+Vyn öppnar **den aktuella månaden**: `monthOfIsoDate(todayIso())`. Det är den enda
+klockläsningen i filen. Knapparna anropar `shiftMonth(month, -1)` respektive
+`shiftMonth(month, 1)`.
+
+**Summeringen ligger direkt under månadsväljaren**, före listorna, så att den syns
+utan att man behöver skrolla — det är ett uttryckligt krav från användaren.
+
+| Rad | Innehåll |
+|---|---|
+| Inkomster | `formatSek(incomeOre)` |
+| Utgifter | `formatSek(expenseOre)` |
+| Sparande | `formatSek(savingOre)` |
+| **Kvar att leva på** | `formatSek(leftOre)`, i större text |
+
+`leftOre` får klassen `left-positive` när värdet är noll eller mer och
+`left-negative` när det är mindre. Färgerna ligger i `style.css`, aldrig som
+`style`-attribut i JavaScript. Noll räknas som positivt: en budget som går jämnt
+upp är inte ett problem.
+
+**Tre listor** under summeringen, i ordningen inkomster, utgifter, sparande. Varje
+lista har en rubrik, en knapp `+ Ny inkomst`, `+ Ny utgift` respektive
+`+ Nytt sparande`, och sina poster. En post visar namn, kategori, belopp och två
+knappar: `Ändra` och `Ta bort`.
+
+En post som kommer från en mall märks med ett tecken och texten
+`Återkommande varje månad` som `title`. Tecknet skrivs som escape i källkoden, inte
+som råtecken.
+
+**Formuläret öppnas av knappen**, inte alltid synligt — uttryckligt krav från
+användaren. Det är samma formulär för ny post och för ändring; vid ändring är
+fälten ifyllda och knappen heter `Spara ändring`. Fälten är namn, belopp,
+kategori. Slaget kommer från vilken lista knappen satt i och är inget fält.
+
+#### Tomma lägen
+
+Varje lista som är tom visar sin egen vänliga text, med månadens namn i:
+
+| Lista | Text |
+|---|---|
+| Inkomster | `Inga inkomster i <månad> ännu - lägg till din första.` |
+| Utgifter | `Inga utgifter i <månad> ännu - lägg till din första.` |
+| Sparande | `Inget sparande i <månad> ännu - lägg till ditt första.` |
+
+`<månad>` är månadens namn i gemener, till exempel `oktober`. Bindestrecket är
+ASCII, inte tankstreck.
+
+Summeringen visas **alltid**, också när alla tre listorna är tomma — då med fyra
+nollor. En ruta som försvinner och kommer tillbaka är oroligare att läsa än en
+nolla, och det är samma beslut som paket 6 tog för den gamla vyn.
+
+#### Diagrammet
+
+Ett stapeldiagram över utgifter per kategori för månaden, som **inline-SVG** som
+`app.js` bygger. Ingen bildfil, inget bibliotek, inget `canvas`.
+
+- En stapel per kategori som har minst en utgift. En kategori utan utgifter visas
+  inte.
+- Stapelns längd är kategorins andel av den största kategorin, så att den största
+  alltid fyller bredden. Andel av totalen skulle göra alla staplar korta när en
+  kategori dominerar.
+- Varje stapel har kategorinamnet ur `CATEGORY_LABELS` och beloppet ur
+  `formatSek`.
+- Inga utgifter i månaden: diagrammet döljs och ersätts av
+  `Inga utgifter att visa i diagrammet ännu.`
+- SVG:n har `role="img"` och en `<title>` som säger `Utgifter per kategori`, så att
+  den går att läsa med skärmläsare.
+
+#### Direktuppdatering
+
+Varje ändring som lyckas hämtar om månaden med `GET /api/manad/<månad>` och
+renderar om listorna, summeringen och diagrammet. Ingen räkning sker i `app.js`:
+summorna kommer alltid ur svaret, aldrig ur en egen addition. Det är samma regel
+som paket 6 satte för den gamla vyn, och den har ett testfall som fäller en
+`reduce` i filen.
+
+Knappen som utlöste anropet sätts till `disabled` tills svaret kommit, så att två
+snabba klick inte ger två poster.
+
+#### Mobil och dator
+
+`style.css` utgår från en kolumn och lägger listorna i två kolumner först när
+bredden räcker, med en `@media`-fråga. Knappar och fält är minst 44 pixlar höga,
+vilket är den minsta yta en tumme träffar säkert. Ingen vågrät skrollning vid 320
+pixlars bredd.
+
+#### Kravlista för `tests/app.test.js` [etapp 3]
+
+Fortsätter numreringen från den gamla filen, som slutade på (36).
+
+| # | Fall | Kräver |
+|---|---|---|
+| (37) | `401` vid laddning visar inloggningsvyn | månadsvyn är dold, e-postfältet syns |
+| (38) | `200` vid laddning visar månadsvyn | inloggningsvyn dold, månadens namn syns |
+| (39) | månadsvyn öppnar aktuell månad | med en fryst dag ska vägen som hämtas vara den frysta månaden |
+| (40) | bakåtknappen byter månad | ett `GET` för föregående månad, och rubriken byter namn |
+| (41) | framåtknappen byter månad | samma, framåt, inklusive över ett årsskifte |
+| (42) | summeringen kommer ur svaret | fyra rader mot `formatSek` på svarets fyra tal |
+| (43) | `leftOre` negativt ger `left-negative` | och noll ger `left-positive` |
+| (44) | tomma listor visar sina texter | tre texter med månadens namn i gemener |
+| (45) | summeringen visas även när allt är tomt | fyra nollor, rutan finns |
+| (46) | en mallpost märks | tecknet och `title` finns på raden, en engångspost saknar dem |
+| (47) | diagrammet har en stapel per kategori med utgift | och ingen för en kategori utan |
+| (48) | inga utgifter döljer diagrammet | texten visas i stället |
+| (49) | en ny post hämtar om månaden | ett `POST` följt av ett `GET`, och listan växer |
+| (50) | knappen är låst medan anropet pågår | ett andra klick ger inget andra anrop |
+| (51) | `Ta bort` hämtar om månaden | listan krymper, summorna ändras |
+| (52) | `Ändra` fyller formuläret | fälten bär postens värden, knappen heter `Spara ändring` |
+| (53) | ett `400` visar fältfelen | vid rätt fält, och posten skapas inte |
+| (54) | ett `401` mitt i körningen visar inloggningsvyn | månadsvyn döljs |
+| (55) | `app.js` räknar inte själv | filens text får inte innehålla `reduce` eller `for` i samma sats som ett summaelement |
+| (56) | attrappen har sidans id:n | `idsFranIndexHtml` mot `createDom().ids` |
+
+Klockan läses bara genom den injicerade `todayIso`. Kontrollen som förbjuder
+klockläsningar i testfilerna gäller oförändrat.
+
+---
+
+### Logga ut, Avbryt och vyn när en hämtning misslyckas (bindande) [etapp 3]
+
+Tre luckor som byggaren flaggade. Den första är ett uttryckligt krav i uppdraget
+och skulle ha stått i avsnittet från början.
+
+#### Logga ut
+
+Månadsvyn har en knapp `Logga ut` överst, till höger om månadsväljaren eller på
+egen rad ovanför den — placeringen är `style.css`:s sak, inte specifikationens.
+
+Knappen anropar `POST /api/auth/logga-ut`, och när svaret kommit visas
+inloggningsvyn igen. Vägen svarar `204` även utan giltig session, så det finns
+ingen felväg att hantera: lyckas anropet inte alls, alltså ett avvisat `fetch`,
+visas den allmänna texten i `#month-error` och användaren står kvar i månadsvyn.
+
+Bredvid knappen står den inloggade e-postadressen, hämtad ur `GET /api/mig`. Utan
+den kan två personer som delar dator inte se vems budget som visas.
+
+#### Avbryt i formuläret
+
+Formuläret har en knapp `Avbryt` bredvid `Spara`. Den stänger formuläret, tömmer
+fälten och rensar eventuella fältfel. Den skickar inget anrop.
+
+Utan den kan ett öppnat formulär bara stängas genom att spara, vilket tvingar
+användaren att skapa en post hen inte vill ha.
+
+#### Vyn när en hämtning misslyckas
+
+`#month-error` bär texten. Regeln per väg:
+
+| Vad som händer | Texten | Listorna, summeringen och diagrammet |
+|---|---|---|
+| `GET` för en månad misslyckas | serverns text, eller den allmänna vid avvisat `fetch` | står kvar oförändrade |
+| `POST`, `PUT` eller `DELETE` misslyckas | serverns text | står kvar oförändrade |
+| En omhämtning efter en lyckad ändring misslyckas | serverns text | står kvar oförändrade |
+
+Vyn nollställs alltså **aldrig** av ett fel. Det är ett annat beslut än paket 6
+tog för den gamla vyn, där båda totalerna byttes mot ett tankstreck, och skälet
+är att den vyn visade hela datafilen medan den här visar en månad: en summa som
+blir kvar från föregående lyckade hämtning är fortfarande sann om just den
+månaden, och en tom vy tar bort information användaren kan läsa.
+
+`#month-error` töms vid varje lyckad hämtning.
+
+#### Kravlista, fortsättning
+
+| # | Fall | Kräver |
+|---|---|---|
+| (57) | `Logga ut` visar inloggningsvyn | ett `POST` till utloggningsvägen, och månadsvyn döljs |
+| (58) | e-postadressen visas i månadsvyn | adressen ur `GET /api/mig` står i vyn |
+| (59) | `Avbryt` stänger formuläret utan anrop | formuläret döljs, fälten är tömda, och anropslistan är oförändrad |
+| (60) | `Avbryt` rensar fältfel | ett fältfel visas, `Avbryt`, formuläret öppnas igen: inget fel kvar |
+| (61) | ett misslyckat `GET` lämnar vyn stående | posterna och summorna kvar, texten i `#month-error` |
+| (62) | en misslyckad omhämtning efter en ändring lämnar vyn stående | samma, och texten visas |
+| (63) | `#month-error` töms vid lyckad hämtning | ett fel först, därefter en lyckad hämtning: rutan är tom |

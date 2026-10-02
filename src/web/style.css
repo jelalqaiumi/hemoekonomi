@@ -1,4 +1,5 @@
-/* All styling för appen. Ingen inline-CSS i index.html. */
+/* All styling för appen. Ingen inline-CSS i index.html, och ingen färg satt som
+   style-attribut i app.js — klasserna left-positive och left-negative bor här. */
 
 :root {
   --bg: #f4f5f7;
@@ -9,10 +10,21 @@
   --accent: #1f6f54;
   --accent-ink: #ffffff;
   --error: #a52020;
+  /* Den minsta yta en tumme träffar säkert. Gäller varje knapp och varje fält. */
+  --touch: 44px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* hidden ska alltid dölja. app.js byter vy genom att sätta hidden, och
+   webbläsarens egen regel för det är [hidden] { display: none } — den har lägre
+   specificitet än id- och klasselektorerna nedan, så #month-view { display: flex }
+   skulle annars visa månadsvyn fastän hidden är satt. DOM-attrappen kan inte
+   fånga det: den har ingen CSS. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -26,14 +38,14 @@ body {
 }
 
 .page-header {
-  max-width: 46rem;
+  max-width: 60rem;
   margin: 0 auto;
-  padding: 2rem 0 1rem;
+  padding: 1.5rem 0 1rem;
 }
 
 .page-header h1 {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 1.6rem;
 }
 
 .lead {
@@ -41,9 +53,19 @@ body {
   color: var(--muted);
 }
 
+/* En kolumn är utgångsläget. Listorna blir två kolumner först när bredden
+   räcker, längre ned. */
 main {
-  max-width: 46rem;
+  max-width: 60rem;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Månadsvyn är ett eget block med flera kort och behöver samma mellanrum som
+   main ger sina egna barn. */
+#month-view {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -53,13 +75,20 @@ main {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 1.25rem 1.5rem 1.5rem;
+  padding: 1.25rem;
 }
 
 .card h2 {
   margin: 0 0 1rem;
   font-size: 1.15rem;
 }
+
+.card h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+/* ------------------------------------------------------------ fält och knappar */
 
 .field {
   margin-bottom: 0.9rem;
@@ -75,6 +104,7 @@ main {
 .field input,
 .field select {
   width: 100%;
+  min-height: var(--touch);
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -102,73 +132,136 @@ main {
   font-weight: 600;
 }
 
+/* Varje knapp i appen är minst 44 pixlar hög, oavsett vilken klass den bär. */
+button {
+  min-height: var(--touch);
+  font: inherit;
+  cursor: pointer;
+}
+
 button.primary {
   padding: 0.55rem 1.4rem;
   border: none;
   border-radius: 6px;
   background: var(--accent);
   color: var(--accent-ink);
-  font: inherit;
   font-weight: 600;
-  cursor: pointer;
 }
 
 button.primary:hover {
   filter: brightness(1.1);
 }
 
-.entry-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+button.secondary {
+  margin-left: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
 }
 
-/* Sju barn efter paket 6: sex celler och Ta bort-knappen. Namnet tar det
-   utrymme som blir över, resten är innehållsbreda. */
-.entry {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto auto auto auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 0;
-  border-bottom: 1px solid var(--line);
+button.secondary:hover {
+  border-color: var(--accent);
 }
 
-.entry:last-child {
-  border-bottom: none;
-}
-
-.entry-name {
+/* Knappen som öppnar formuläret för en ny post. */
+button.add {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 1rem;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--accent);
   font-weight: 600;
 }
 
-.entry-category,
-.entry-interval {
-  color: var(--muted);
+button.add:hover {
+  background: #f1f7f4;
+}
+
+button.edit,
+button.remove {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
   font-size: 0.875rem;
 }
 
-.entry-amount {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+button.edit {
+  color: var(--ink);
 }
 
-/* Omräkningarna per post. Dämpade som kategori och intervall, eftersom
-   entry-amount är beloppet användaren själv har skrivit in. */
-.entry-monthly,
-.entry-yearly {
+button.remove {
+  color: var(--error);
+}
+
+button.edit:hover {
+  border-color: var(--accent);
+}
+
+button.remove:hover {
+  border-color: var(--error);
+}
+
+/* En knapp som spärrats under ett pågående anrop ska SYNAS som spärrad. De egna
+   reglerna ovan sätter background, color och cursor, och de åsidosätter
+   webbläsarens egen gråtoning — utan den här regeln ser knappen oförändrad ut och
+   visar handpekare medan den inte går att klicka på. Regeln står sist bland
+   knappreglerna, så att den vinner på lika specificitet.
+   Ingen text mot användaren: det här är styling och ingenting annat. */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+button:disabled:hover {
+  filter: grayscale(1);
+  border-color: var(--line);
+}
+
+/* ------------------------------------------------------------ sessionsraden */
+
+/* Adressen till vänster, Logga ut till höger. Adressen får brytas var som helst:
+   en lång e-postadress ska inte tvinga fram vågrät skrollning vid 320 pixlar. */
+.session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+#user-email {
+  min-width: 0;
   color: var(--muted);
-  font-size: 0.875rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
-.empty-state {
+/* --------------------------------------------------------- månadsväljaren */
+
+/* Månadens namn i mitten, en knapp på var sida. Knapparna är innehållsbreda och
+   namnet tar resten, så raden ryms också vid 320 pixlar. */
+.month-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.month-picker h2 {
   margin: 0;
-  color: var(--muted);
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 1.25rem;
 }
 
-.total-row {
+/* ------------------------------------------------------------- summeringen */
+
+.summary-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -176,114 +269,137 @@ button.primary:hover {
   margin: 0 0 0.5rem;
 }
 
-.total-row:last-child {
-  margin-bottom: 0;
-}
-
-.total-label {
+.summary-label {
   font-weight: 600;
 }
 
-/* Samma siffersättning som entry-amount, så att de två beloppen står i kolumn. */
-.total-amount {
+/* tabular-nums gör att de fyra beloppen står i kolumn. */
+.summary-amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* Kommande dragningar. Punktmarkörerna bort, precis som i .entry-list. */
-.upcoming-list {
+/* Kvar att leva på är radens poäng och står i större text, avskild med en linje
+   från de tre raderna ovanför. */
+.summary-left {
+  margin: 0.75rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.summary-left .summary-label {
+  font-size: 1.1rem;
+}
+
+.summary-left .summary-amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Noll räknas som positivt: en budget som går jämnt upp är inget problem. */
+.left-positive {
+  color: var(--accent);
+}
+
+.left-negative {
+  color: var(--error);
+}
+
+/* ---------------------------------------------------------------- listorna */
+
+/* En kolumn i utgångsläget. Två kolumner först när bredden räcker: 52rem är
+   ungefär en liggande surfplatta, och under det blir en tvåkolumnslista smalare
+   än posternas belopp. */
+.lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+@media (min-width: 52rem) {
+  .lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.item-list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* Tre barn: namn, datum och dagar kvar. Samma slags rutnät som .entry — namnet
-   tar det utrymme som blir över, datumet och dagarna är innehållsbreda och
-   högerställda, så att de två högra kolumnerna står i linje rad för rad. */
-.upcoming {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: baseline;
-  gap: 0.75rem;
+/* Raden radbryter i stället för att lägga barnen i fasta kolumner. Skälet är
+   bredden: vid 320 pixlar ryms namn, kategori, belopp och två knappar inte på en
+   rad, och en fast kolumnuppsättning skulle då ge vågrät skrollning. */
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
   padding: 0.65rem 0;
   border-bottom: 1px solid var(--line);
 }
 
-.upcoming:last-child {
+.item:last-child {
   border-bottom: none;
 }
 
-.upcoming-name {
+.item-name {
+  flex: 1 1 7rem;
+  min-width: 0;
   font-weight: 600;
+  overflow-wrap: break-word;
 }
 
-/* Samma siffersättning som beloppen: utan tabular-nums hoppar datumen i sidled
-   mellan raderna och går inte att läsa som en kolumn. */
-.upcoming-date {
+.item-category {
   color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.item-amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  text-align: right;
 }
 
-.upcoming-days {
+/* Märket på en post som kommer från en mall. Tecknet står i app.js; här är bara
+   färgen och storleken. */
+.item-recurring {
+  color: var(--accent);
+  font-size: 1.1rem;
+  cursor: help;
+}
+
+.empty-state {
+  margin: 0;
   color: var(--muted);
-  font-size: 0.875rem;
-  white-space: nowrap;
-  text-align: right;
 }
 
-button.remove {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--error);
-  font: inherit;
-  font-size: 0.875rem;
-  cursor: pointer;
+/* --------------------------------------------------------------- diagrammet */
+
+/* SVG:n skalas till kortets bredd. Höjden följer viewBox, som app.js sätter ur
+   antalet staplar. */
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
 
-button.remove:hover {
-  border-color: var(--error);
+/* Storleken anges i SVG:ns egna användarenheter, samma enheter som viewBox
+   använder: en enhet är en hundradel av diagrammets bredd. */
+.chart text {
+  font-size: 4px;
+  font-family: inherit;
 }
 
-/* En knapp som spärrats under ett pågående anrop ska SYNAS som spärrad.
-   button.primary och button.remove sätter egen background, color och
-   cursor: pointer, och de reglerna åsidosätter webbläsarens egen gråtoning av en
-   avstängd knapp — utan den här regeln ser knappen oförändrad ut och visar
-   handpekare medan den inte går att klicka på. Regeln står sist bland
-   knappreglerna, så att den vinner på lika specificitet.
-   Ingen ny text mot användaren: det här är styling och ingenting annat. */
-button.primary:disabled,
-button.remove:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-  filter: grayscale(1);
+.chart-label {
+  fill: var(--ink);
 }
 
-/* :hover får inte lysa upp en spärrad knapp. */
-button.primary:disabled:hover {
-  filter: grayscale(1);
+.chart-amount {
+  fill: var(--muted);
 }
 
-button.remove:disabled:hover {
-  border-color: var(--line);
-}
-
-/* Smal skärm: raden bryts i två kolumner. De sju barnen hamnar då som
-   namn/kategori, belopp/intervall, per månad/per år och knappen sist — en
-   läsbar rad i stället för sju hoptryckta kolumner. */
-@media (max-width: 34rem) {
-  .entry {
-    grid-template-columns: 1fr auto;
-    row-gap: 0.25rem;
-  }
-
-  /* Dragningsraden bryts i två kolumner: namn/datum på första raden och dagar
-     kvar på den andra, i stället för tre hoptryckta kolumner. */
-  .upcoming {
-    grid-template-columns: 1fr auto;
-    row-gap: 0.25rem;
-  }
+.chart-bar {
+  fill: var(--accent);
 }

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   ISO_DATE_PATTERN,
   ISO_MONTH_PATTERN,
+  MONTH_NAMES,
   addMonthsClamped,
   compareIsoDates,
   compareMonths,
@@ -12,6 +13,8 @@ import {
   firstDayOfMonth,
   isValidIsoDate,
   isValidIsoMonth,
+  monthLabel,
+  monthName,
   monthOfIsoDate,
   parseIsoDate,
   shiftMonth,
@@ -564,5 +567,61 @@ test('MD10: compareMonths kastar för vilket som helst av de två argumenten', (
   assert.throws(() => compareMonths('a', 'b'), {
     name: 'RangeError',
     message: 'compareMonths kräver en månad på formen ÅÅÅÅ-MM, fick "a".'
+  });
+});
+
+
+// Månadsnamnen: den frysta tabellen och de två uppslagen. Testfallen har inget
+// nummer: kravlistan i ARKITEKTUR.md numrerar MD1 till MD10, och ett nummer utan
+// punkt i det bindande dokumentet ser ut som en hänvisning utan att vara en
+// (LARDOMAR.md 2026-09-14).
+test('MONTH_NAMES har tolv namn i kalenderordning och går inte att skriva om', () => {
+  assert.equal(MONTH_NAMES.length, 12);
+  assert.equal(MONTH_NAMES[0], 'januari');
+  assert.equal(MONTH_NAMES[11], 'december');
+  assert.equal(Object.isFrozen(MONTH_NAMES), true);
+  // Ingen tom sträng och inget dubblerat namn: tabellen är ägaren, och ett
+  // felskrivet index syns bara här.
+  assert.equal(new Set(MONTH_NAMES).size, 12);
+  for (const name of MONTH_NAMES) {
+    assert.equal(name.length > 2, true, name);
+  }
+});
+
+test('monthName ger månadens namn i gemener', () => {
+  assert.equal(monthName('2026-01'), 'januari');
+  assert.equal(monthName('2026-09'), 'september');
+  assert.equal(monthName('2026-10'), 'oktober');
+  assert.equal(monthName('2026-12'), 'december');
+  // Varje månad i ett år svarar med sitt eget namn: ett index som är fel med ett
+  // ger annars rätt svar för elva av tolv.
+  for (let nummer = 1; nummer <= 12; nummer += 1) {
+    const manad = `2026-${String(nummer).padStart(2, '0')}`;
+    assert.equal(monthName(manad), MONTH_NAMES[nummer - 1], manad);
+  }
+});
+
+test('monthName kastar för allt som inte är en månad', () => {
+  for (const value of ['2026-13', '2026-00', '2026-1', '2026-01-01', '', null, undefined, 202601, 1n, Symbol('x')]) {
+    assert.throws(
+      () => monthName(value),
+      { name: 'RangeError', message: `monthName kräver en månad på formen ÅÅÅÅ-MM, fick "${String(value)}".` },
+      String(value)
+    );
+  }
+});
+
+test('monthLabel ger versal begynnelsebokstav och året', () => {
+  assert.equal(monthLabel('2026-09'), 'September 2026');
+  assert.equal(monthLabel('2027-01'), 'Januari 2027');
+  assert.equal(monthLabel('2025-12'), 'December 2025');
+});
+
+test('monthLabel ärver spärren från monthName och skriver dess namn', () => {
+  // Meddelandet namnger monthName och inte monthLabel: frågan har en ägare, och
+  // monthLabel har ingen egen spärr.
+  assert.throws(() => monthLabel('2026-13'), {
+    name: 'RangeError',
+    message: 'monthName kräver en månad på formen ÅÅÅÅ-MM, fick "2026-13".'
   });
 });

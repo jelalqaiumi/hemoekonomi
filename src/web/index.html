@@ -9,87 +9,153 @@
   <body>
     <header class="page-header">
       <h1>Hemochekonomi</h1>
-      <p class="lead">Hemmets fasta utgifter och prenumerationer.</p>
+      <p class="lead">Månadens inkomster, utgifter och sparande.</p>
     </header>
 
     <main>
-      <!-- Paket 5: formulär och lista. Paket 6: kostnad per post, totalrutan
-           och tomläget. Paket 7: kortet med kommande dragningar sist i main. -->
-      <section class="card">
-        <h2>Lägg till en utgift</h2>
+      <!-- Sidan har två tillstånd och ingen router: app.js frågar GET /api/mig
+           vid laddningen och visar inloggningsvyn vid 401, månadsvyn vid 200.
+           Inget annat avgör vilken vy som syns. Båda vyerna står i samma fil och
+           döljs med hidden, som app.js sätter. -->
+      <section class="card" id="login-view">
+        <h2>Logga in</h2>
 
-        <form id="entry-form" novalidate>
+        <!-- Steg ett: e-postadressen. Steg två ersätter det när koden är
+             skickad; app.js sätter hidden på de två blocken. -->
+        <div id="login-step-email">
           <div class="field">
-            <label for="name">Namn</label>
-            <input id="name" name="name" type="text" autocomplete="off" />
-            <p class="field-error" id="error-name" role="alert"></p>
+            <label for="login-email">E-postadress</label>
+            <input id="login-email" name="email" type="email" inputmode="email" autocomplete="email" />
           </div>
+          <button type="button" class="primary" id="send-code">Skicka kod</button>
+        </div>
 
+        <!-- Steg två: koden. inputmode="numeric" ger sifferbord på mobilen och
+             autocomplete="one-time-code" låter telefonen fylla i koden. -->
+        <div id="login-step-code" hidden>
+          <p class="lead" id="code-sent"></p>
           <div class="field">
-            <label for="amountSek">Belopp per betalning (kr)</label>
-            <input id="amountSek" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
-            <p class="field-error" id="error-amountSek" role="alert"></p>
+            <label for="login-code">Kod</label>
+            <input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" />
           </div>
+          <button type="button" class="primary" id="log-in">Logga in</button>
+          <button type="button" class="secondary" id="use-other-email">Använd en annan adress</button>
+        </div>
 
-          <div class="field">
-            <label for="interval">Betalningsintervall</label>
-            <!-- Alternativen fylls i av app.js ur INTERVAL_LABELS. Ingen svensk
-                 etikett för intervall eller kategori skrivs för hand här. -->
-            <select id="interval" name="interval"></select>
-            <p class="field-error" id="error-interval" role="alert"></p>
-          </div>
-
-          <div class="field">
-            <label for="startDate">Startdatum</label>
-            <input id="startDate" name="startDate" type="date" />
-            <p class="field-error" id="error-startDate" role="alert"></p>
-          </div>
-
-          <div class="field">
-            <label for="category">Kategori</label>
-            <select id="category" name="category"></select>
-            <p class="field-error" id="error-category" role="alert"></p>
-          </div>
-
-          <p class="form-error" id="form-error" role="alert"></p>
-
-          <button type="submit" class="primary">Spara</button>
-        </form>
+        <!-- Serverns text ordagrant vid 400 och 429 — aldrig en egen. -->
+        <p class="form-error" id="login-error" role="alert"></p>
       </section>
 
-      <section class="card">
-        <h2>Dina poster</h2>
-        <ul id="entry-list" class="entry-list"></ul>
-        <!-- Tomläget. Texten skrivs av app.js och töms när listan har poster;
-             ett tomt textContent syns inte, samma teknik som #form-error. -->
-        <p class="empty-state" id="empty-state"></p>
-      </section>
+      <section id="month-view" hidden>
+        <!-- Vem som är inloggad, och vägen ut. Adressen står bredvid knappen: två
+             som delar dator ska kunna se vems budget som visas. Texten skrivs av
+             app.js ur GET /api/mig. -->
+        <div class="card session-bar">
+          <span id="user-email"></span>
+          <button type="button" class="secondary" id="log-out">Logga ut</button>
+        </div>
 
-      <!-- Totalrutan står efter listan: den sammanfattar den och läses efter
-           den. Etiketterna är statisk text och skrivs aldrig av app.js, som bara
-           sätter textContent på de två beloppselementen. -->
-      <section class="card">
-        <h2>Summa</h2>
-        <p class="total-row">
-          <span class="total-label">Totalt per månad</span>
-          <span class="total-amount" id="total-monthly"></span>
-        </p>
-        <p class="total-row">
-          <span class="total-label">Totalt per år</span>
-          <span class="total-amount" id="total-yearly"></span>
-        </p>
-      </section>
+        <!-- Månadsväljaren ligger överst: bakåt, månadens namn, framåt. Namnet
+             skrivs av app.js ur monthLabel i src/core/dates.js. -->
+        <div class="card month-picker">
+          <button type="button" id="month-prev">Föregående</button>
+          <h2 id="month-label"></h2>
+          <button type="button" id="month-next">Nästa</button>
+        </div>
 
-      <!-- Kommande dragningar står efter Summa: listan svarar på "vad händer
-           härnäst" och läses sist, när användaren vet vad posterna är och vad de
-           kostar. Raderna skrivs av app.js ur upcoming(entries, todayIso());
-           ingenting räknas här. Tomläget har en egen text i stället för att luta
-           sig mot #empty-state — en läsare ska inte behöva sluta sig till varför
-           ett kort är tomt genom att läsa ett annat. -->
-      <section class="card">
-        <h2>Kommande dragningar</h2>
-        <ul id="upcoming-list" class="upcoming-list"></ul>
-        <p class="empty-state" id="upcoming-empty"></p>
+        <!-- Summeringen står direkt under månadsväljaren, före listorna, så att
+             den syns utan att man skrollar. Etiketterna är statisk text; app.js
+             sätter bara textContent på de fyra beloppselementen, och talen
+             kommer alltid ur svarets totals. -->
+        <div class="card summary">
+          <p class="summary-row">
+            <span class="summary-label">Inkomster</span>
+            <span class="summary-amount" id="total-income"></span>
+          </p>
+          <p class="summary-row">
+            <span class="summary-label">Utgifter</span>
+            <span class="summary-amount" id="total-expense"></span>
+          </p>
+          <p class="summary-row">
+            <span class="summary-label">Sparande</span>
+            <span class="summary-amount" id="total-saving"></span>
+          </p>
+          <p class="summary-row summary-left">
+            <span class="summary-label">Kvar att leva på</span>
+            <span class="summary-amount" id="total-left"></span>
+          </p>
+        </div>
+
+        <!-- Formuläret öppnas av knapparna nedan och är inte alltid synligt.
+             Samma formulär för ny post och för ändring. Slaget kommer från
+             vilken lista knappen satt i och är därför inget fält. -->
+        <section class="card" id="item-form-card" hidden>
+          <form id="item-form" novalidate>
+            <div class="field">
+              <label for="item-name">Namn</label>
+              <input id="item-name" name="name" type="text" autocomplete="off" />
+              <p class="field-error" id="error-name" role="alert"></p>
+            </div>
+
+            <div class="field">
+              <label for="item-amount">Belopp (kr)</label>
+              <input id="item-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+              <p class="field-error" id="error-amountSek" role="alert"></p>
+            </div>
+
+            <div class="field">
+              <label for="item-category">Kategori</label>
+              <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
+                   svensk kategorietikett skrivs för hand här. -->
+              <select id="item-category" name="category"></select>
+              <p class="field-error" id="error-category" role="alert"></p>
+            </div>
+
+            <p class="form-error" id="item-form-error" role="alert"></p>
+
+            <button type="submit" class="primary" id="item-submit">Spara</button>
+            <!-- Avbryt skickar inget anrop: den stänger formuläret, tömmer fälten
+                 och rensar fältfelen. Utan den kan ett öppnat formulär bara
+                 stängas genom att spara. -->
+            <button type="button" class="secondary" id="item-cancel">Avbryt</button>
+          </form>
+        </section>
+
+        <div class="lists">
+          <section class="card">
+            <h3>Inkomster</h3>
+            <button type="button" class="add" id="add-income">+ Ny inkomst</button>
+            <ul id="income-list" class="item-list"></ul>
+            <p class="empty-state" id="income-empty"></p>
+          </section>
+
+          <section class="card">
+            <h3>Utgifter</h3>
+            <button type="button" class="add" id="add-expense">+ Ny utgift</button>
+            <ul id="expense-list" class="item-list"></ul>
+            <p class="empty-state" id="expense-empty"></p>
+          </section>
+
+          <section class="card">
+            <h3>Sparande</h3>
+            <button type="button" class="add" id="add-saving">+ Nytt sparande</button>
+            <ul id="saving-list" class="item-list"></ul>
+            <p class="empty-state" id="saving-empty"></p>
+          </section>
+        </div>
+
+        <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
+             utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
+             role="img" och en title, så att den går att läsa med skärmläsare. -->
+        <div class="card">
+          <div id="chart" class="chart"></div>
+          <p class="empty-state" id="chart-empty"></p>
+        </div>
+
+        <!-- Allmänna fel i månadsvyn: ett misslyckat GET och ett misslyckat
+             DELETE. Formulärets egna svar skrivs i #item-form-error och vid
+             fälten. -->
+        <p class="form-error" id="month-error" role="alert"></p>
       </section>
     </main>
 
