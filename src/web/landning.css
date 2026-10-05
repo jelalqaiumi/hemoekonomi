@@ -326,6 +326,22 @@ a:hover {
   flex: none;
 }
 
+/* Loggan i sidfoten står på en ljus platta. Skälet är uppmätt på
+   src/web/bilder/logga-liten.png: 69,3 procent av bildens täckande bildpunkter
+   har under 3:1 mot --bla-marin, som är sidfotens yta — loggan är ritad i mörk
+   grön och mörk blå för en ljus botten, och de tre vanligaste tonerna ger
+   1,72:1, 1,39:1 och 1,15:1 mot marinblått men 7,09:1, 8,79:1 och 14,00:1 mot
+   --bakgrund. Bildens egen bakgrund är genomskinlig (87,9 procent av
+   bildpunkterna har alfa 0), så plattan syns genom den. Samma regel finns för
+   appens sidomeny i style.css, av samma skäl. Headern behöver den inte: dess yta
+   är --yta. */
+.sidfot-marke .markessymbol {
+  box-sizing: content-box;
+  padding: 0.15rem;
+  border-radius: var(--radie-liten);
+  background: var(--bakgrund);
+}
+
 .markesnamn {
   font-weight: 700;
   font-size: 1rem;

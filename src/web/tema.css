@@ -28,10 +28,11 @@
 
   /* ---------------------------------------------- valda toner (tre stycken) */
   /* --positiv och --negativ har ingen användare i landning.css: de hör till
-     den inloggade appen, som byter till det här temat i ett eget steg, där de
-     ersätter färgerna bakom left-positive och left-negative i style.css.
-     Båda står i ARKITEKTUR.md:s palett och ska därför inte tas bort för att
-     sökningen efter dem i landning.css ger noll träffar. */
+     den inloggade appen. I steget som lade det här temat på appen tog de över
+     färgerna bakom left-positive och left-negative i src/web/style.css, och
+     där är deras enda användare. Båda står i ARKITEKTUR.md:s palett och ska
+     därför inte tas bort för att sökningen efter dem i landning.css ger noll
+     träffar. */
   /* Varm off-white. Rent vitt mot så mättade toner ger hård kontrast. */
   --bakgrund: #f7f5ef;
   /* Inkomster. Ljusare än --gron-primar så att ett belopp inte läses som yta. */
@@ -39,6 +40,12 @@
   /* Utgifter. Rött finns inte i loggan, men ett negativt belopp måste skilja
      sig från guld. */
   --negativ: #d64545;
+  /* Feltext. --negativ är gjord för ett belopp i stor text och ger 4,38:1 mot
+     --yta, alltså under 4,5:1 — ett felmeddelande i appen är 0,875rem och
+     därmed brödtext, och behöver en mörkare röd. Uppmätt 7,43:1 mot --yta och
+     6,81:1 mot --bakgrund. Enda användaren är src/web/style.css: fältfelen,
+     formulärfelen och texten på knappen Ta bort. */
+  --fel-text: #a52020;
 
   /* ---------------------------------------------- ytor, text och ramar */
   /* De här namnen är de enda en komponent använder. Det mörka läget byter
@@ -146,6 +153,10 @@
     --lank-hover: #bcdcfa;
     --positiv: #6fd39a;
     --negativ: #ff9c9c;
+    /* På en mörk yta är --negativ redan ljus nog för brödtext: uppmätt 5,35:1
+       mot --yta och 6,65:1 mot --bakgrund. Feltexten behöver därför ingen egen
+       ton här och läser --negativ. */
+    --fel-text: var(--negativ);
 
     --knapp-fylld-yta: var(--bla-ljus);
     --knapp-fylld-yta-hover: var(--bla-mellan);

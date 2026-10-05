@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hemochekonomi</title>
+    <!-- tema.css först: style.css läser dess tokens och innehåller själv ingen
+         hexkod. Ordningen är inte likgiltig — en regel i style.css som läser
+         var(--bakgrund) behöver tokenen deklarerad, och det mörka läget bor i
+         tema.css. -->
+    <link rel="stylesheet" href="/tema.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -47,115 +52,139 @@
       </section>
 
       <section id="month-view" hidden>
-        <!-- Vem som är inloggad, och vägen ut. Adressen står bredvid knappen: två
-             som delar dator ska kunna se vems budget som visas. Texten skrivs av
-             app.js ur GET /api/mig. -->
-        <div class="card session-bar">
+        <!-- Sidomenyn: loggan överst, vem som är inloggad och vägen ut.
+             Adressen står bredvid knappen: två som delar dator ska kunna se vems
+             budget som visas. Texten skrivs av app.js ur GET /api/mig.
+             Loggan är användarens egen bild, den nedskalade kopian på 400 gånger
+             400 bildpunkter och 60 159 byte — originalet logga.png är 1024 gånger
+             1024 och 1 454 661 byte och visas bara stort, i landningssidans hero.
+             width och height står som attribut i bildens egen storlek, så att
+             raden inte hoppar medan bilden laddas; visningsstorleken sätts i
+             style.css. alt är tomt därför att namnet står som text intill: en
+             skärmläsare som läser båda skulle säga samma sak två gånger.
+             På mobil är menyn en rad överst, vid 60rem en spalt till vänster;
+             vilket av dem som gäller är style.css:s sak. -->
+        <aside class="sidomeny">
+          <div class="sidomeny-marke">
+            <img
+              class="sidomeny-logga"
+              src="/bilder/logga-liten.png"
+              alt=""
+              width="400"
+              height="400"
+              decoding="async"
+            />
+            <span class="sidomeny-namn">Hem och Ekonomi</span>
+          </div>
           <span id="user-email"></span>
           <button type="button" class="secondary" id="log-out">Logga ut</button>
-        </div>
+        </aside>
 
-        <!-- Månadsväljaren ligger överst: bakåt, månadens namn, framåt. Namnet
-             skrivs av app.js ur monthLabel i src/core/dates.js. -->
-        <div class="card month-picker">
-          <button type="button" id="month-prev">Föregående</button>
-          <h2 id="month-label"></h2>
-          <button type="button" id="month-next">Nästa</button>
-        </div>
+        <!-- Allt utom sidomenyn ligger i en egen kolumn, så att sidomenyn kan bli
+             en spalt vid sidan utan att varje kort blir ett eget rutnätsbarn. -->
+        <div class="month-content">
+          <!-- Månadsväljaren ligger överst: bakåt, månadens namn, framåt. Namnet
+               skrivs av app.js ur monthLabel i src/core/dates.js. -->
+          <div class="card month-picker">
+            <button type="button" id="month-prev">Föregående</button>
+            <h2 id="month-label"></h2>
+            <button type="button" id="month-next">Nästa</button>
+          </div>
 
-        <!-- Summeringen står direkt under månadsväljaren, före listorna, så att
-             den syns utan att man skrollar. Etiketterna är statisk text; app.js
-             sätter bara textContent på de fyra beloppselementen, och talen
-             kommer alltid ur svarets totals. -->
-        <div class="card summary">
-          <p class="summary-row">
-            <span class="summary-label">Inkomster</span>
-            <span class="summary-amount" id="total-income"></span>
-          </p>
-          <p class="summary-row">
-            <span class="summary-label">Utgifter</span>
-            <span class="summary-amount" id="total-expense"></span>
-          </p>
-          <p class="summary-row">
-            <span class="summary-label">Sparande</span>
-            <span class="summary-amount" id="total-saving"></span>
-          </p>
-          <p class="summary-row summary-left">
-            <span class="summary-label">Kvar att leva på</span>
-            <span class="summary-amount" id="total-left"></span>
-          </p>
-        </div>
+          <!-- Summeringen står direkt under månadsväljaren, före listorna, så att
+               den syns utan att man skrollar. Etiketterna är statisk text; app.js
+               sätter bara textContent på de fyra beloppselementen, och talen
+               kommer alltid ur svarets totals. -->
+          <div class="card summary">
+            <p class="summary-row">
+              <span class="summary-label">Inkomster</span>
+              <span class="summary-amount" id="total-income"></span>
+            </p>
+            <p class="summary-row">
+              <span class="summary-label">Utgifter</span>
+              <span class="summary-amount" id="total-expense"></span>
+            </p>
+            <p class="summary-row">
+              <span class="summary-label">Sparande</span>
+              <span class="summary-amount" id="total-saving"></span>
+            </p>
+            <p class="summary-row summary-left">
+              <span class="summary-label">Kvar att leva på</span>
+              <span class="summary-amount" id="total-left"></span>
+            </p>
+          </div>
 
-        <!-- Formuläret öppnas av knapparna nedan och är inte alltid synligt.
-             Samma formulär för ny post och för ändring. Slaget kommer från
-             vilken lista knappen satt i och är därför inget fält. -->
-        <section class="card" id="item-form-card" hidden>
-          <form id="item-form" novalidate>
-            <div class="field">
-              <label for="item-name">Namn</label>
-              <input id="item-name" name="name" type="text" autocomplete="off" />
-              <p class="field-error" id="error-name" role="alert"></p>
-            </div>
+          <!-- Formuläret öppnas av knapparna nedan och är inte alltid synligt.
+               Samma formulär för ny post och för ändring. Slaget kommer från
+               vilken lista knappen satt i och är därför inget fält. -->
+          <section class="card" id="item-form-card" hidden>
+            <form id="item-form" novalidate>
+              <div class="field">
+                <label for="item-name">Namn</label>
+                <input id="item-name" name="name" type="text" autocomplete="off" />
+                <p class="field-error" id="error-name" role="alert"></p>
+              </div>
 
-            <div class="field">
-              <label for="item-amount">Belopp (kr)</label>
-              <input id="item-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
-              <p class="field-error" id="error-amountSek" role="alert"></p>
-            </div>
+              <div class="field">
+                <label for="item-amount">Belopp (kr)</label>
+                <input id="item-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+                <p class="field-error" id="error-amountSek" role="alert"></p>
+              </div>
 
-            <div class="field">
-              <label for="item-category">Kategori</label>
-              <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
-                   svensk kategorietikett skrivs för hand här. -->
-              <select id="item-category" name="category"></select>
-              <p class="field-error" id="error-category" role="alert"></p>
-            </div>
+              <div class="field">
+                <label for="item-category">Kategori</label>
+                <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
+                     svensk kategorietikett skrivs för hand här. -->
+                <select id="item-category" name="category"></select>
+                <p class="field-error" id="error-category" role="alert"></p>
+              </div>
 
-            <p class="form-error" id="item-form-error" role="alert"></p>
+              <p class="form-error" id="item-form-error" role="alert"></p>
 
-            <button type="submit" class="primary" id="item-submit">Spara</button>
-            <!-- Avbryt skickar inget anrop: den stänger formuläret, tömmer fälten
-                 och rensar fältfelen. Utan den kan ett öppnat formulär bara
-                 stängas genom att spara. -->
-            <button type="button" class="secondary" id="item-cancel">Avbryt</button>
-          </form>
-        </section>
-
-        <div class="lists">
-          <section class="card">
-            <h3>Inkomster</h3>
-            <button type="button" class="add" id="add-income">+ Ny inkomst</button>
-            <ul id="income-list" class="item-list"></ul>
-            <p class="empty-state" id="income-empty"></p>
+              <button type="submit" class="primary" id="item-submit">Spara</button>
+              <!-- Avbryt skickar inget anrop: den stänger formuläret, tömmer fälten
+                   och rensar fältfelen. Utan den kan ett öppnat formulär bara
+                   stängas genom att spara. -->
+              <button type="button" class="secondary" id="item-cancel">Avbryt</button>
+            </form>
           </section>
 
-          <section class="card">
-            <h3>Utgifter</h3>
-            <button type="button" class="add" id="add-expense">+ Ny utgift</button>
-            <ul id="expense-list" class="item-list"></ul>
-            <p class="empty-state" id="expense-empty"></p>
-          </section>
+          <div class="lists">
+            <section class="card">
+              <h3>Inkomster</h3>
+              <button type="button" class="add" id="add-income">+ Ny inkomst</button>
+              <ul id="income-list" class="item-list"></ul>
+              <p class="empty-state" id="income-empty"></p>
+            </section>
 
-          <section class="card">
-            <h3>Sparande</h3>
-            <button type="button" class="add" id="add-saving">+ Nytt sparande</button>
-            <ul id="saving-list" class="item-list"></ul>
-            <p class="empty-state" id="saving-empty"></p>
-          </section>
+            <section class="card">
+              <h3>Utgifter</h3>
+              <button type="button" class="add" id="add-expense">+ Ny utgift</button>
+              <ul id="expense-list" class="item-list"></ul>
+              <p class="empty-state" id="expense-empty"></p>
+            </section>
+
+            <section class="card">
+              <h3>Sparande</h3>
+              <button type="button" class="add" id="add-saving">+ Nytt sparande</button>
+              <ul id="saving-list" class="item-list"></ul>
+              <p class="empty-state" id="saving-empty"></p>
+            </section>
+          </div>
+
+          <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
+               utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
+               role="img" och en title, så att den går att läsa med skärmläsare. -->
+          <div class="card">
+            <div id="chart" class="chart"></div>
+            <p class="empty-state" id="chart-empty"></p>
+          </div>
+
+          <!-- Allmänna fel i månadsvyn: ett misslyckat GET och ett misslyckat
+               DELETE. Formulärets egna svar skrivs i #item-form-error och vid
+               fälten. -->
+          <p class="form-error" id="month-error" role="alert"></p>
         </div>
-
-        <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
-             utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
-             role="img" och en title, så att den går att läsa med skärmläsare. -->
-        <div class="card">
-          <div id="chart" class="chart"></div>
-          <p class="empty-state" id="chart-empty"></p>
-        </div>
-
-        <!-- Allmänna fel i månadsvyn: ett misslyckat GET och ett misslyckat
-             DELETE. Formulärets egna svar skrivs i #item-form-error och vid
-             fälten. -->
-        <p class="form-error" id="month-error" role="alert"></p>
       </section>
     </main>
 

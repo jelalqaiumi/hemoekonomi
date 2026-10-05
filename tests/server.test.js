@@ -192,26 +192,35 @@ test('/ ger landningssidan och /app ger appen, och de är inte samma fil', async
   assert.equal(landningstext.includes('/landning.css'), true);
   assert.equal(apptext.includes('/app.js'), true);
   assert.equal(apptext.includes('id="login-view"'), true);
-  // Landningssidan hämtar varken app.js eller style.css, och appen hämtar
-  // varken landning.css eller loggan: filerna är två och blandas inte.
+  // De två sidorna har var sitt skript och var sin egen CSS och blandar dem
+  // inte: landningssidan hämtar inte app.js, och appen hämtar inte
+  // landning.css. Bilderna delas numera — båda sidorna hämtar
+  // /bilder/logga-liten.png sedan loggan blev användarens egen bild i stället
+  // för en ritad symbol — så loggan är inte längre något som skiljer dem, och de
+  // två assertionerna nedan är de enda som gäller blandningen.
   assert.equal(landningstext.includes('/app.js'), false);
   assert.equal(apptext.includes('/landning.css'), false);
 });
 
 test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
   const { port } = await useServer(t);
-  // Ändelsen och ingenting annat avgör innehållstypen. Körd i en kopia:
-  //   mutation: type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png ger
-  //   EXIT=1, fail 2 och ✖ bilderna under /bilder/ ger 200 med sin egen
-  //   Content-Type samt ✖ varje bild i src/web/bilder levereras under
-  //   /bilder/ med sitt eget innehåll.
+  // Bilderna är båda PNG sedan symbol.svg och symbol-mork.svg togs bort: loggan
+  // som visas är användarens egen, och den ritade symbolen finns inte längre.
+  // Den mutation den här kommentaren tidigare åberopade,
+  //   type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png,
+  // går därför inte längre att upptäcka: det krävs en fil med en annan ändelse
+  // än png under src/web/bilder, och det finns ingen. Körd i en kopia efter
+  // borttagningen: mutationen ger ℹ fail 0 och EXIT=0 på hela sviten.
+  // Raden IMAGE_TYPES.svg i src/server/server.js har alltså ingen fil och
+  // därmed inget test — det är arkitektens beslut om svg ska stå kvar i
+  // IMAGE_FILE_PATTERN och i tabellen eller tas bort, och mönstret är en
+  // säkerhetskontroll som inte ändras här.
   await assertFileServed(port, '/bilder/logga.png', path.join(getImageDir(), 'logga.png'), PNG_TYPE);
-  await assertFileServed(port, '/bilder/symbol.svg', path.join(getImageDir(), 'symbol.svg'), SVG_TYPE);
   await assertFileServed(
     port,
-    '/bilder/symbol-mork.svg',
-    path.join(getImageDir(), 'symbol-mork.svg'),
-    SVG_TYPE
+    '/bilder/logga-liten.png',
+    path.join(getImageDir(), 'logga-liten.png'),
+    PNG_TYPE
   );
 });
 
@@ -222,8 +231,11 @@ test('varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehå
     .sort();
   // Listan läses ur katalogen så att en ny bild kommer med utan att den här
   // filen ändras; antalet asserteras så att en tom katalog inte tyst gör
-  // testet innehållslöst. Samma form som testet för /core/ ovan.
-  assert.ok(names.length >= 3, `förväntade minst tre bilder i ${imageDir}, fick ${names.join(', ')}`);
+  // testet innehållslöst. Samma form som testet för /core/ ovan. Talet är två
+  // sedan de två ritade symbolerna togs bort: kvar är logga.png, som visas stor
+  // i hero, och logga-liten.png, som headern, sidfoten, appens sidomeny och
+  // faviconen hämtar.
+  assert.ok(names.length >= 2, `förväntade minst två bilder i ${imageDir}, fick ${names.join(', ')}`);
   const { port } = await useServer(t);
   for (const name of names) {
     const type = name.endsWith('.png') ? PNG_TYPE : SVG_TYPE;
