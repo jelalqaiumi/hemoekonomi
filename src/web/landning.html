@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hem och Ekonomi | Full koll på hemmet och ekonomin</title>
+    <meta
+      name="description"
+      content="Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar månadskostnad, årskostnad och vad som dras härnäst."
+    />
+    <link rel="icon" href="/bilder/symbol.svg" type="image/svg+xml" />
+    <!-- tema.css först: landning.css läser dess tokens och innehåller själv
+         ingen hexkod. -->
+    <link rel="stylesheet" href="/tema.css" />
+    <link rel="stylesheet" href="/landning.css" />
+  </head>
+  <body>
+    <a class="hoppa" href="#innehall">Hoppa till innehållet</a>
+
+    <!-- ========================================================= 1. Header
+         Fast överst. Loggan till vänster, menyn i mitten, Logga in som kontur
+         och Registrera som fylld till höger. På mobil blir menyn en
+         hamburgare, byggd med details och summary så att den öppnas utan
+         JavaScript. Registrera ligger utanför hamburgaren och syns alltid. -->
+    <header class="sidhuvud">
+      <div class="sidhuvud-inre">
+        <a class="markeslank" href="/">
+          <svg class="markessymbol" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path class="sv-fyll-gron-ljus" d="M4 22 15 12l11 10z" />
+            <path class="sv-fyll-gron" d="M8 22h14v16H8z" />
+            <path class="sv-fyll-yta" d="M13 28h4v10h-4z" />
+            <path class="sv-fyll-bla-ljus" d="M29 28h5v10h-5z" />
+            <path class="sv-fyll-bla" d="M36 20h5v18h-5z" />
+            <circle class="sv-fyll-guld" cx="33" cy="13" r="8" />
+            <circle class="sv-linje-guld-mork" cx="33" cy="13" r="8" />
+            <path class="sv-linje-mynt" d="M30.6 9.2v7.6M35.8 9.2 31.8 13l4 3.8" />
+          </svg>
+          <span class="markesnamn">Hem och Ekonomi</span>
+        </a>
+
+        <!-- Den breda menyn. Döljs under 840 bildpunkter. -->
+        <nav class="meny-bred" aria-label="Huvudmeny">
+          <a href="#funktioner">Funktioner</a>
+          <a href="#priser">Priser</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+
+        <div class="sidhuvud-knappar">
+          <a class="knapp knapp-kontur knapp-liten doljs-pa-mobil" href="/app">Logga in</a>
+          <a class="knapp knapp-fylld knapp-liten" href="/app">Registrera</a>
+
+          <!-- Hamburgaren. Syns bara under 840 bildpunkter. -->
+          <details class="meny-smal">
+            <summary class="meny-knapp" aria-label="Visa menyn">
+              <svg class="ikon-meny" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path class="sv-linje-text" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </summary>
+            <nav class="meny-panel" aria-label="Menyn">
+              <a href="#funktioner">Funktioner</a>
+              <a href="#priser">Priser</a>
+              <a href="#faq">FAQ</a>
+              <a href="/app">Logga in</a>
+            </nav>
+          </details>
+        </div>
+      </div>
+    </header>
+
+    <main id="innehall">
+      <!-- ======================================================== 2. Hero
+           Gradient från --bla-marin till --gron-djup med ett svagt rutnät.
+           All text är ljus mot den mörka gradienten: uppmätt 13,31:1 mot
+           --bla-marin och 8,22:1 mot --gron-djup. -->
+      <section class="hero">
+        <div class="hero-inre">
+          <div class="hero-text">
+            <p class="hero-ingress">Hemmets ekonomi, samlad</p>
+            <h1>Full koll på hemmet och ekonomin på ett ställe</h1>
+            <p class="hero-under">
+              Inkomster, fasta utgifter och sparande i samma vy, räknade i hela
+              ören. Du ser månadskostnaden, årskostnaden och vad som dras
+              härnäst utan att öppna ett enda kalkylblad.
+            </p>
+            <div class="hero-knappar">
+              <a class="knapp knapp-guld" href="/app">Kom igång</a>
+              <a class="knapp knapp-kontur-ljus" href="#sa-fungerar-det">Se hur det fungerar</a>
+            </div>
+          </div>
+          <div class="hero-bild">
+            <img
+              src="/bilder/logga.png"
+              alt="Hem och Ekonomi: ett hus, ett myntstapel och en stigande kurva"
+              width="1024"
+              height="1024"
+              decoding="async"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================== 3. Fördelar
+           Fyra punkter med ikon: budget, räkningar, sparmål, hushållet.
+           Menyns "Funktioner" pekar hit. -->
+      <section class="fordelar" id="funktioner">
+        <div class="block">
+          <h2>Fyra saker du får direkt</h2>
+          <p class="block-ingress">
+            Inget att ställa in först. Lägg in din ekonomi en gång, så räknar
+            appen resten.
+          </p>
+          <ul class="fordel-lista">
+            <li class="fordel">
+              <!-- Budget: ett cirkeldiagram. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <circle class="sv-linje-bla" cx="16" cy="16" r="11" />
+                <path class="sv-fyll-guld" d="M16 16V5a11 11 0 0 1 11 11z" />
+                <circle class="sv-fyll-bla" cx="16" cy="16" r="2" />
+              </svg>
+              <h3>Budget som håller</h3>
+              <p>
+                Varje inkomst och varje utgift räknas i hela ören. Summan längst
+                ned stämmer, varje månad.
+              </p>
+            </li>
+            <li class="fordel">
+              <!-- Räkningar: en räkning med sågtandad underkant. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <path
+                  class="sv-linje-bla"
+                  d="M6 4h20v24l-3.3-2.2-3.3 2.2-3.4-2.2-3.3 2.2L9.3 25.8 6 28z"
+                />
+                <path class="sv-linje-guld" d="M11 11h10M11 16h10M11 21h6" />
+              </svg>
+              <h3>Räkningar i tid</h3>
+              <p>
+                Startdatum och intervall räcker. Appen räknar ut nästa dragning
+                och visar vad som är på väg.
+              </p>
+            </li>
+            <li class="fordel">
+              <!-- Sparmål: en måltavla. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <circle class="sv-linje-gron" cx="16" cy="16" r="11" />
+                <circle class="sv-linje-gron" cx="16" cy="16" r="6" />
+                <circle class="sv-fyll-guld" cx="16" cy="16" r="2.4" />
+              </svg>
+              <h3>Sparmål som syns</h3>
+              <p>
+                Sparandet står bredvid utgifterna i stället för att vara det som
+                blir över när månaden är slut.
+              </p>
+            </li>
+            <li class="fordel">
+              <!-- Hushållet: ett tak över två personer. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <path class="sv-linje-gron" d="M3 15 16 5l13 10" />
+                <path class="sv-linje-gron" d="M6.5 16.5V28h19V16.5" />
+                <circle class="sv-fyll-guld" cx="12.6" cy="19.5" r="2.2" />
+                <circle class="sv-fyll-guld" cx="19.4" cy="19.5" r="2.2" />
+                <path class="sv-linje-bla" d="M9 28c0-2.4 1.6-4 3.6-4s3.6 1.6 3.6 4M15.8 28c0-2.4 1.6-4 3.6-4s3.6 1.6 3.6 4" />
+              </svg>
+              <h3>Hela hushållet</h3>
+              <p>
+                Ni ser samma siffror. Ingen behöver fråga vad den andra har
+                betalat.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============================================ 4. Varför Hem och Ekonomi
+           Tre kolumner med ikon, rubrik och kort text. Svag grön ton som
+           bakgrund, så att sidan inte blir genomgående ljus. -->
+      <section class="varfor">
+        <div class="block">
+          <h2>Varför Hem och Ekonomi</h2>
+          <ul class="varfor-lista">
+            <li class="varfor-kolumn">
+              <!-- Allt på ett ställe: fyra rutor. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <rect class="sv-fyll-gron" x="4" y="4" width="11" height="11" rx="2.5" />
+                <rect class="sv-fyll-bla" x="17" y="4" width="11" height="11" rx="2.5" />
+                <rect class="sv-fyll-bla" x="4" y="17" width="11" height="11" rx="2.5" />
+                <rect class="sv-fyll-guld" x="17" y="17" width="11" height="11" rx="2.5" />
+              </svg>
+              <h3>Allt på ett ställe</h3>
+              <p>
+                Hyran, elen, strömmande tjänster och sparandet i samma lista.
+                Inga kalkylblad som glider isär mellan månaderna.
+              </p>
+            </li>
+            <li class="varfor-kolumn">
+              <!-- Dina siffror stannar hos dig: en sköld med bock. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <path
+                  class="sv-linje-bla"
+                  d="M16 3.5 27 7.5v8.8c0 6.9-4.5 11.5-11 12.9C9.5 27.8 5 23.2 5 16.3V7.5z"
+                />
+                <path class="sv-linje-gron" d="m11 16.2 3.6 3.6L21.4 13" />
+              </svg>
+              <h3>Dina siffror stannar hos dig</h3>
+              <p>
+                Appen kör på din egen dator och sparar i en fil du äger. Ingen
+                tredje part får se vad hushållet tjänar eller betalar.
+              </p>
+            </li>
+            <li class="varfor-kolumn">
+              <!-- Räknat i öre: stigande staplar. -->
+              <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <path class="sv-linje-bla" d="M4 27.5h24" />
+                <rect class="sv-fyll-bla" x="6.5" y="19" width="5" height="7" rx="1.5" />
+                <rect class="sv-fyll-gron" x="13.5" y="13" width="5" height="13" rx="1.5" />
+                <rect class="sv-fyll-guld" x="20.5" y="7" width="5" height="19" rx="1.5" />
+              </svg>
+              <h3>Räknat i öre, inte på en höft</h3>
+              <p>
+                En kvartalsutgift blir rätt månadskostnad och rätt årskostnad.
+                Avrundningen görs en gång, på samma sätt varje gång.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- =============================================== 5. Så fungerar det
+           Tre numrerade steg. Numret är en egen ruta i guld, inte ett
+           listnummer: det ska gå att läsa som en bild av ordningen. -->
+      <section class="steg" id="sa-fungerar-det">
+        <div class="block">
+          <h2>Så fungerar det</h2>
+          <ol class="steg-lista">
+            <li class="steg-kort">
+              <span class="steg-nummer" aria-hidden="true">1</span>
+              <h3>Registrera</h3>
+              <p>
+                Du anger din e-postadress och får en engångskod tillbaka. Inget
+                lösenord att komma ihåg och inget att välja bort.
+              </p>
+            </li>
+            <li class="steg-kort">
+              <span class="steg-nummer" aria-hidden="true">2</span>
+              <h3>Lägg in din ekonomi</h3>
+              <p>
+                Inkomster, fasta utgifter och sparande, en post i taget. Namn,
+                belopp, hur ofta det dras och när det började.
+              </p>
+            </li>
+            <li class="steg-kort">
+              <span class="steg-nummer" aria-hidden="true">3</span>
+              <h3>Få överblick</h3>
+              <p>
+                Månadskostnad, årskostnad och nästa dragning räknas fram åt dig
+                och står överst varje gång du öppnar appen.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ====================================================== 6. Priser
+           Tre kort. Mittenkortet är upphöjt och bär guldbadgen Populärast.
+           Knapparna länkar till /app: registrering med planval byggs senare,
+           och ingen knapp får antyda att en betalning sker förrän betalningen
+           finns. -->
+      <section class="priser" id="priser">
+        <div class="block">
+          <h2>Priser</h2>
+          <p class="block-ingress">
+            Tre planer. Samma app, olika mycket av den.
+          </p>
+          <ul class="pris-lista">
+            <li class="pris-kort">
+              <h3>Bas</h3>
+              <p class="pris-belopp"><span class="pris-tal">99 kr</span>/mån</p>
+              <ul class="pris-punkter">
+                <li>Budget och utgiftsregistrering</li>
+                <li>Räkningspåminnelser</li>
+                <li>Grundläggande översikt</li>
+              </ul>
+              <a class="knapp knapp-kontur" href="/app">Välj Bas</a>
+            </li>
+
+            <li class="pris-kort pris-kort-upphojd">
+              <p class="pris-badge">Populärast</p>
+              <h3>Plus</h3>
+              <p class="pris-belopp"><span class="pris-tal">149 kr</span>/mån</p>
+              <ul class="pris-punkter">
+                <li>Allt i Bas</li>
+                <li>Sparmål</li>
+                <li>Delat hushåll</li>
+                <li>Diagram och rapporter</li>
+              </ul>
+              <a class="knapp knapp-guld" href="/app">Välj Plus</a>
+            </li>
+
+            <li class="pris-kort">
+              <h3>Premium</h3>
+              <p class="pris-belopp"><span class="pris-tal">179 kr</span>/mån</p>
+              <ul class="pris-punkter">
+                <li>Allt i Plus</li>
+                <li>Mina funktioner</li>
+                <li>Prioriterad support</li>
+              </ul>
+              <a class="knapp knapp-kontur" href="/app">Välj Premium</a>
+            </li>
+          </ul>
+          <p class="pris-not">
+            Planvalet byggs i ett senare steg. Knapparna ovan tar dig till appen,
+            och ingen betalning dras.
+          </p>
+        </div>
+      </section>
+
+      <!-- ========================================================= 7. FAQ
+           Sex frågor i details och summary. Inget JavaScript behövs för att
+           öppna dem, och sidan fungerar även om skript är avstängt. -->
+      <section class="faq" id="faq">
+        <div class="block block-smal">
+          <h2>Vanliga frågor</h2>
+
+          <details class="fraga">
+            <summary>Vad kostar Hem och Ekonomi?</summary>
+            <p>
+              Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån. Du
+              väljer plan när registreringen är på plats och kan byta senare.
+            </p>
+          </details>
+
+          <details class="fraga">
+            <summary>Var sparas mina uppgifter?</summary>
+            <p>
+              I en datafil på din egen dator. Appen körs lokalt och skickar
+              ingenting vidare, varken till oss eller till någon annan.
+            </p>
+          </details>
+
+          <details class="fraga">
+            <summary>Behöver jag ett lösenord?</summary>
+            <p>
+              Nej. Du anger din e-postadress och loggar in med en engångskod.
+              Det finns inget lösenord att glömma bort eller återställa.
+            </p>
+          </details>
+
+          <details class="fraga">
+            <summary>Kan vi vara flera i hushållet?</summary>
+            <p>
+              Ja. Från Plus kan ni dela samma hushåll, så att alla ser samma
+              inkomster, utgifter och sparande.
+            </p>
+          </details>
+
+          <details class="fraga">
+            <summary>Hur hanteras en utgift som dras var tredje månad?</summary>
+            <p>
+              Du anger beloppet och intervallet en gång. Appen räknar om det
+              till månadskostnad och årskostnad och visar nästa dragningsdatum.
+            </p>
+          </details>
+
+          <details class="fraga">
+            <summary>Fungerar sidan utan JavaScript?</summary>
+            <p>
+              Den här sidan gör det. Frågorna öppnas av webbläsaren själv, och
+              inga typsnitt eller skript hämtas från någon tredje part.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <!-- ====================================================== 8. Footer
+         Bakgrund --bla-marin. Logga, länkar och upphovsrättsrad.
+         Kontakt, Villkor och Integritetspolicy är a-element utan href, alltså
+         platshållarlänkar enligt HTML-standarden: sidorna byggs senare, och en
+         länk till en adress som svarar 404 är sämre än en text som säger att
+         den inte finns än. Noten under raden säger det i klartext. -->
+    <footer class="sidfot">
+      <div class="block sidfot-inre">
+        <div class="sidfot-marke">
+          <svg class="markessymbol" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path class="sv-fyll-gron-ljus-pa-mork" d="M4 22 15 12l11 10z" />
+            <path class="sv-fyll-gron-pa-mork" d="M8 22h14v16H8z" />
+            <path class="sv-fyll-mork" d="M13 28h4v10h-4z" />
+            <path class="sv-fyll-bla-ljus-pa-mork" d="M29 28h5v10h-5z" />
+            <path class="sv-fyll-bla-pa-mork" d="M36 20h5v18h-5z" />
+            <circle class="sv-fyll-guld-pa-mork" cx="33" cy="13" r="8" />
+            <circle class="sv-linje-guld-mork" cx="33" cy="13" r="8" />
+            <path class="sv-linje-mynt" d="M30.6 9.2v7.6M35.8 9.2 31.8 13l4 3.8" />
+          </svg>
+          <span class="markesnamn">Hem och Ekonomi</span>
+        </div>
+
+        <nav class="sidfot-lankar" aria-label="Sidfot">
+          <a href="#priser">Priser</a>
+          <a href="#faq">FAQ</a>
+          <a>Kontakt</a>
+          <a>Villkor</a>
+          <a>Integritetspolicy</a>
+        </nav>
+
+        <p class="sidfot-not">
+          Kontakt, Villkor och Integritetspolicy byggs i ett senare steg.
+        </p>
+        <p class="sidfot-rad">
+          &#169; 2026 Hem och Ekonomi. Appen kör lokalt på din egen dator.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

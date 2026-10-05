@@ -50,6 +50,13 @@ export function getCoreDir() {
   return path.join(SRC_DIR, 'core');
 }
 
+// Bildkatalogen under src/web/. En egen funktion och inte ett 'bilder' som
+// server.js fogar ihop själv: den här filen är enda stället som känner till
+// sökvägar på disk, och ett katalognamn är en del av en sökväg.
+export function getImageDir() {
+  return path.join(SRC_DIR, 'web', 'bilder');
+}
+
 // Låsfilen hör till datafilen och inte till porten: två instanser med var sin
 // HEMOCHEKONOMI_DATA_FILE låser inte varandra. Sökvägen läses genom
 // getDataFilePath() och aldrig ur miljövariabeln själv — två uppslag vore två

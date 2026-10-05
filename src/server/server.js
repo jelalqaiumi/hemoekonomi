@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { UNPARSABLE_MESSAGE, handleApiRequest } from './api.js';
 import { DataFileLockError, acquireDataFileLock, releaseDataFileLock } from './lock.js';
-import { getCoreDir, getWebDir } from './paths.js';
+import { getCoreDir, getImageDir, getWebDir } from './paths.js';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
@@ -35,20 +35,47 @@ const START_MESSAGES = Object.freeze({
   unexpected: (port) => `Servern kunde inte startas på port ${port}.`
 });
 
+const HTML_TYPE = 'text/html; charset=utf-8';
+const CSS_TYPE = 'text/css; charset=utf-8';
+const JS_TYPE = 'text/javascript; charset=utf-8';
+
 // Nollprototyp: ett vanligt objektuppslag skulle annars kunna träffa något som
 // ärvs från Object.prototype i stället för en riktig rutt.
+//
+// "/" är landningssidan och "/app" är den inloggade appen. Bytet skedde i
+// paket "ny design och landningssida"; dessförinnan låg index.html på "/".
+// index.html hämtar fortfarande /style.css, /app.js och /core/*.js med
+// absoluta sökvägar, så flytten av dess egen adress ändrar ingenting i filen.
+// "/app" och "/app.js" är två skilda nycklar och slås upp med exakt likhet:
+// den ena kan aldrig fånga den andra.
 const STATIC_ROUTES = Object.freeze(Object.assign(Object.create(null), {
-  '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
-  '/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
-  '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' }
+  '/': { file: 'landning.html', type: HTML_TYPE },
+  '/app': { file: 'index.html', type: HTML_TYPE },
+  '/landning.css': { file: 'landning.css', type: CSS_TYPE },
+  '/tema.css': { file: 'tema.css', type: CSS_TYPE },
+  '/style.css': { file: 'style.css', type: CSS_TYPE },
+  '/app.js': { file: 'app.js', type: JS_TYPE }
 }));
 
 const CORE_PREFIX = '/core/';
-const CORE_TYPE = 'text/javascript; charset=utf-8';
+const CORE_TYPE = JS_TYPE;
 // Bara ett rent filnamn får slås upp under /core/. Kontrollen sker före
 // sökvägssammanslagningen, aldrig efter: mönstret tillåter varken punkt, snedstreck
 // eller versaler, så "..", "../paths.js" och "%2e%2e" kan aldrig nå path.join.
 const CORE_FILE_PATTERN = /^[a-z0-9-]+\.js$/;
+
+// Bilderna under src/web/bilder/. Samma form som /core/ och av samma skäl:
+// mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
+// (annat än den som skiljer namn från ändelse), snedstreck eller versaler, så
+// "..", "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
+// Ändelsen fångas av gruppen och avgör innehållstypen, så en fil kan aldrig
+// serveras med en typ som inte hör till dess namn.
+const IMAGE_PREFIX = '/bilder/';
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg)$/;
+const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
+  png: 'image/png',
+  svg: 'image/svg+xml'
+}));
 
 function sendNotFound(res) {
   res.writeHead(404);
@@ -88,16 +115,27 @@ function resolveStaticFile(pathname) {
     return { filePath: path.join(getWebDir(), route.file), type: route.type };
   }
 
-  if (!pathname.startsWith(CORE_PREFIX)) {
-    return null;
+  if (pathname.startsWith(CORE_PREFIX)) {
+    const name = pathname.slice(CORE_PREFIX.length);
+    if (!CORE_FILE_PATTERN.test(name)) {
+      return null;
+    }
+    return { filePath: path.join(getCoreDir(), name), type: CORE_TYPE };
   }
 
-  const name = pathname.slice(CORE_PREFIX.length);
-  if (!CORE_FILE_PATTERN.test(name)) {
-    return null;
+  if (pathname.startsWith(IMAGE_PREFIX)) {
+    const name = pathname.slice(IMAGE_PREFIX.length);
+    const match = IMAGE_FILE_PATTERN.exec(name);
+    if (match === null) {
+      return null;
+    }
+    // match[1] är 'png' eller 'svg' och ingenting annat: mönstret har redan
+    // avgjort det. Uppslaget kan alltså inte ge undefined, och tabellen har
+    // nollprototyp av samma skäl som STATIC_ROUTES.
+    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPES[match[1]] };
   }
 
-  return { filePath: path.join(getCoreDir(), name), type: CORE_TYPE };
+  return null;
 }
 
 async function readOrNull(filePath) {

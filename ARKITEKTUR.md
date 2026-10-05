@@ -8936,3 +8936,113 @@ månaden, och en tom vy tar bort information användaren kan läsa.
 | (61) | ett misslyckat `GET` lämnar vyn stående | posterna och summorna kvar, texten i `#month-error` |
 | (62) | en misslyckad omhämtning efter en ändring lämnar vyn stående | samma, och texten visas |
 | (63) | `#month-error` töms vid lyckad hämtning | ett fel först, därefter en lyckad hämtning: rutan är tom |
+
+---
+
+## Del 3: ny design och landningssida
+
+### Färgpaletten (bindande) [design]
+
+Färgerna är **uppmätta ur loggan**, inte valda på ögonmått. Metoden var ett
+histogram över de mättade bildpunkterna i `src/web/bilder/logga.png`, grupperade i
+intervall om 24 nivåer per kanal, och de tio största grupperna med sitt
+medelvärde. Kommandot gick genom `System.Drawing` i PowerShell. Varje ton nedan
+har alltså en motsvarighet i bilden, och antalet bildpunkter står utskrivet.
+
+| Token | Värde | Ur loggan |
+|---|---|---|
+| `--gron-primar` | `#0B6A3B` | husets vägg, 2 677 bildpunkter |
+| `--gron-djup` | `#025B38` | husets skuggsida, 2 075 |
+| `--gron-ljus` | `#248038` | husets ljussida, 1 334 |
+| `--bla-primar` | `#014085` | stapelns mitt, 1 978 |
+| `--bla-marin` | `#022D68` | textens mörkaste blå, 1 932 |
+| `--bla-mellan` | `#01529C` | pilens mitt, 1 851 |
+| `--bla-ljus` | `#0069B7` | pilens ljusa kant, 1 251 |
+| `--guld` | `#E28202` | myntets mättade ton, 993 |
+| `--guld-mork` | `#D16C01` | myntets skuggkant, 765 |
+| `--guld-ljus` | `#FEED7E` | myntets högdager |
+
+Tre toner som **inte** finns i loggan och därför är valda, med skäl:
+
+| Token | Värde | Skäl |
+|---|---|---|
+| `--bakgrund` | `#F7F5EF` | Varm off-white. Rent vitt mot så mättade toner ger hård kontrast och gör sidan steril. |
+| `--positiv` | `#1E9E5A` | Inkomster. Ljusare än `--gron-primar` så att ett belopp inte läses som en yta. |
+| `--negativ` | `#D64545` | Utgifter. Rött finns inte i loggan, men ett negativt belopp måste skilja sig från guld. |
+
+**Kontrast.** Varje kombination som bär text ska nå WCAG AA, alltså 4,5:1 för
+brödtext och 3:1 för stor text. `--guld` på vitt ger **inte** AA för brödtext och
+får bara användas till ytor, ikoner, ramar och stor text — aldrig till löpande
+text på ljus bakgrund. `--guld-ljus` på `--bla-marin` är den kombination som
+bär guldtext.
+
+#### Mörkt läge
+
+`:root` bär det ljusa temat. `@media (prefers-color-scheme: dark)` byter
+`--bakgrund` mot `--bla-marin`, korten mot en ton strax ljusare, och texten mot
+off-white. Tokennamnen är desamma, så ingen komponent vet vilket läge som gäller.
+
+### Loggan
+
+`src/web/bilder/logga.png` är den fulla loggan och används i hero-sektionen.
+
+**En SVG-symbol byggs** för favicon och för headern: hus, mynt och stapel i
+loggans färger, utan gradienter och utan skuggor. Den är inte en kopia av
+PNG-loggan utan en förenkling som håller ned till 32 bildpunkter. Två varianter,
+en för ljus och en för mörk bakgrund.
+
+### Landningssidan
+
+Ny fil `src/web/landning.html`, som blir `/`. Appen flyttar till `/app`.
+`STATIC_ROUTES` i `src/server/server.js` får raderna; `/bilder/logga.png` serveras
+med `image/png`, och sökvägen prövas mot samma mönster som `/core/`-filerna redan
+använder — ett rent filnamn, ingen punkt-punkt, inga snedstreck.
+
+Sektionerna uppifrån och ned:
+
+| # | Sektion | Innehåll |
+|---|---|---|
+| 1 | Header, fast | Logga vänster, menyn `Funktioner`, `Priser`, `FAQ` i mitten, `Logga in` som kontur och `Registrera` som fylld till höger. På mobil blir menyn en hamburgare, men `Registrera` syns alltid. |
+| 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar, knapparna `Kom igång` och `Se hur det fungerar`, och loggan till höger. Bakgrund: gradient från `--bla-marin` till `--gron-djup` med ett svagt rutnät. |
+| 3 | Fördelar | Fyra punkter med ikon: budget, räkningar, sparmål, hushållet. |
+| 4 | Varför Hem och Ekonomi | Tre kolumner med ikon, rubrik och kort text. |
+| 5 | Så fungerar det | Tre numrerade steg: registrera, lägg in din ekonomi, få överblick. |
+| 6 | Priser | Tre kort. Mittenkortet upphöjt med guldbadge `Populärast`. |
+| 7 | FAQ | Sex frågor som fälls ut med `<details>` och `<summary>` — inget JavaScript behövs för att öppna dem. |
+| 8 | Footer | Logga, länkarna `Priser`, `FAQ`, `Kontakt`, `Villkor`, `Integritetspolicy`, och upphovsrättsrad. Bakgrund `--bla-marin`. |
+
+**Varannan sektion** har `--bakgrund` respektive en svag grön ton, så att sidan
+inte blir genomgående ljus.
+
+**Ikonerna ritas som inline-SVG** i loggans färger. Inget ikonbibliotek hämtas:
+Lucide och Phosphor är beroenden, och projektet har noll. En ikon är fem till
+femton rader SVG.
+
+**Typsnittet** är systemets egna, med en stack som börjar i `Inter` och
+`Plus Jakarta Sans` och faller tillbaka på `system-ui`. Ingen `@import` från
+Google Fonts: det är en extern begäran vid varje sidvisning, och den som besöker
+sidan ska inte skicka en förfrågan till en tredje part för att läsa den.
+
+### Priskorten
+
+| Plan | Pris | Innehåll |
+|---|---|---|
+| Bas | `99 kr/mån` | Budget och utgiftsregistrering, räkningspåminnelser, grundläggande översikt |
+| Plus | `149 kr/mån` | Allt i Bas, sparmål, delat hushåll, diagram och rapporter |
+| Premium | `179 kr/mån` | Allt i Plus, Mina funktioner, prioriterad support |
+
+Varje kort har en knapp `Välj Bas`, `Välj Plus` respektive `Välj Premium`.
+Knapparna länkar i det här steget till `/app`, eftersom registreringen med
+planval byggs senare. **Ingen knapp får antyda att en betalning sker** förrän
+betalningen finns.
+
+### Krav
+
+Mobil först. Ingen vågrät skrollning vid 320 bildpunkter. Knappar och fält minst
+44 bildpunkter höga. Rundade hörn: 16 bildpunkter på kort, pillerform på knappar.
+All text på svenska. Varje sektion är en egen komponent i den meningen att dess
+CSS är samlad under ett eget block med en kommentar, så att den går att flytta.
+
+Den inloggade appen byter till samma tema i ett eget steg: `src/web/style.css`
+läser samma tokens, och `--positiv` och `--negativ` ersätter de färger
+`left-positive` och `left-negative` har i dag.

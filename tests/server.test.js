@@ -21,7 +21,13 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { DataFileLockError } from '../src/server/lock.js';
-import { getCoreDir, getDataFilePath, getLockFilePath, getWebDir } from '../src/server/paths.js';
+import {
+  getCoreDir,
+  getDataFilePath,
+  getImageDir,
+  getLockFilePath,
+  getWebDir
+} from '../src/server/paths.js';
 import {
   ServerStartError,
   asStartError,
@@ -37,6 +43,8 @@ const HTML_TYPE = 'text/html; charset=utf-8';
 const CSS_TYPE = 'text/css; charset=utf-8';
 const JS_TYPE = 'text/javascript; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
+const PNG_TYPE = 'image/png';
+const SVG_TYPE = 'image/svg+xml';
 
 // http.request och inte fetch: både fetch och new URL() normaliserar bort
 // punktsegment och avkodar delar av sökvägen innan anropet skickas, så en
@@ -149,12 +157,134 @@ async function assertFileServed(port, rawPath, filePath, type) {
   assert.equal(res.body.equals(expected), true, `${rawPath} levererade inte innehållet i ${filePath}`);
 }
 
-test('de fyra statiska vägarna ger 200 med exakt den Content-Type tabellen anger', async (t) => {
+test('varje rad i STATIC_ROUTES ger 200 med exakt den Content-Type tabellen anger', async (t) => {
   const { port } = await useServer(t);
-  await assertFileServed(port, '/', path.join(getWebDir(), 'index.html'), HTML_TYPE);
+  await assertFileServed(port, '/', path.join(getWebDir(), 'landning.html'), HTML_TYPE);
+  await assertFileServed(port, '/app', path.join(getWebDir(), 'index.html'), HTML_TYPE);
+  await assertFileServed(port, '/landning.css', path.join(getWebDir(), 'landning.css'), CSS_TYPE);
+  await assertFileServed(port, '/tema.css', path.join(getWebDir(), 'tema.css'), CSS_TYPE);
   await assertFileServed(port, '/style.css', path.join(getWebDir(), 'style.css'), CSS_TYPE);
   await assertFileServed(port, '/app.js', path.join(getWebDir(), 'app.js'), JS_TYPE);
   await assertFileServed(port, '/core/entry.js', path.join(getCoreDir(), 'entry.js'), JS_TYPE);
+});
+
+test('/ ger landningssidan och /app ger appen, och de är inte samma fil', async (t) => {
+  const { port } = await useServer(t);
+  const landning = await rawRequest(port, '/');
+  const app = await rawRequest(port, '/app');
+  assert.equal(landning.status, 200);
+  assert.equal(app.status, 200);
+  // Den billiga assertionen först: två buffertar som skiljer sig i längd
+  // behöver ingen jämförelse byte för byte (LARDOMAR.md 2026-09-07).
+  assert.notEqual(landning.body.length, app.body.length);
+  assert.equal(landning.body.equals(app.body), false);
+
+  // Vilken av de två som är vilken avgörs av innehållet och inte av längden.
+  // Körd i en kopia av trädet:
+  //   mutation: '/' och '/app' byter fil med varandra i STATIC_ROUTES ger
+  //   EXIT=1, fail 3 och ✖ varje rad i STATIC_ROUTES ger 200 med exakt den
+  //   Content-Type tabellen anger, ✖ / ger landningssidan och /app ger appen,
+  //   och de är inte samma fil, ✖ start(0) lyssnar på 127.0.0.1 med en
+  //   tilldelad port och svarar på /.
+  const landningstext = landning.body.toString('utf8');
+  const apptext = app.body.toString('utf8');
+  assert.equal(landningstext.includes('Full koll på hemmet och ekonomin på ett ställe'), true);
+  assert.equal(landningstext.includes('/landning.css'), true);
+  assert.equal(apptext.includes('/app.js'), true);
+  assert.equal(apptext.includes('id="login-view"'), true);
+  // Landningssidan hämtar varken app.js eller style.css, och appen hämtar
+  // varken landning.css eller loggan: filerna är två och blandas inte.
+  assert.equal(landningstext.includes('/app.js'), false);
+  assert.equal(apptext.includes('/landning.css'), false);
+});
+
+test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
+  const { port } = await useServer(t);
+  // Ändelsen och ingenting annat avgör innehållstypen. Körd i en kopia:
+  //   mutation: type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png ger
+  //   EXIT=1, fail 2 och ✖ bilderna under /bilder/ ger 200 med sin egen
+  //   Content-Type samt ✖ varje bild i src/web/bilder levereras under
+  //   /bilder/ med sitt eget innehåll.
+  await assertFileServed(port, '/bilder/logga.png', path.join(getImageDir(), 'logga.png'), PNG_TYPE);
+  await assertFileServed(port, '/bilder/symbol.svg', path.join(getImageDir(), 'symbol.svg'), SVG_TYPE);
+  await assertFileServed(
+    port,
+    '/bilder/symbol-mork.svg',
+    path.join(getImageDir(), 'symbol-mork.svg'),
+    SVG_TYPE
+  );
+});
+
+test('varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll', async (t) => {
+  const imageDir = getImageDir();
+  const names = (await fs.readdir(imageDir))
+    .filter((name) => name.endsWith('.png') || name.endsWith('.svg'))
+    .sort();
+  // Listan läses ur katalogen så att en ny bild kommer med utan att den här
+  // filen ändras; antalet asserteras så att en tom katalog inte tyst gör
+  // testet innehållslöst. Samma form som testet för /core/ ovan.
+  assert.ok(names.length >= 3, `förväntade minst tre bilder i ${imageDir}, fick ${names.join(', ')}`);
+  const { port } = await useServer(t);
+  for (const name of names) {
+    const type = name.endsWith('.png') ? PNG_TYPE : SVG_TYPE;
+    await assertFileServed(port, `/bilder/${name}`, path.join(imageDir, name), type);
+  }
+});
+
+test('sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp', async (t) => {
+  const { port } = await useServer(t);
+  // Samma sonder som /core/ prövas med, översatta till bildvägen. Ingen av dem
+  // får leverera en enda byte.
+  //
+  // Vilken sond som mäter filtret är körd och inte gissad, i en kopia av
+  // trädet under scratchpad:
+  //   mutation: IMAGE_FILE_PATTERN.exec(name) + null-kontrollen ersatt av ett
+  //   uppslag av ändelsen utan någon kontroll alls ger EXIT=1, fail 1 och
+  //   ✖ sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404
+  //   utan kropp, med meddelandet "/bilder/Logga.png ... 200 !== 404".
+  // Det är alltså det versala namnet som fäller mutationen, precis som för
+  // /core/: punktsegmenten normaliseras bort av new URL() innan
+  // resolveStaticFile ser sökvägen, så traversal-sonderna ger 404 även utan
+  // filtret. De står kvar som sonder ändå — de ska ge 404, och ett test som
+  // bara prövar det filtret råkar fånga vore inget skydd mot att
+  // normaliseringen byts ut.
+  for (const rawPath of [
+    '/bilder/../index.html',
+    '/bilder/..%2findex.html',
+    '/bilder/../../package.json',
+    '/bilder/%2e%2e/index.html',
+    '/bilder/..%2Fserver%2Fpaths.js',
+    '/bilder/under/logga.png',
+    '/bilder/Logga.png',
+    '/bilder/LOGGA.PNG',
+    '/bilder/logga.PNG',
+    '/bilder/logga.png%00.png',
+    '/bilder/logga.png.',
+    '/bilder/logga.txt',
+    '/bilder/logga.js',
+    '/bilder/finns-inte.png',
+    '/bilder/',
+    '/bilder'
+  ]) {
+    await assertStaticNotFound(port, rawPath);
+  }
+  // Kontrollsond: filen är nåbar med sitt rätta namn, så 404 ovan beror på
+  // filtret och inte på att servern slutat leverera bilder.
+  await assertFileServed(port, '/bilder/logga.png', path.join(getImageDir(), 'logga.png'), PNG_TYPE);
+});
+
+test('en sökväg utanför /bilder/ ger 404 även när dess svans är ett bildfilnamn', async (t) => {
+  const { port } = await useServer(t);
+  // /bilden/ är exakt lika långt som /bilder/, så utan prefixkontrollen skulle
+  // slice ge "logga.png" och servern leverera bilden från en väg som aldrig
+  // funnits. Körd i en kopia av trädet:
+  //   mutation: if (pathname.startsWith(IMAGE_PREFIX)) -> if (true) ger
+  //   EXIT=1, fail 1 och ✖ en sökväg utanför /bilder/ ger 404 även när dess
+  //   svans är ett bildfilnamn.
+  for (const rawPath of ['/bilden/logga.png', '/xxxxxxxlogga.png', '/bilder2/logga.png']) {
+    await assertStaticNotFound(port, rawPath);
+  }
+  await assertFileServed(port, '/bilder/logga.png', path.join(getImageDir(), 'logga.png'), PNG_TYPE);
 });
 
 test('varje modul i src/core levereras under /core/ med sitt eget innehåll', async (t) => {
@@ -180,7 +310,12 @@ test('en okänd statisk sökväg ger 404 utan kropp och utan Content-Type', asyn
     '/APP.JS',
     '/favicon.ico',
     '/core',
-    '/core/'
+    '/core/',
+    '/landning.html',
+    '/tema.css.map',
+    '/App',
+    '/app/',
+    '/app/index.html'
   ]) {
     await assertStaticNotFound(port, rawPath);
   }
@@ -273,7 +408,7 @@ test('start(0) lyssnar på 127.0.0.1 med en tilldelad port och svarar på /', as
   assert.equal(address.address, HOST);
   assert.equal(typeof address.port, 'number');
   assert.notEqual(address.port, 0);
-  await assertFileServed(address.port, '/', path.join(getWebDir(), 'index.html'), HTML_TYPE);
+  await assertFileServed(address.port, '/', path.join(getWebDir(), 'landning.html'), HTML_TYPE);
 });
 
 // ---------------------------------------------- portvalet och autostarten

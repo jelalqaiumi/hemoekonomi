@@ -1,0 +1,885 @@
+/* Landningssidans layout. Mobil först: varje regel utanför en @media gäller
+   den smalaste skärmen, och varje @media vidgar.
+
+   Ingen hexkod står i den här filen. Varje färg läses med var() ur tema.css,
+   som är den enda filen som äger ett värde. Kör en sökning efter # följt av
+   sex hexsiffror här och den ska ge noll träffar.
+
+   Varje sektion har ett eget block med en kommentar, i samma ordning som
+   ARKITEKTUR.md räknar upp dem, så att en sektion går att flytta eller ta bort
+   utan att läsa resten av filen:
+     0. grund och delade byggstenar
+     1. header
+     2. hero
+     3. fördelar
+     4. varför Hem och Ekonomi
+     5. så fungerar det
+     6. priser
+     7. FAQ
+     8. footer */
+
+/* ============================================ 0. grund och delade byggstenar */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Ankarlänkarna hoppar under det fasta sidhuvudet i stället för bakom det. */
+  scroll-padding-top: 5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--typsnitt);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bakgrund);
+  /* Spärr mot vågrät skrollning vid 320 bildpunkter: ingenting i sidan får
+     vara bredare än skärmen. */
+  overflow-x: hidden;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 0.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 2rem;
+}
+
+h2 {
+  font-size: 1.6rem;
+}
+
+h3 {
+  font-size: 1.125rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+a {
+  color: var(--lank);
+}
+
+a:hover {
+  color: var(--lank-hover);
+}
+
+:focus-visible {
+  outline: 3px solid var(--lank);
+  outline-offset: 2px;
+}
+
+/* Hoppa till innehållet. Ligger utanför skärmen tills den tar emot fokus. */
+.hoppa {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 20;
+  padding: 0.75rem 1rem;
+  background: var(--yta);
+  border-radius: 0 0 var(--radie-liten) 0;
+}
+
+.hoppa:focus {
+  left: 0;
+}
+
+/* Sidans vanliga textbredd. padding och inte margin, så att bakgrundsfärgen
+   går ända ut till kanten medan texten håller sig innanför. */
+.block {
+  max-width: var(--sidbredd);
+  margin: 0 auto;
+  padding: 3rem 1rem;
+}
+
+.block-smal {
+  max-width: 44rem;
+}
+
+.block-ingress {
+  max-width: 38rem;
+  color: var(--text-svag);
+}
+
+/* --- knappar. Minst 44 bildpunkter höga och i pillerform, enligt kravet. --- */
+.knapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--traffyta);
+  padding: 0.6rem 1.5rem;
+  border: 2px solid transparent;
+  border-radius: var(--radie-knapp);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.knapp-liten {
+  padding: 0.4rem 1.1rem;
+  font-size: 0.95rem;
+}
+
+.knapp-fylld {
+  background: var(--knapp-fylld-yta);
+  border-color: var(--knapp-fylld-yta);
+  color: var(--knapp-fylld-text);
+}
+
+.knapp-fylld:hover {
+  background: var(--knapp-fylld-yta-hover);
+  border-color: var(--knapp-fylld-yta-hover);
+  color: var(--knapp-fylld-text);
+}
+
+.knapp-kontur {
+  background: transparent;
+  border-color: var(--knapp-kontur-kant);
+  color: var(--knapp-kontur-text);
+}
+
+.knapp-kontur:hover {
+  background: var(--yta-mjuk);
+  color: var(--knapp-kontur-text);
+}
+
+/* Konturknapp mot den mörka hero-gradienten. */
+.knapp-kontur-ljus {
+  background: transparent;
+  border-color: var(--text-pa-mork);
+  color: var(--text-pa-mork);
+}
+
+.knapp-kontur-ljus:hover {
+  background: var(--rutnat);
+  color: var(--text-pa-mork);
+}
+
+/* Guldknappen. --bla-marin på --guld ger 4,71:1, alltså AA för brödtext.
+   Guld som TEXT på ljus bakgrund når inte AA och finns inte i den här filen. */
+.knapp-guld {
+  background: var(--knapp-guld-yta);
+  border-color: var(--knapp-guld-yta);
+  color: var(--knapp-guld-text);
+}
+
+.knapp-guld:hover {
+  background: var(--knapp-guld-yta-hover);
+  border-color: var(--knapp-guld-yta-hover);
+  color: var(--knapp-guld-text);
+}
+
+/* --- ikonernas färger. Inline-SVG i landning.html bär bara klassnamn; värdena
+   står i tema.css och byts av det mörka läget. --- */
+.ikon {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: block;
+}
+
+.sv-fyll-gron {
+  fill: var(--ikon-gron);
+}
+
+.sv-fyll-gron-ljus {
+  fill: var(--gron-ljus);
+}
+
+.sv-fyll-bla {
+  fill: var(--ikon-bla);
+}
+
+.sv-fyll-bla-ljus {
+  fill: var(--bla-ljus);
+}
+
+.sv-fyll-guld {
+  fill: var(--ikon-guld);
+}
+
+.sv-fyll-yta {
+  fill: var(--yta);
+}
+
+.sv-linje-gron,
+.sv-linje-bla,
+.sv-linje-guld,
+.sv-linje-text,
+.sv-linje-mynt,
+.sv-linje-guld-mork {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sv-linje-gron {
+  stroke: var(--ikon-gron);
+}
+
+.sv-linje-bla {
+  stroke: var(--ikon-bla);
+}
+
+.sv-linje-guld {
+  stroke: var(--ikon-guld);
+}
+
+.sv-linje-text {
+  stroke: var(--text);
+}
+
+.sv-linje-mynt {
+  stroke: var(--ikon-mynt-text);
+}
+
+.sv-linje-guld-mork {
+  stroke: var(--guld-mork);
+}
+
+/* Symbolens varianter på alltid mörk yta, alltså i sidfoten. */
+.sv-fyll-gron-pa-mork {
+  fill: var(--ikon-gron-pa-mork);
+}
+
+.sv-fyll-bla-pa-mork {
+  fill: var(--ikon-bla-pa-mork);
+}
+
+.sv-fyll-gron-ljus-pa-mork {
+  fill: var(--ikon-gron-ljus-pa-mork);
+}
+
+.sv-fyll-bla-ljus-pa-mork {
+  fill: var(--ikon-bla-ljus-pa-mork);
+}
+
+.sv-fyll-guld-pa-mork {
+  fill: var(--ikon-guld-pa-mork);
+}
+
+.sv-fyll-mork {
+  fill: var(--morkt-block);
+}
+
+/* =========================================================== 1. header
+   Fast överst. Logga vänster, meny i mitten, knappar höger. Under 840
+   bildpunkter ersätts den breda menyn av hamburgaren, medan Registrera
+   fortsätter att synas. */
+
+.sidhuvud {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--yta);
+  box-shadow: var(--skugga-header);
+}
+
+.sidhuvud-inre {
+  max-width: var(--sidbredd);
+  margin: 0 auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.markeslank,
+.sidfot-marke {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  /* Loggan får krympa före knapparna när skärmen är 320 bildpunkter bred. */
+  min-width: 0;
+}
+
+.markessymbol {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+}
+
+.markesnamn {
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Vid 320 bildpunkter ska sidhuvudet rymmas utan att något skjuter ut: 32 för
+   symbolen, cirka 90 för Registrera, 44 för hamburgaren och 32 för sidans
+   marginaler. Namnet är det enda som kan ge vika, så det tas bort under 400 och
+   klipps med ellips däröver. Regeln finns för att spillet inte ska uppstå:
+   body:s overflow-x döljer ett vågrätt skrollfält men tar inte bort orsaken,
+   och ett krav som uppfylls av att felet göms är inte uppfyllt. Summan ovan är
+   räknad ur reglerna i den här filen och inte mätt i en webbläsare: ingen agent
+   kan öppna en. */
+@media (max-width: 399px) {
+  .markeslank .markesnamn {
+    display: none;
+  }
+}
+
+.meny-bred {
+  display: none;
+}
+
+.sidhuvud-knappar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+}
+
+.doljs-pa-mobil {
+  display: none;
+}
+
+/* Hamburgaren. details och summary, så att menyn öppnas av webbläsaren och
+   inte av ett skript: sidan ska fungera med JavaScript avstängt. */
+.meny-smal {
+  position: relative;
+}
+
+.meny-knapp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--traffyta);
+  height: var(--traffyta);
+  border-radius: var(--radie-liten);
+  cursor: pointer;
+  list-style: none;
+}
+
+/* Webkit ritar annars en egen triangel framför summary. */
+.meny-knapp::-webkit-details-marker {
+  display: none;
+}
+
+.ikon-meny {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.meny-panel {
+  position: absolute;
+  right: 0;
+  top: calc(var(--traffyta) + 0.4rem);
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  background: var(--yta);
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-kort);
+  box-shadow: var(--skugga-kort);
+}
+
+.meny-panel a {
+  display: flex;
+  align-items: center;
+  min-height: var(--traffyta);
+  padding: 0 0.75rem;
+  border-radius: var(--radie-liten);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.meny-panel a:hover {
+  background: var(--yta-mjuk);
+}
+
+@media (min-width: 840px) {
+  .meny-bred {
+    display: flex;
+    gap: 1.5rem;
+    margin-left: 2rem;
+  }
+
+  .meny-bred a {
+    display: flex;
+    align-items: center;
+    min-height: var(--traffyta);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .doljs-pa-mobil {
+    display: inline-flex;
+  }
+
+  .meny-smal {
+    display: none;
+  }
+
+  .markesnamn {
+    font-size: 1.1rem;
+  }
+}
+
+/* ============================================================= 2. hero
+   Gradient från --bla-marin till --gron-djup med ett svagt rutnät ovanpå.
+   Rutnätet ritas med två repeating-linear-gradient och kräver därför ingen
+   bildfil. */
+
+.hero {
+  background-color: var(--hero-fran);
+  background-image:
+    repeating-linear-gradient(to right, var(--rutnat) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to bottom, var(--rutnat) 0 1px, transparent 1px 48px),
+    linear-gradient(140deg, var(--hero-fran) 0%, var(--hero-till) 100%);
+  color: var(--text-pa-mork);
+}
+
+.hero-inre {
+  max-width: var(--sidbredd);
+  margin: 0 auto;
+  padding: 3rem 1rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.hero-ingress {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--guld-ljus);
+}
+
+.hero h1 {
+  font-size: 2.1rem;
+  max-width: 16em;
+}
+
+.hero-under {
+  max-width: 34rem;
+  font-size: 1.05rem;
+  color: var(--text-svag-pa-mork);
+}
+
+.hero-knappar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.hero-bild {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-bild img {
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+}
+
+@media (min-width: 840px) {
+  .hero-inre {
+    flex-direction: row;
+    align-items: center;
+    padding: 4.5rem 1rem 5rem;
+  }
+
+  .hero-text {
+    flex: 1 1 56%;
+  }
+
+  .hero-bild {
+    flex: 1 1 44%;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+  }
+}
+
+/* ========================================================= 3. fördelar
+   Fyra punkter med ikon. En kolumn på mobil, två vid 600 och fyra vid 960.
+   Bakgrunden är --bakgrund; nästa sektion tar den gröna tonen. */
+
+.fordelar {
+  background: var(--bakgrund);
+}
+
+.fordel-lista {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.fordel {
+  padding: 1.5rem;
+  background: var(--yta);
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-kort);
+  box-shadow: var(--skugga-kort);
+}
+
+.fordel .ikon {
+  margin-bottom: 1rem;
+}
+
+.fordel p {
+  margin: 0;
+  color: var(--text-svag);
+}
+
+@media (min-width: 600px) {
+  .fordel-lista {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .fordel-lista {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ============================================ 4. varför Hem och Ekonomi
+   Tre kolumner. Svag grön ton som bakgrund, så att varannan sektion bryter av
+   mot --bakgrund. */
+
+.varfor {
+  background: var(--yta-mjuk);
+}
+
+.varfor-lista {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2rem;
+}
+
+.varfor-kolumn .ikon {
+  margin-bottom: 1rem;
+}
+
+.varfor-kolumn p {
+  margin: 0;
+  color: var(--text-svag);
+}
+
+@media (min-width: 840px) {
+  .varfor-lista {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2.5rem;
+  }
+}
+
+/* =================================================== 5. så fungerar det
+   Tre numrerade steg. Numret är en egen guldruta med --bla-marin som
+   textfärg, 4,71:1, och aldrig guld som text på ljus bakgrund. */
+
+.steg {
+  background: var(--bakgrund);
+}
+
+.steg-lista {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  counter-reset: steg;
+}
+
+.steg-kort {
+  padding: 1.5rem;
+  background: var(--yta);
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-kort);
+  box-shadow: var(--skugga-kort);
+}
+
+.steg-nummer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radie-knapp);
+  background: var(--guld);
+  color: var(--knapp-guld-text);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.steg-kort p {
+  margin: 0;
+  color: var(--text-svag);
+}
+
+@media (min-width: 840px) {
+  .steg-lista {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+/* =========================================================== 6. priser
+   Tre kort. Mittenkortet är upphöjt och bär guldbadgen Populärast.
+   Knapparna länkar till /app: planvalet byggs senare, och ingen knapp får
+   antyda att en betalning sker. Noten under korten säger det i klartext. */
+
+.priser {
+  background: var(--yta-mjuk);
+}
+
+.pris-lista {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.pris-kort {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 1.75rem 1.5rem;
+  background: var(--yta);
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-kort);
+  box-shadow: var(--skugga-kort);
+}
+
+.pris-kort-upphojd {
+  background: var(--yta-upphojd);
+  border-color: var(--guld);
+  border-width: 2px;
+  box-shadow: var(--skugga-upphojd);
+}
+
+.pris-badge {
+  align-self: flex-start;
+  margin: 0 0 0.75rem;
+  padding: 0.25rem 0.9rem;
+  border-radius: var(--radie-knapp);
+  background: var(--guld);
+  color: var(--knapp-guld-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pris-belopp {
+  margin: 0 0 1.25rem;
+  color: var(--text-svag);
+}
+
+.pris-tal {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pris-punkter {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  /* Skjuter knappen till kortets underkant, så att de tre knapparna hamnar på
+     samma rad även när punktlistorna är olika långa. */
+  flex: 1 1 auto;
+}
+
+.pris-punkter li {
+  position: relative;
+  padding-left: 1.6rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-svag);
+}
+
+/* Bocken ritas med en ram och inget tecken, så att ingen tankstreckliknande
+   kodpunkt behöver stå i filen. */
+.pris-punkter li::before {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  top: 0.5rem;
+  width: 0.4rem;
+  height: 0.7rem;
+  border: solid var(--gron-primar);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.pris-not {
+  margin: 1.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-svag);
+}
+
+@media (min-width: 840px) {
+  .pris-lista {
+    grid-template-columns: repeat(3, 1fr);
+    align-items: stretch;
+  }
+
+  .pris-kort-upphojd {
+    /* Upphöjt i bokstavlig mening: kortet sticker upp över sina grannar. */
+    transform: translateY(-0.75rem);
+  }
+}
+
+/* ============================================================== 7. FAQ
+   Sex frågor i details och summary. Ingen rad JavaScript: webbläsaren öppnar
+   och stänger dem själv, och sidan fungerar med skript avstängt. */
+
+.faq {
+  background: var(--bakgrund);
+}
+
+.fraga {
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-kort);
+  background: var(--yta);
+  margin-bottom: 0.75rem;
+}
+
+.fraga summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--traffyta);
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radie-kort);
+  list-style: none;
+}
+
+.fraga summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Plustecknet till höger. Ett eget tecken i stället för webbläsarens triangel,
+   och det blir ett minus när frågan är öppen. Båda är ASCII. */
+.fraga summary::after {
+  content: '+';
+  margin-left: auto;
+  padding-left: 1rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--lank);
+}
+
+.fraga[open] summary::after {
+  content: '-';
+}
+
+.fraga p {
+  margin: 0;
+  padding: 0 1.25rem 1.25rem;
+  color: var(--text-svag);
+}
+
+/* =========================================================== 8. footer
+   Bakgrund --bla-marin i båda lägena. Texten är off-white, 12,21:1.
+   Kontakt, Villkor och Integritetspolicy är a-element utan href, alltså
+   platshållarlänkar: sidorna finns inte än, och en länk som svarar 404 är
+   sämre än en text som säger att sidan byggs senare. */
+
+.sidfot {
+  background: var(--morkt-block);
+  color: var(--text-pa-mork);
+}
+
+.sidfot-inre {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sidfot-lankar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+
+.sidfot-lankar a {
+  display: flex;
+  align-items: center;
+  min-height: var(--traffyta);
+  color: var(--text-pa-mork);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sidfot-lankar a[href]:hover {
+  text-decoration: underline;
+}
+
+/* Platshållarlänkarna. Utan href är de varken klickbara eller fokuserbara, och
+   den svagare tonen säger att de inte går att följa än. */
+.sidfot-lankar a:not([href]) {
+  color: var(--text-svag-pa-mork);
+  font-weight: 400;
+  cursor: default;
+}
+
+.sidfot-not,
+.sidfot-rad {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-svag-pa-mork);
+}
+
+@media (min-width: 840px) {
+  .sidfot-inre {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 2.5rem;
+    row-gap: 1rem;
+  }
+
+  .sidfot-lankar {
+    justify-content: flex-end;
+  }
+
+  .sidfot-not,
+  .sidfot-rad {
+    grid-column: 1 / -1;
+  }
+}
