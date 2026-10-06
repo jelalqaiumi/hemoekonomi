@@ -6,7 +6,7 @@
 // inloggningsvyn, 200 visar månadsvyn. Ett 401 från någon annan väg senare i
 // körningen visar inloggningsvyn igen — sessionen kan gå ut medan sidan är öppen.
 import { monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
-import { CATEGORY_LABELS } from '/core/entry.js';
+import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS } from '/core/item.js';
 import { formatSek, oreToSek } from '/core/money.js';
 
@@ -32,6 +32,27 @@ const SAVE_LABEL = 'Spara';
 const SAVE_CHANGE_LABEL = 'Spara ändring';
 const EDIT_LABEL = 'Ändra';
 const REMOVE_LABEL = 'Ta bort';
+
+// Frågorna en rad som kommer från en mall ställer [etapp 4], ur tabellen under
+// "Gränssnittets två frågor skrivs om" i ARKITEKTUR.md. Varje fråga har TVÅ val:
+// Hela serien är borttaget av rättelsen av etapp 4, och ingen varningstext finns
+// därför — ingen av de två vägarna rör en passerad månad.
+const EDIT_QUESTION = 'Vad ska ändras?';
+const REMOVE_QUESTION = 'Vad ska tas bort?';
+// Valens etiketter. Månaden skrivs med monthLabel, alltså Oktober 2026.
+function onlyMonthLabel(month) {
+  return `Bara ${monthLabel(month)}`;
+}
+
+function fromMonthLabel(month) {
+  return `Från och med ${monthLabel(month)}`;
+}
+
+// Raden i formuläret i läget Bara <månad>, ur ARKITEKTUR.md under rättelsen
+// "Bara <månad> döljer de fält som inte går att ändra".
+function monthOnlyNoteText(month) {
+  return `Ändrar bara beloppet för ${monthLabel(month)}.`;
+}
 
 function codeSentText(email) {
   return `En kod är skickad till ${email}. Den gäller i tio minuter.`;
@@ -110,12 +131,40 @@ const FORM_ERROR = document.querySelector('#item-form-error');
 const SUBMIT_BUTTON = document.querySelector('#item-submit');
 const CANCEL_BUTTON = document.querySelector('#item-cancel');
 
+// Kryssrutan Återkommande och de två fälten den öppnar [etapp 4]. Fälten läses
+// som element och inte ur FORM.elements, av samma skäl som kryssrutan: en
+// kryssruta bär sitt värde i checked och inte i value, och de tre hör ihop.
+const RECURRING_CHECKBOX = document.querySelector('#item-recurring');
+const RECURRING_FIELDS = document.querySelector('#recurring-fields');
+const INTERVAL_FIELD = document.querySelector('#item-interval');
+const TO_MONTH_FIELD = document.querySelector('#item-to-month');
+
+// Fältblocken som döljs i läget Bara <månad>, plus raden som säger varför. En
+// avvikelse kan bara bära ett belopp — overrides har varken en kolumn för namn
+// eller för kategori — så ett redigerbart namnfält i det läget är ett fält vars
+// ändring försvinner tyst när formuläret skickas.
+const NAME_FIELD_BLOCK = document.querySelector('#name-field');
+const CATEGORY_FIELD_BLOCK = document.querySelector('#category-field');
+const RECURRING_FIELD_BLOCK = document.querySelector('#recurring-field');
+const MONTH_ONLY_NOTE = document.querySelector('#month-only-note');
+
 // Fälten i formuläret, i samma ordning som validateMonthItemDraft rapporterar
 // dem. Fältet kind står inte här: slaget kommer från vilken lista knappen satt i
 // och är inget fält, så ett fieldError för kind har inget element att skrivas
 // vid och hamnar i den allmänna rutan — samma väg som varje annat svar utan
 // fältfel.
-const FORM_FIELDS = ['name', 'amountSek', 'category'];
+// interval och toMonth står sist därför att kryssrutan Återkommande öppnar dem
+// under de fyra andra, samma ordning som validateTemplateDraft rapporterar dem.
+const FORM_FIELDS = ['name', 'amountSek', 'category', 'interval', 'toMonth'];
+
+// Formulärets fyra lägen [etapp 4]. Vilken väg en sparning går avgörs av läget,
+// aldrig av kryssrutan — utom i MODE_NEW, där kryssrutan väljer mellan månadens
+// engångspost och en mall. Ett läge per väg, så att ingen hanterare behöver
+// gissa.
+const MODE_NEW = 'new';
+const MODE_ITEM = 'item';
+const MODE_MONTH = 'month';
+const MODE_SERIES = 'series';
 
 // Månaden vyn visar. Den enda klockläsningen i filen: monthOfIsoDate(todayIso())
 // öppnar den aktuella månaden, och knapparna räknar därefter med shiftMonth.
@@ -126,6 +175,20 @@ let loginEmail = '';
 let editingId = null;
 // Slaget formuläret gäller, satt av knappen som öppnade det.
 let formKind = null;
+// Formulärets läge, satt av knappen eller valet som öppnade det.
+let formMode = MODE_NEW;
+// Seriens id när formuläret gäller en ändring från och med månaden, annars null.
+let formSeriesId = null;
+// Den senast öppnade frågans element, eller null. Högst en fråga är öppen: en
+// andra fråga stänger den första, så att två rader aldrig frågar samtidigt.
+//
+// Variabeln nollställs INTE vid en rendering. En rad som byggts om är ett annat
+// element, så jämförelsen i showQuestion är då sann och den gamla rutan döljs i
+// onödan — utan att något syns, eftersom rutan inte längre står i vyn. En rad
+// som nollställde variabeln vid varje rendering överlevde mutation
+// (tests/app.test.js gav tests 65, pass 65, fail 0 och EXIT=0 utan den), och en
+// rad som ingen indata kan fälla är ingen spärr (LARDOMAR.md 2026-09-04).
+let openQuestion = null;
 // Formulärets eget pågående-läge. Knappens disabled duger inte som enda spärr:
 // den stoppar bara klick, och en submit-händelse behöver inte komma från knappen.
 let submitInProgress = false;
@@ -271,16 +334,93 @@ function renderItem(item) {
     row.append(mark);
   }
 
+  // En engångspost har inga val: Ändra öppnar formuläret och Ta bort tar bort,
+  // precis som före etapp 4. En mallpost frågar först, eftersom båda knapparna
+  // då har två utfall.
+  if (item.recurring !== true) {
+    row.append(
+      actionButton('edit', EDIT_LABEL, () => {
+        openForm(item.kind, item, MODE_ITEM);
+      }),
+      actionButton('remove', REMOVE_LABEL, (button) => {
+        void sendChange(button, {
+          url: `/api/poster/${item.id}`,
+          method: 'DELETE',
+          body: null,
+          okStatus: 204
+        });
+      })
+    );
+    return row;
+  }
+
+  // Frågans ruta byggs tom vid renderingen och fylls av showQuestion. Den ligger
+  // i raden, så att frågan står vid den post den gäller, och den försvinner av
+  // sig själv vid nästa rendering — en lyckad ändring hämtar om månaden.
+  const question = document.createElement('div');
+  question.className = 'item-question';
+  question.hidden = true;
+
   row.append(
     actionButton('edit', EDIT_LABEL, () => {
-      openForm(item.kind, item);
+      showQuestion(question, EDIT_QUESTION, [
+        // Bara månaden: en avvikelse bär bara ett belopp, så formuläret skickar
+        // amountSek till PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>.
+        ['scope-month', onlyMonthLabel(currentMonth), () => {
+          openForm(item.kind, item, MODE_MONTH);
+        }],
+        // Från och med månaden: en ny version av serien, alltså mallens sex fält
+        // till PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>.
+        ['scope-forward', fromMonthLabel(currentMonth), () => {
+          openForm(item.kind, item, MODE_SERIES);
+        }]
+      ]);
     }),
-    actionButton('remove', REMOVE_LABEL, (button) => {
-      void removeItem(item.id, button);
-    })
+    actionButton('remove', REMOVE_LABEL, () => {
+      showQuestion(question, REMOVE_QUESTION, [
+        // Bara månaden: posten hoppas över just den månaden. Samma väg som
+        // ändringen av en enda månad, med den andra kroppsformen.
+        ['scope-month', onlyMonthLabel(currentMonth), (button) => {
+          void sendChange(button, {
+            url: `/api/poster/${item.id}/manad/${currentMonth}`,
+            method: 'PUT',
+            body: { skipped: true },
+            okStatus: 200
+          });
+        }],
+        // Från och med månaden: serien avslutas. Vägen har ingen kropp — vad som
+        // ska hända står i metoden och i sökvägen.
+        ['scope-forward', fromMonthLabel(currentMonth), (button) => {
+          void sendChange(button, {
+            url: `/api/mallar/${item.seriesId}/${currentMonth}`,
+            method: 'DELETE',
+            body: null,
+            okStatus: 204
+          });
+        }]
+      ]);
+    }),
+    question
   );
 
   return row;
+}
+
+// Frågan i en rad: texten och valen. Högst en fråga är öppen i vyn — en andra
+// fråga stänger den första, så att två rader aldrig frågar samtidigt.
+//
+// Rutan fylls med replaceChildren och tas aldrig bort ur raden: nästa rendering
+// bygger raden på nytt, och en lyckad ändring hämtar alltid om månaden.
+function showQuestion(question, text, choices) {
+  if (openQuestion !== null && openQuestion !== question) {
+    openQuestion.hidden = true;
+  }
+  question.replaceChildren(
+    cell('question-text', text),
+    ...choices.map(([className, label, onClick]) => actionButton(className, label, onClick))
+  );
+  question.hidden = false;
+  openQuestion = question;
 }
 
 // Summeringen. Talen kommer alltid ur svarets totals och räknas aldrig här:
@@ -444,24 +584,62 @@ async function changeMonth(month, button) {
   }
 }
 
-// Samma formulär för ny post och för ändring. Vid ändring är fälten ifyllda och
-// knappen heter Spara ändring.
-function openForm(kind, item) {
+// Kryssrutans läge och de två fältens synlighet, som en sak: fälten är dolda
+// tills rutan kryssas, och rutan bär ingen egen tolkning utöver den.
+function setRecurring(checked) {
+  RECURRING_CHECKBOX.checked = checked;
+  RECURRING_FIELDS.hidden = !checked;
+}
+
+// Vilka fält formuläret visar. Bara i läget Bara <månad> skiljer sig vyn: då är
+// beloppet det enda som går att ändra, och namn, kategori och kryssrutan döljs i
+// stället för att spärras — ett utgråat fält ser ut som något som kan låsas upp,
+// medan ett fält som inte finns inte väcker frågan.
+function setMonthOnlyLayout(monthOnly) {
+  NAME_FIELD_BLOCK.hidden = monthOnly;
+  CATEGORY_FIELD_BLOCK.hidden = monthOnly;
+  RECURRING_FIELD_BLOCK.hidden = monthOnly;
+  MONTH_ONLY_NOTE.hidden = !monthOnly;
+  MONTH_ONLY_NOTE.textContent = monthOnly ? monthOnlyNoteText(currentMonth) : '';
+}
+
+// Samma formulär för ny post, för ändring av en post, för en enda månad och för
+// en serie. Vid varje ändring är fälten ifyllda och knappen heter Spara ändring.
+//
+// FORM.reset() körs i varje läge och inte bara för en ny post: fälten interval
+// och toMonth fylls inte av någon post — en post ur månadens svar bär varken
+// intervallet eller slutmånaden — och utan nollställningen skulle ett tidigare
+// värde följa med in i nästa sparning.
+function openForm(kind, item, mode) {
   clearFormErrors();
   formKind = kind;
+  formMode = mode;
   editingId = item === null ? null : item.id;
+  formSeriesId = item === null ? null : item.seriesId;
 
-  if (item === null) {
-    FORM.reset();
-  } else {
+  FORM.reset();
+  if (item !== null) {
     FORM.elements.name.value = item.name;
     // Fältet är kronor, posten bär ören. oreToSek i money.js äger omvandlingen —
     // ingen egen division här.
     FORM.elements.amountSek.value = String(oreToSek(item.amountOre));
     FORM.elements.category.value = item.category;
+    // Mallens två egna fält. Posten bär dem sedan rättelsen "posten bär sitt
+    // intervall": utan dem stod intervallfältet på sitt första alternativ, och
+    // en beloppsändring på en kvartalspost skrev tyst om serien till månadsvis.
+    // En engångspost bär null på båda, och då står fälten tomma — de är ändå
+    // dolda i varje läge utom MODE_SERIES.
+    INTERVAL_FIELD.value = item.interval === null ? '' : item.interval;
+    TO_MONTH_FIELD.value = item.toMonth === null ? '' : item.toMonth;
   }
 
-  SUBMIT_BUTTON.textContent = item === null ? SAVE_LABEL : SAVE_CHANGE_LABEL;
+  // Kryssrutan sätts av läget och inte av FORM.reset(): en ändring från och med
+  // månaden ger en ny version av serien, alltså en återkommande post, och de två
+  // fälten behövs då. I de tre andra lägena står rutan tom och fälten dolda.
+  setRecurring(mode === MODE_SERIES);
+  setMonthOnlyLayout(mode === MODE_MONTH);
+
+  SUBMIT_BUTTON.textContent = mode === MODE_NEW ? SAVE_LABEL : SAVE_CHANGE_LABEL;
   FORM_CARD.hidden = false;
 }
 
@@ -471,25 +649,65 @@ function openForm(kind, item) {
 function closeForm() {
   FORM_CARD.hidden = true;
   FORM.reset();
+  setRecurring(false);
+  setMonthOnlyLayout(false);
   clearFormErrors();
+}
+
+// Månadspostens fyra fält, ur formuläret. Beloppet är den råa strängen ur
+// fältet, orörd: beloppet tolkas på exakt ett ställe i projektet —
+// checkAmountSek, som valideringen anropar på servern.
+function itemDraft() {
+  return {
+    kind: formKind,
+    name: FORM.elements.name.value,
+    amountSek: FORM.elements.amountSek.value,
+    category: FORM.elements.category.value
+  };
+}
+
+// Mallens sex fält: månadspostens fyra plus de två kryssrutan öppnar. Ett tomt
+// toMonth betyder tills vidare, och checkToMonth i src/core/item.js äger den
+// frågan — strängen skickas orörd, precis som beloppet.
+function templateDraft() {
+  return { ...itemDraft(), interval: INTERVAL_FIELD.value, toMonth: TO_MONTH_FIELD.value };
+}
+
+// Vägen, metoden, kroppen och det svar som räknas som lyckat, för formulärets
+// fyra lägen. Läget avgör ensamt — utom i MODE_NEW, där kryssrutan väljer mellan
+// månadens engångspost och en mall.
+function formRequest() {
+  if (formMode === MODE_MONTH) {
+    // Bara den här månaden. Kroppen bär amountSek och ingenting annat: en
+    // avvikelse har bara en kolumn för belopp, så namn, kategori och slag kan
+    // inte skilja sig en enskild månad.
+    return {
+      url: `/api/poster/${editingId}/manad/${currentMonth}`,
+      method: 'PUT',
+      body: { amountSek: FORM.elements.amountSek.value },
+      okStatus: 200
+    };
+  }
+  if (formMode === MODE_SERIES) {
+    return {
+      url: `/api/mallar/${formSeriesId}/${currentMonth}`,
+      method: 'PUT',
+      body: templateDraft(),
+      okStatus: 200
+    };
+  }
+  if (formMode === MODE_ITEM) {
+    return { url: `/api/poster/${editingId}`, method: 'PUT', body: itemDraft(), okStatus: 200 };
+  }
+  return RECURRING_CHECKBOX.checked
+    ? { url: `/api/mallar/${currentMonth}`, method: 'POST', body: templateDraft(), okStatus: 201 }
+    : { url: `/api/manad/${currentMonth}`, method: 'POST', body: itemDraft(), okStatus: 201 };
 }
 
 async function submitForm(button) {
   clearFormErrors();
 
-  const draft = {
-    kind: formKind,
-    name: FORM.elements.name.value,
-    // Den råa strängen ur formuläret, orörd. Beloppet tolkas på exakt ett ställe
-    // i projektet: checkAmountSek, som validateMonthItemDraft anropar på servern.
-    amountSek: FORM.elements.amountSek.value,
-    category: FORM.elements.category.value
-  };
-
-  const newItem = editingId === null;
-  const url = newItem ? `/api/manad/${currentMonth}` : `/api/poster/${editingId}`;
-  const method = newItem ? 'POST' : 'PUT';
-  const okStatus = newItem ? 201 : 200;
+  const { url, method, body, okStatus } = formRequest();
 
   // Knappen som utlöste anropet spärras före fetch och släpps i ett finally, så
   // att två snabba klick inte ger två poster.
@@ -501,7 +719,7 @@ async function submitForm(button) {
       response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft)
+        body: JSON.stringify(body)
       });
     } catch {
       FORM_ERROR.textContent = GENERAL_ERROR;
@@ -525,20 +743,34 @@ async function submitForm(button) {
   }
 }
 
-async function removeItem(id, button) {
+// En ändring som inte går genom formuläret: en borttagen engångspost, en
+// överhoppad månad och en avslutad serie. Knappen som utlöste anropet spärras
+// före fetch och släpps i ett finally, så att två snabba klick inte ger två
+// anrop. Lyckas ändringen hämtas månaden om — vyn byggs aldrig ur svaret på en
+// ändring. Annars står serverns text i månadsvyns allmänna ruta.
+//
+// Id:n skickas ordagrant. Ett id är alltid ett UUID, och servern jämför
+// sökvägens led som exakta strängar utan att avkoda dem.
+async function sendChange(button, { url, method, body, okStatus }) {
   button.disabled = true;
   try {
     let response;
     try {
-      // Id:t skickas ordagrant. Ett id är alltid ett UUID, och servern jämför
-      // sökvägens sista del som exakt sträng utan att avkoda den.
-      response = await fetch(`/api/poster/${id}`, { method: 'DELETE' });
+      // En väg utan kropp får ingen Content-Type: DELETE /api/mallar/... läser
+      // ingenting ur anropets kropp, och ett huvud som lovar JSON utan JSON vore
+      // ett löfte koden inte håller.
+      response = await fetch(
+        url,
+        body === null
+          ? { method }
+          : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
     } catch {
       MONTH_ERROR.textContent = GENERAL_ERROR;
       return;
     }
 
-    if (response.status === 204) {
+    if (response.status === okStatus) {
       await loadMonth();
       return;
     }
@@ -664,6 +896,16 @@ async function loadMe() {
 }
 
 fillOptions('#item-category', CATEGORY_LABELS);
+// Intervallets fyra alternativ [etapp 4]. Etiketterna ägs av INTERVAL_LABELS i
+// src/core/entry.js, och nycklarna är samma nycklar checkInterval godkänner.
+fillOptions('#item-interval', INTERVAL_LABELS);
+
+// Kryssrutan öppnar och stänger de två fälten. Den skickar inget anrop och rör
+// inget annat: vilken väg en sparning går avgörs av formulärets läge, och
+// kryssrutan väljer bara i läget för en ny post.
+RECURRING_CHECKBOX.addEventListener('change', () => {
+  RECURRING_FIELDS.hidden = !RECURRING_CHECKBOX.checked;
+});
 
 SEND_CODE.addEventListener('click', () => {
   void sendCode(SEND_CODE);
@@ -696,7 +938,7 @@ MONTH_NEXT.addEventListener('click', () => {
 for (const kind of ITEM_KINDS) {
   const add = document.querySelector(LISTS[kind].add);
   add.addEventListener('click', () => {
-    openForm(kind, null);
+    openForm(kind, null, MODE_NEW);
   });
 }
 

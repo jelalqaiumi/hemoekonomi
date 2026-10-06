@@ -120,7 +120,16 @@
                vilken lista knappen satt i och är därför inget fält. -->
           <section class="card" id="item-form-card" hidden>
             <form id="item-form" novalidate>
-              <div class="field">
+              <!-- Raden som säger vad som gäller i läget Bara <månad>. app.js
+                   skriver texten och döljer raden i de andra lägena: i det här
+                   läget bär kroppen bara amountSek, eftersom overrides varken
+                   har en kolumn för namn eller för kategori. -->
+              <p class="lead" id="month-only-note" hidden></p>
+
+              <!-- Namn och kategori har ett eget id på sitt fältblock, så att
+                   app.js kan dölja dem i läget Bara <månad>. Att dölja och inte
+                   spärra: ett utgråat fält ser ut som något som kan låsas upp. -->
+              <div class="field" id="name-field">
                 <label for="item-name">Namn</label>
                 <input id="item-name" name="name" type="text" autocomplete="off" />
                 <p class="field-error" id="error-name" role="alert"></p>
@@ -132,12 +141,43 @@
                 <p class="field-error" id="error-amountSek" role="alert"></p>
               </div>
 
-              <div class="field">
+              <div class="field" id="category-field">
                 <label for="item-category">Kategori</label>
                 <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
                      svensk kategorietikett skrivs för hand här. -->
                 <select id="item-category" name="category"></select>
                 <p class="field-error" id="error-category" role="alert"></p>
+              </div>
+
+              <!-- Återkommande [etapp 4]. Kryssrutan hör till DET HÄR formuläret
+                   och inte till ett andra: samma formulär gäller en engångspost,
+                   en mall och en ändring av en enda månad. De två fälten är
+                   dolda tills rutan kryssas; app.js sätter hidden på
+                   #recurring-fields och läser .checked. -->
+              <div class="field field-checkbox" id="recurring-field">
+                <label for="item-recurring">
+                  <input id="item-recurring" name="recurring" type="checkbox" />
+                  Återkommande
+                </label>
+              </div>
+
+              <div id="recurring-fields" hidden>
+                <div class="field">
+                  <label for="item-interval">Intervall</label>
+                  <!-- Alternativen fylls i av app.js ur INTERVAL_LABELS. Ingen
+                       svensk intervalletikett skrivs för hand här. -->
+                  <select id="item-interval" name="interval"></select>
+                  <p class="field-error" id="error-interval" role="alert"></p>
+                </div>
+
+                <div class="field">
+                  <label for="item-to-month">Till och med</label>
+                  <!-- Valfritt: tomt betyder tills vidare. Formen prövas av
+                       checkToMonth i src/core/item.js, som äger de två
+                       texterna — inget mönster skrivs här. -->
+                  <input id="item-to-month" name="toMonth" type="text" inputmode="numeric" autocomplete="off" />
+                  <p class="field-error" id="error-toMonth" role="alert"></p>
+                </div>
               </div>
 
               <p class="form-error" id="item-form-error" role="alert"></p>

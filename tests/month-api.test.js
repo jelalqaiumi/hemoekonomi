@@ -418,7 +418,11 @@ test('V8: PUT /api/poster/<id> ger 200, och GET visar nytt belopp och nya summor
     dueDate: null,
     recurring: false,
     seriesId: null,
-    overridden: false
+    overridden: false,
+    // En engångspost bär de två fälten som null: de två sorternas poster ska ha
+    // exakt samma fält (ARKITEKTUR.md, rättelsen "posten bär sitt intervall").
+    interval: null,
+    toMonth: null
   });
 
   const efter = await call('GET', `/api/manad/${MANAD}`, { cookie });

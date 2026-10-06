@@ -157,7 +157,12 @@ function toMonthItem(row) {
     dueDate: null,
     recurring: false,
     seriesId: null,
-    overridden: false
+    overridden: false,
+    // Samma två fält som toMonthItem i src/server/months.js, och null av samma
+    // skäl: de två sorternas poster ska ha exakt samma fält [etapp 4, rättelsen
+    // "posten bär sitt intervall"].
+    interval: null,
+    toMonth: null
   };
 }
 
@@ -232,7 +237,11 @@ export function readDemoMonth(state, month) {
       dueDate,
       recurring: true,
       seriesId: template.seriesId,
-      overridden
+      overridden,
+      // Mallens två egna fält, precis som readMonth i src/server/months.js ger
+      // dem: gränssnittet förifyller dem för "Från och med <månad>".
+      interval: template.interval,
+      toMonth: template.toMonth
     });
   }
 

@@ -20,7 +20,7 @@ import fs from 'node:fs/promises';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { CATEGORY_LABELS } from '../src/core/entry.js';
+import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
 import { formatSek } from '../src/core/money.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
@@ -85,6 +85,10 @@ function post(id, kind, name, amountOre, category, extra = {}) {
     recurring: false,
     seriesId: null,
     overridden: false,
+    // De två fälten posten bär sedan rättelsen "posten bär sitt intervall".
+    // null för en engångspost; en mallpost får sina värden genom extra.
+    interval: null,
+    toMonth: null,
     ...extra
   };
 }
@@ -1174,6 +1178,494 @@ test('(63) #month-error töms vid en lyckad hämtning', async (t) => {
 
   assert.equal(dom.falt('month-error').textContent, '');
   kravVynStaende(dom);
+});
+
+// ------------------- (64) till (67) återkommande poster [etapp 4]
+
+// Frågornas texter och de två valen, ur tabellen under "Gränssnittets två frågor
+// skrivs om" i ARKITEKTUR.md. Strängarna skrivs tecken för tecken som ägaren i
+// src/web/app.js skriver dem (LARDOMAR.md 2026-09-14). Månadens namn är samma
+// sträng som månadsväljarens rubrik, alltså monthLabel, och står skriven här och
+// inte uträknad.
+const EDIT_QUESTION = 'Vad ska ändras?';
+const REMOVE_QUESTION = 'Vad ska tas bort?';
+const BARA_MANADEN = `Bara ${MANAD_RUBRIK}`;
+const FRAN_OCH_MED_MANADEN = `Från och med ${MANAD_RUBRIK}`;
+
+// En post som kommer från en mall, på samma form som src/server/months.js lämnar
+// den: recurring och seriesId satta, och seriens id är en annan sträng än
+// postens — mallvägen tar seriens, månadsvägen postens, och ett test där de två
+// är samma sträng kan inte skilja vägarna åt (LARDOMAR.md 2026-09-16).
+const MALL_ID = '11111111-1111-4111-8111-111111111111';
+const SERIE_ID = '22222222-2222-4222-8222-222222222222';
+
+function mallpost(extra = {}) {
+  return post(MALL_ID, 'expense', 'Hyra', 1200000, 'housing', {
+    dueDate: '2026-09-01',
+    recurring: true,
+    seriesId: SERIE_ID,
+    interval: 'quarterly',
+    toMonth: '2027-06',
+    ...extra
+  });
+}
+
+// Frågans ruta i en rad, eller undefined när raden inte har någon.
+function fragan(rad) {
+  return rad.children.find((barn) => barn.className === 'item-question');
+}
+
+function fragetext(rad) {
+  const ruta = fragan(rad);
+  assert.notEqual(ruta, undefined, 'raden saknar frågans ruta');
+  return celltext(ruta, 'question-text');
+}
+
+function valen(rad) {
+  const ruta = fragan(rad);
+  assert.notEqual(ruta, undefined, 'raden saknar frågans ruta');
+  return ruta.children.filter((barn) => barn.tagName === 'button');
+}
+
+function kryssaAterkommande(dom, kryssad) {
+  dom.falt('item-recurring').checked = kryssad;
+  assert.equal(dom.falt('item-recurring').utlos('change'), true);
+}
+
+test('(64) kryssrutan Återkommande öppnar de två fälten, som är dolda tills den kryssas', async (t) => {
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([])));
+
+  assert.equal(dom.falt('add-expense').utlos('click'), true);
+  // Utgångsläget: rutan är inte kryssad och blocket är dolt.
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+
+  kryssaAterkommande(dom, true);
+  assert.equal(dom.falt('recurring-fields').hidden, false);
+
+  // Och tillbaka. Utgångsläget för det här steget är ett öppet block, så raden
+  // som döljer fälten fälls av just det.
+  kryssaAterkommande(dom, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+
+  // Avbryt nollställer både rutan och blocket: nästa post ska inte ärva
+  // återkommande av den förra.
+  kryssaAterkommande(dom, true);
+  assert.equal(dom.falt('item-cancel').utlos('click'), true);
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+
+  // Intervallets fyra alternativ kommer ur INTERVAL_LABELS och skrivs inte för
+  // hand i app.js.
+  assert.deepEqual(
+    dom.falt('item-interval').children.map((barn) => [barn.value, barn.textContent]),
+    Object.entries(INTERVAL_LABELS)
+  );
+  // Kryssrutan skickar inget anrop: de två anropen är GET /api/mig och månaden.
+  assert.equal(anrop.length, 2);
+});
+
+test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fält', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({ status: 201, json: { template: null } }))
+  );
+
+  dom.falt('add-expense').utlos('click');
+  fyllFormularet(dom);
+  kryssaAterkommande(dom, true);
+  dom.falt('item-interval').value = 'quarterly';
+  // Till och med lämnas tomt: tomt betyder tills vidare, och checkToMonth i
+  // src/core/item.js äger den frågan — app.js skickar strängen orörd.
+  dom.falt('item-to-month').value = '';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[2].method, 'POST');
+  assert.equal(anrop[2].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[2]), {
+    kind: 'expense',
+    name: 'Hyra',
+    amountSek: '1234,50',
+    category: 'housing',
+    interval: 'quarterly',
+    toMonth: ''
+  });
+  // Månaden hämtas om, och formuläret stängs med rutan nollställd.
+  assert.equal(anrop[3].url, MANADSVAG);
+  assert.equal(dom.falt('item-form-card').hidden, true);
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+});
+
+test('ett 400 från mallvägen visar fältfelen vid interval och toMonth', async (t) => {
+  // Texterna är ägarnas: intervallets står i src/core/entry.js, slutmånadens i
+  // src/core/item.js. app.js skriver dem vid sina fält och aldrig en egen text.
+  const intervalltext = 'Välj ett giltigt betalningsintervall: månadsvis, kvartalsvis, halvårsvis eller årsvis.';
+  const slutmanadstext = 'Till och med måste anges som ÅÅÅÅ-MM, eller lämnas tomt.';
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({
+      status: 400,
+      json: {
+        error: intervalltext,
+        fieldErrors: [
+          { field: 'interval', message: intervalltext },
+          { field: 'toMonth', message: slutmanadstext }
+        ]
+      }
+    }))
+  );
+
+  dom.falt('add-expense').utlos('click');
+  fyllFormularet(dom);
+  kryssaAterkommande(dom, true);
+  dom.falt('item-to-month').value = 'oktober';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(dom.faltfel('interval'), intervalltext);
+  assert.equal(dom.faltfel('toMonth'), slutmanadstext);
+  // Fältfelen står vid sina fält och inte i den allmänna rutan, och formuläret
+  // står kvar öppet.
+  assert.equal(dom.falt('item-form-error').textContent, '');
+  assert.equal(dom.falt('item-form-card').hidden, false);
+  // Ingen omhämtning: ingen post skapades.
+  assert.equal(anrop.length, 3);
+});
+
+test('(65) en mallrads Ändra visar två val med månadens namn i och öppnar inget formulär', async (t) => {
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([mallpost()])));
+
+  const rad = dom.rader('expense-list')[0];
+  // Rutan finns i raden men är tom och dold innan knappen trycks.
+  assert.equal(fragan(rad).hidden, true);
+  assert.equal(fragan(rad).children.length, 0);
+
+  assert.equal(knapp(rad, 'edit').utlos('click'), true);
+
+  assert.equal(fragan(rad).hidden, false);
+  assert.equal(fragetext(rad), EDIT_QUESTION);
+  // TVÅ val, inte tre: Hela serien är borttaget av rättelsen av etapp 4, och
+  // ingen varningstext finns därför heller.
+  assert.deepEqual(valen(rad).map((val) => val.textContent), [BARA_MANADEN, FRAN_OCH_MED_MANADEN]);
+  // Frågan kommer före formuläret: Ändra på en mallrad öppnar det inte självt.
+  assert.equal(dom.falt('item-form-card').hidden, true);
+  // Och frågan skickar inget anrop.
+  assert.equal(anrop.length, 2);
+});
+
+test('(65) en mallrads Ta bort visar sin egen fråga med samma två val', async (t) => {
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([mallpost()])));
+
+  const rad = dom.rader('expense-list')[0];
+  assert.equal(knapp(rad, 'remove').utlos('click'), true);
+
+  assert.equal(fragetext(rad), REMOVE_QUESTION);
+  assert.deepEqual(valen(rad).map((val) => val.textContent), [BARA_MANADEN, FRAN_OCH_MED_MANADEN]);
+  // Ta bort på en mallrad tar inte bort något självt: frågan kommer först.
+  assert.equal(anrop.length, 2);
+
+  // Den andra frågan ersätter den första i samma ruta: en rad frågar en sak i
+  // taget. Utgångsläget är borttagningsfrågan, så bytet fälls av det här steget.
+  knapp(rad, 'edit').utlos('click');
+  assert.equal(fragetext(rad), EDIT_QUESTION);
+});
+
+test('en andra frågas öppning stänger den första, så att två rader aldrig frågar samtidigt', async (t) => {
+  const andra = mallpost({
+    id: '33333333-3333-4333-8333-333333333333',
+    name: 'El',
+    seriesId: '44444444-4444-4444-8444-444444444444'
+  });
+  const { dom } = await starta(t, planInloggad(() => manadssvar([mallpost(), andra])));
+
+  const [hyra, el] = dom.rader('expense-list');
+  knapp(hyra, 'remove').utlos('click');
+  assert.equal(fragan(hyra).hidden, false);
+
+  knapp(el, 'edit').utlos('click');
+  assert.equal(fragan(el).hidden, false);
+  assert.equal(fragan(hyra).hidden, true, 'den första frågan står kvar öppen');
+});
+
+test('(66) en engångsposts Ändra öppnar formuläret direkt och raden har ingen fråga', async (t) => {
+  const bio = post('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'expense', 'Bio', 19950, 'subscription');
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([bio]), () => ({ status: 200, json: { item: bio } }))
+  );
+
+  const rad = dom.rader('expense-list')[0];
+  // Ingen ruta alls i raden: en engångspost har inget att fråga om.
+  assert.equal(fragan(rad), undefined);
+
+  assert.equal(knapp(rad, 'edit').utlos('click'), true);
+  assert.equal(dom.falt('item-form-card').hidden, false);
+  assert.equal(dom.falt('item-name').value, 'Bio');
+  assert.equal(dom.falt('item-submit').textContent, 'Spara ändring');
+  // Kryssrutan står tom och fälten dolda: en engångspost blir inte återkommande
+  // av en ändring, och vägen bär varken interval eller toMonth.
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+
+  skickaFormularet(dom);
+  await flush();
+
+  // Samma väg som före etapp 4: postens egen, varken månadsvägen eller mallvägen.
+  assert.equal(anrop[2].method, 'PUT');
+  assert.equal(anrop[2].url, `/api/poster/${bio.id}`);
+  assert.deepEqual(kropp(anrop[2]), {
+    kind: 'expense',
+    name: 'Bio',
+    amountSek: '199.5',
+    category: 'subscription'
+  });
+});
+
+// (67) i kravlistan prövade varningstexten på valet Hela serien. Valet är
+// borttaget av rättelsen av etapp 4, så raden går inte att bygga: det som är
+// kvar att pröva är skillnaden mellan de två valen, alltså vilken väg var och en
+// anropar. De två raderna (65) och (67) i ARKITEKTUR.md behöver skrivas om.
+test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med månaden till mallvägen', async (t) => {
+  const mall = mallpost();
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([mall]), () => ({ status: 200, json: { items: [mall], totals: NOLLOR } }))
+  );
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(valen(dom.rader('expense-list')[0])[0].utlos('click'), true);
+
+  // Formuläret öppnas ifyllt, med rutan tom: en avvikelse är ingen mall.
+  assert.equal(dom.falt('item-form-card').hidden, false);
+  assert.equal(dom.falt('item-amount').value, '12000');
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+  assert.equal(dom.falt('item-submit').textContent, 'Spara ändring');
+
+  dom.falt('item-amount').value = '13000';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[2].method, 'PUT');
+  assert.equal(anrop[2].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  // Kroppen bär amountSek och ingenting annat: en avvikelse har bara en kolumn
+  // för belopp.
+  assert.deepEqual(kropp(anrop[2]), { amountSek: '13000' });
+  // Månaden hämtas om: vyn byggs aldrig ur svaret på en ändring.
+  assert.equal(anrop[3].method, 'GET');
+  assert.equal(anrop[3].url, MANADSVAG);
+
+  // Det andra valet, från samma rad. Nu är rutan kryssad och de två fälten
+  // öppna: en ny version av serien är fortfarande en återkommande post.
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(valen(dom.rader('expense-list')[0])[1].utlos('click'), true);
+  assert.equal(dom.falt('item-recurring').checked, true);
+  assert.equal(dom.falt('recurring-fields').hidden, false);
+
+  dom.falt('item-interval').value = 'quarterly';
+  dom.falt('item-to-month').value = '2027-03';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[4].method, 'PUT');
+  // Seriens id, inte postens: de två vägarna skiljer sig i både sökväg och kropp.
+  assert.equal(anrop[4].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[4]), {
+    kind: 'expense',
+    name: 'Hyra',
+    amountSek: '12000',
+    category: 'housing',
+    interval: 'quarterly',
+    toMonth: '2027-03'
+  });
+  assert.equal(anrop[5].url, MANADSVAG);
+});
+
+test('(67) Ta bort: Bara månaden hoppar över månaden, Från och med månaden avslutar serien', async (t) => {
+  const mall = mallpost();
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([mall]),
+      ikoordning([{ status: 200, json: { items: [], totals: NOLLOR } }, { status: 204 }])
+    )
+  );
+
+  knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
+  assert.equal(valen(dom.rader('expense-list')[0])[0].utlos('click'), true);
+  await flush();
+
+  assert.equal(anrop[2].method, 'PUT');
+  assert.equal(anrop[2].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  assert.deepEqual(kropp(anrop[2]), { skipped: true });
+  assert.equal(anrop[3].method, 'GET');
+  assert.equal(anrop[3].url, MANADSVAG);
+
+  knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
+  assert.equal(valen(dom.rader('expense-list')[0])[1].utlos('click'), true);
+  await flush();
+
+  assert.equal(anrop[4].method, 'DELETE');
+  assert.equal(anrop[4].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  // Vägen har ingen kropp: vad som ska hända står i metoden och i sökvägen.
+  assert.equal(anrop[4].body, undefined);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
+});
+
+test('(70) Från och med förifyller Intervall och Till och med ur posten', async (t) => {
+  const { dom } = await starta(t, planInloggad(() => manadssvar([mallpost()])));
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(valen(dom.rader('expense-list')[0])[1].utlos('click'), true);
+
+  // Kvartalsvis, inte månadsvis: fältets första alternativ är monthly, så ett
+  // oförifyllt fält hade visat det (ARKITEKTUR.md, rättelsen "posten bär sitt
+  // intervall").
+  assert.equal(dom.falt('item-interval').value, 'quarterly');
+  assert.equal(dom.falt('item-to-month').value, '2027-06');
+});
+
+test('(70) en mall utan slutmånad ger ett tomt Till och med, inte strängen null', async (t) => {
+  const { dom } = await starta(t, planInloggad(() => manadssvar([mallpost({ toMonth: null })])));
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[1].utlos('click');
+
+  assert.equal(dom.falt('item-to-month').value, '');
+  assert.equal(dom.falt('item-interval').value, 'quarterly');
+});
+
+test('(71) en beloppsändring från och med månaden behåller intervallet', async (t) => {
+  const mall = mallpost();
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([mall]), () => ({ status: 200, json: { template: null } }))
+  );
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[1].utlos('click');
+
+  // Användaren ändrar BARA beloppet och rör inte intervallfältet. Det är hela
+  // fallet: före rättelsen skickades monthly, och kvartalsposten blev
+  // månadsvis utan att något varnade.
+  dom.falt('item-amount').value = '13000';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[2].method, 'PUT');
+  assert.equal(anrop[2].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[2]), {
+    kind: 'expense',
+    name: 'Hyra',
+    amountSek: '13000',
+    category: 'housing',
+    interval: 'quarterly',
+    toMonth: '2027-06'
+  });
+});
+
+test('(72) Bara månaden döljer de fält som inte går att ändra och visar sin rad', async (t) => {
+  const { dom } = await starta(t, planInloggad(() => manadssvar([mallpost()])));
+
+  // Utgångsläget är ett formulär där allt syns: fallet öppnar först Från och med,
+  // så att varje rad som döljer fälten fälls av bytet.
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[1].utlos('click');
+  assert.equal(dom.falt('name-field').hidden, false);
+  assert.equal(dom.falt('category-field').hidden, false);
+  assert.equal(dom.falt('recurring-field').hidden, false);
+  assert.equal(dom.falt('recurring-fields').hidden, false);
+  assert.equal(dom.falt('month-only-note').hidden, true);
+  assert.equal(dom.falt('month-only-note').textContent, '');
+
+  // Bara månaden: namn, kategori, kryssrutan och de två återkommandefälten är
+  // dolda. Beloppet syns — det är det enda overrides kan bära.
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[0].utlos('click');
+  assert.equal(dom.falt('name-field').hidden, true);
+  assert.equal(dom.falt('category-field').hidden, true);
+  assert.equal(dom.falt('recurring-field').hidden, true);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+  assert.equal(dom.falt('item-amount').value, '12000');
+  assert.equal(dom.falt('month-only-note').hidden, false);
+  assert.equal(dom.falt('month-only-note').textContent, `Ändrar bara beloppet för ${MANAD_RUBRIK}.`);
+
+  // Avbryt lägger tillbaka den vanliga vyn: nästa post ska inte öppnas utan
+  // namnfält.
+  assert.equal(dom.falt('item-cancel').utlos('click'), true);
+  assert.equal(dom.falt('name-field').hidden, false);
+  assert.equal(dom.falt('category-field').hidden, false);
+  assert.equal(dom.falt('recurring-field').hidden, false);
+  assert.equal(dom.falt('month-only-note').hidden, true);
+  assert.equal(dom.falt('month-only-note').textContent, '');
+});
+
+test('(72) en engångsposts Ändra och en ny post visar alla fält', async (t) => {
+  const bio = post('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'expense', 'Bio', 19950, 'subscription');
+  const { dom } = await starta(t, planInloggad(() => manadssvar([bio, mallpost()])));
+
+  // Utgångsläget sätts av mallradens Bara månaden, alltså motsatsen till det
+  // förväntade: de tre raderna som visar fälten igen fälls bara så.
+  knapp(dom.rader('expense-list')[1], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[1])[0].utlos('click');
+  assert.equal(dom.falt('name-field').hidden, true);
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(dom.falt('name-field').hidden, false);
+  assert.equal(dom.falt('category-field').hidden, false);
+  assert.equal(dom.falt('recurring-field').hidden, false);
+  assert.equal(dom.falt('month-only-note').hidden, true);
+
+  // Och för en ny post.
+  knapp(dom.rader('expense-list')[1], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[1])[0].utlos('click');
+  assert.equal(dom.falt('name-field').hidden, true);
+  assert.equal(dom.falt('add-income').utlos('click'), true);
+  assert.equal(dom.falt('name-field').hidden, false);
+  assert.equal(dom.falt('month-only-note').hidden, true);
+});
+
+test('valet som utlöser ett anrop är låst tills svaret kommit', async (t) => {
+  // Planen lämnar ändringen hängande: valet ska då vara låst, och ett andra
+  // klick ska inte nå servern.
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([mallpost()]), () => null));
+
+  knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
+  const bara = valen(dom.rader('expense-list')[0])[0];
+  assert.equal(bara.utlos('click'), true);
+  await flush();
+
+  assert.equal(anrop.length, 3);
+  assert.equal(bara.disabled, true, 'valet släpptes innan svaret kom');
+  assert.equal(bara.utlos('click'), false, 'ett låst val tog emot ett klick');
+  await flush();
+  assert.equal(anrop.length, 3, 'ett andra klick gav ett andra anrop');
+
+  anrop[2].svara({ status: 200, json: { items: [], totals: NOLLOR } });
+  await flush();
+  assert.equal(anrop.length, 4);
+  assert.equal(anrop[3].url, MANADSVAG);
+});
+
+test('ett 404 på en avslutad serie visar serverns text och lämnar valet släppt', async (t) => {
+  const serverns = 'Posten finns inte.';
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([mallpost()]), () => ({ status: 404, json: { error: serverns } }))
+  );
+
+  knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
+  const franOchMed = valen(dom.rader('expense-list')[0])[1];
+  franOchMed.utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('month-error').textContent, serverns);
+  assert.equal(franOchMed.disabled, false);
+  // Frågan står kvar öppen, så att användaren ser felet och kan försöka igen.
+  assert.equal(fragan(dom.rader('expense-list')[0]).hidden, false);
 });
 
 // ------------------------------------------------ (55) textspärr: summeringen

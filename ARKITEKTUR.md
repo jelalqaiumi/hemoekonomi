@@ -9147,14 +9147,15 @@ förstår följden utan att veta vad en mall är:
 
 | Knapp | Fråga | Val |
 |---|---|---|
-| Ändra | `Vad ska ändras?` | `Bara <månad>` · `Från och med <månad>` · `Hela serien` |
+| Ändra | `Vad ska ändras?` | `Bara <månad>` · `Från och med <månad>` |
 | Ta bort | `Vad ska tas bort?` | `Bara <månad>` · `Från och med <månad>` |
 
 `<månad>` skrivs med `monthLabel`, alltså `Oktober 2026`.
 
-`Hela serien` finns bara vid ändring och betyder att även passerade månader
-ändras — det är den enda operationen som rör historiken, och knappen ska därför
-bära en varning: `Det här ändrar även tidigare månader.`
+**Tabellen ovan hade först ett tredje val, `Hela serien`, med en varningstext.**
+Det valet togs bort av rättelsen längre ned i det här avsnittet — se
+`#### Hela serien tas bort som val`. Raderna här är uppdaterade; varningstexten
+finns inte längre, eftersom ingen av de två kvarvarande vägarna rör historiken.
 
 **Tomläget** och summeringen är oförändrade. En mallpost räknas in i summorna på
 samma sätt som i dag.
@@ -9190,9 +9191,14 @@ samma sätt som i dag.
 | # | Fall | Kräver |
 |---|---|---|
 | (64) | kryssrutan öppnar de två fälten | de är dolda tills den kryssas |
-| (65) | en mallrads `Ändra` visar tre val | med månadens namn i |
-| (66) | en engångsposts `Ändra` visar inga val | formuläret öppnas direkt, som i dag |
-| (67) | `Hela serien` bär sin varning | texten syns |
+| (65) | en mallrads `Ändra` visar två val | `Bara <månad>` och `Från och med <månad>`, med månadens namn skrivet av `monthLabel` |
+| (66) | en engångsposts `Ändra` visar inga val | formuläret öppnas direkt, som före etapp 4 |
+| (67) | de två valen går till olika vägar | `Från och med` anropar `PUT /api/mallar/<seriesId>/<månad>`, `Bara` anropar `PUT /api/poster/<id>/manad/<månad>` |
+
+**(65) och (67) är omskrivna.** De bar först `tre val` respektive varningstexten
+på `Hela serien`, alltså kravlistans form före rättelsen i samma avsnitt. Det
+som nu prövas i (67) är skillnaden som betyder något: att de två valen leder till
+olika vägar, och därmed till olika följder för historiken.
 
 ---
 
@@ -9446,3 +9452,65 @@ Ingen serviceworker, inget `mockServiceWorker.js`, ingen byggkedja.
 | (D8) | utan `localStorage` fungerar demon | läsningen kastar, appen visar ändå seed-datan |
 | (D9) | en återkommande post följer med | syns i tre månader i rad |
 | (D10) | kvartalsposten syns bara sina månader | tre månader, en träff |
+
+---
+
+### Rättelse: posten bär sitt intervall (bindande) [etapp 4]
+
+Byggaren av gränssnittet hittade en tyst dataförlust, och den är verifierad:
+`readMonth` ger en post fälten `id, kind, name, amountOre, category, dueDate,
+recurring, seriesId, overridden` — **inte `interval` och inte `toMonth`.**
+
+`PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>` kräver båda. Gränssnittet kan alltså inte
+förifylla dem, och `<select>` står på sitt första alternativ, som är månadsvis.
+Följden: en användare som ändrar **beloppet** på en kvartalspost genom
+`Från och med <månad>`, utan att röra intervallfältet, skriver om serien till
+månadsvis. Ingenting varnar, och felet syns först när en dragning dyker upp i en
+månad den inte skulle.
+
+Det är samma sorts fel som versioneringen finns för att undvika: en ändring som
+rör något användaren inte bad om att ändra.
+
+#### Postens form utökas
+
+`readMonth` ger varje post två fält till. De är `null` för en engångspost, som
+inte har något intervall:
+
+| Fält | Mallpost | Engångspost |
+|---|---|---|
+| `interval` | mallens `interval` | `null` |
+| `toMonth` | mallens `to_month`, eller `null` | `null` |
+
+Samma två fält läggs till i `src/web/demo/demo-fetch.js`, så att demon och
+servern svarar lika. Ett testfall ska jämföra fältlistan mellan de två.
+
+Gränssnittet förifyller då `Intervall` och `Till och med` ur posten när
+`Från och med <månad>` väljs, precis som det redan förifyller namn, belopp och
+kategori.
+
+#### `Bara <månad>` döljer de fält som inte går att ändra
+
+Byggarens andra fynd: i det läget bär kroppen bara `amountSek`, eftersom
+`overrides` varken har en kolumn för namn eller för kategori. Fälten står ändå
+redigerbara, och en ändring av namnet försvinner tyst när formuläret skickas.
+
+I läget `Bara <månad>` döljs därför **namn, kategori, kryssrutan och de två
+återkommandefälten**. Kvar står beloppet, som är det enda som går att ändra för
+en enskild månad. Formulärets rubrik eller en kort rad ska säga vad som gäller:
+
+```
+Ändrar bara beloppet för <månad>.
+```
+
+Att dölja är bättre än att spärra: ett utgråat fält ser ut som något som kan
+låsas upp, medan ett fält som inte finns inte väcker frågan.
+
+#### Kravlista
+
+| # | Fall | Kräver |
+|---|---|---|
+| (68) | posten bär `interval` och `toMonth` | en kvartalsmall ger `quarterly`, en engångspost ger `null` |
+| (69) | demon ger samma fält som servern | fältlistorna jämförs |
+| (70) | `Från och med` förifyller intervallet | en kvartalspost visar `Kvartalsvis` i fältet, inte `Månadsvis` |
+| (71) | en beloppsändring behåller intervallet | ändra bara beloppet på en kvartalspost: serien är kvar som kvartalsvis |
+| (72) | `Bara <månad>` döljer de fält som inte går att ändra | namn, kategori, kryssruta och de två fälten är dolda; beloppet syns |

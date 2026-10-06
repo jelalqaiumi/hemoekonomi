@@ -18,6 +18,8 @@ import { monthTotals } from '../src/core/budget.js';
 import { monthOfIsoDate, shiftMonth } from '../src/core/dates.js';
 import { formatSek } from '../src/core/money.js';
 import { AUTH_MESSAGES, NOT_LOGGED_IN_MESSAGE } from '../src/server/auth.js';
+import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
+import { addMonthItem, addTemplate, readMonth } from '../src/server/months.js';
 import { mountBanner } from '../src/web/demo/banner.js';
 import { createDemoFetch, readDemoMonth, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
 import { DEMO } from '../src/web/demo/demolage.js';
@@ -210,11 +212,13 @@ test('(D3) månadens och postens vägar svarar som servern', async () => {
     'category',
     'dueDate',
     'id',
+    'interval',
     'kind',
     'name',
     'overridden',
     'recurring',
-    'seriesId'
+    'seriesId',
+    'toMonth'
   ]);
 
   // En månad som inte är en månad: 400 med månadens text.
@@ -369,6 +373,97 @@ test('(D3) avvikelsevägen svarar med hela månaden, precis som servern', async 
 });
 
 // ---------------------------------------------------------------- (D4)
+
+// (69) Fältlistorna jämförs mot SERVERN och inte mot en handskriven lista: en
+// lista skriven här är ett andra facit, och den som lägger till ett fält i
+// src/server/months.js rättar den inte (LARDOMAR.md 2026-09-02). Jämförelsen
+// görs för båda sorternas poster, eftersom mallposten och engångsposten byggs av
+// var sin gren i båda filerna.
+test('(69) demons poster har exakt de fält src/server/months.js ger dem', async () => {
+  const db = openDatabase(MEMORY_PATH);
+  const anvandare = 'u-demo';
+  db.prepare('INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)')
+    .run(anvandare, DEMO_EMAIL, `${IDAG}T12:00:00.000Z`);
+
+  const utkast = {
+    kind: 'expense',
+    name: 'Hemförsäkring',
+    amountOre: HEMFORSAKRING_ORE,
+    category: 'insurance'
+  };
+  addTemplate(anvandare, MANAD, { ...utkast, interval: 'quarterly', toMonth: null }, {
+    db,
+    now: `${IDAG}T12:00:00.000Z`,
+    makeId: () => 't-demo'
+  });
+  addMonthItem(anvandare, MANAD, { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other' }, {
+    db,
+    now: `${IDAG}T12:00:00.000Z`,
+    makeId: () => 'm-demo'
+  });
+  const serverns = readMonth(anvandare, MANAD, { db }).items;
+  db.close();
+
+  // Demons sida. Seed-datan är bara mallar, så engångsposten läggs till genom
+  // attrappens egen POST — samma väg gränssnittet använder, och den enda som
+  // bygger en engångspost i demon.
+  const { state, fetch } = riggning();
+  const ny = await fetch(`/api/manad/${MANAD}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'expense', name: 'Tandläkare', amountSek: '950', category: 'other' })
+  });
+  assert.equal(ny.status, 201);
+  const demons = readDemoMonth(state, MANAD).items;
+
+  const falten = (poster, villkor) => {
+    const post = poster.find(villkor);
+    assert.notEqual(post, undefined, 'posten saknas i listan');
+    return Object.keys(post).sort();
+  };
+
+  const serverMall = falten(serverns, (post) => post.recurring === true);
+  const demoMall = falten(demons, (post) => post.recurring === true);
+  assert.deepEqual(demoMall, serverMall);
+
+  const serverEngang = falten(serverns, (post) => post.recurring === false);
+  const demoEngang = falten(demons, (post) => post.recurring === false);
+  assert.deepEqual(demoEngang, serverEngang);
+
+  // Och de två sorterna har samma fält i båda filerna, så att gränssnittet kan
+  // läsa listan utan att fråga varifrån raden kom.
+  assert.deepEqual(demoMall, demoEngang);
+  // De två nya fälten ingår OCH bär mallens värden: utan de här raderna
+  // passerar jämförelsen också om båda filerna tappar fälten samtidigt.
+  // Mallen skapas genom attrappens egen mallväg, med ett intervall och en
+  // slutmånad som skiljer sig från förvalen — ett fält som bär sitt förval kan
+  // inte skilja "läst ur mallen" från "skrivet för hand".
+  const kvartal = await fetch(`/api/mallar/${MANAD}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'expense',
+      name: 'Vägavgift',
+      amountSek: '450',
+      category: 'transport',
+      interval: 'quarterly',
+      toMonth: '2027-06'
+    })
+  });
+  assert.equal(kvartal.status, 201);
+
+  const efter = readDemoMonth(state, MANAD).items;
+  const skapad = efter.find((post) => post.name === 'Vägavgift');
+  assert.notEqual(skapad, undefined, 'den skapade mallen syns inte i månaden');
+  assert.equal(skapad.interval, 'quarterly');
+  assert.equal(skapad.toMonth, '2027-06');
+  // En mall utan slutmånad bär null, och engångsposten null på båda.
+  assert.equal(efter.find((post) => post.name === 'Hyra').interval, 'monthly');
+  assert.equal(efter.find((post) => post.name === 'Hyra').toMonth, null);
+  const engangsposten = efter.find((post) => post.recurring === false);
+  assert.equal(engangsposten.interval, null);
+  assert.equal(engangsposten.toMonth, null);
+});
 
 test('(D4) summorna kommer ur monthTotals och räknas inte av attrappen', async () => {
   const { fetch } = riggning();

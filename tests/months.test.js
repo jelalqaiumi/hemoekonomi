@@ -338,7 +338,11 @@ test('addMonthItem skapar posten och svarar med den', () => {
     dueDate: null,
     recurring: false,
     seriesId: null,
-    overridden: false
+    overridden: false,
+    // En engångspost bär de två fälten som null: de två sorternas poster ska ha
+    // exakt samma fält (ARKITEKTUR.md, rättelsen "posten bär sitt intervall").
+    interval: null,
+    toMonth: null
   });
   assert.deepEqual(namesIn(db, ANNA, '2026-10'), ['Tandläkare']);
   // Och bara i sin månad.
@@ -450,6 +454,46 @@ test('en post ur en mall bär recurring och seriesId, en engångspost inte', () 
   assert.equal(engång.recurring, false);
   assert.equal(engång.seriesId, null);
   assert.deepEqual(Object.keys(mall).sort(), Object.keys(engång).sort());
+  db.close();
+});
+
+test('(68) posten bär interval och toMonth: mallens värden, och null för en engångspost', () => {
+  const db = freshDatabase();
+  // En kvartalsmall med en satt slutmånad, så att båda fälten har ett värde som
+  // skiljer sig från förvalet: interval quarterly och inte monthly, to_month en
+  // månad och inte null. Ett fält som bär sitt förval kan inte skilja "läst ur
+  // raden" från "skrivet för hand".
+  insertTemplate(db, {
+    id: 't-kvartal',
+    name: 'Hemförsäkring',
+    interval: 'quarterly',
+    start_date: '2026-01-15',
+    to_month: '2027-06'
+  });
+  insertMonthItemRow(db, { id: 'm-1', name: 'Tandläkare', month: '2026-10' });
+
+  const items = readMonth(ANNA, '2026-10', { db }).items;
+  const mall = items.find((item) => item.name === 'Hemförsäkring');
+  const engång = items.find((item) => item.name === 'Tandläkare');
+
+  assert.equal(mall.interval, 'quarterly');
+  assert.equal(mall.toMonth, '2027-06');
+  // Engångsposten har inget intervall och ingen slutmånad, och bär fälten som
+  // null — inte som undefined och inte alls: gränssnittet förifyller dem ur
+  // posten, och ett saknat fält hade gett strängen "undefined" i formuläret.
+  assert.equal(engång.interval, null);
+  assert.equal(engång.toMonth, null);
+  assert.deepEqual(Object.keys(mall).sort(), Object.keys(engång).sort());
+  db.close();
+});
+
+test('(68) en mall utan slutmånad ger toMonth null, inte den tomma strängen', () => {
+  const db = freshDatabase();
+  insertTemplate(db, { id: 't-oandlig', name: 'Hyra', to_month: null, start_date: '2026-01-15' });
+
+  const mall = readMonth(ANNA, '2026-10', { db }).items[0];
+  assert.equal(mall.toMonth, null);
+  assert.equal(mall.interval, 'monthly');
   db.close();
 });
 

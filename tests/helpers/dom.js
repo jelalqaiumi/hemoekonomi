@@ -56,6 +56,10 @@ class FakeElement {
     this.value = '';
     this.type = '';
     this.disabled = false;
+    // Kryssrutan Återkommande bär sitt värde i checked och inte i value, precis
+    // som i webbläsaren: app.js läser .checked och sätter den själv i varje
+    // formulärläge.
+    this.checked = false;
     // hidden och title är egenskaper app.js sätter: hidden byter vy och döljer
     // formuläret, title bär texten på märket för en återkommande post.
     this.hidden = false;
@@ -166,6 +170,15 @@ const FALT = Object.freeze([
   { name: 'category', id: 'item-category', tagName: 'select' }
 ]);
 
+// De två fälten kryssrutan Återkommande öppnar [etapp 4]. De ligger i
+// #recurring-fields, som app.js döljer och visar, och är registrerade i
+// formulärets elements precis som de tre ovan — FORM.reset() nollställer dem,
+// så att ett värde från en tidigare post inte följer med till nästa sparning.
+const ATERKOMMANDE_FALT = Object.freeze([
+  { name: 'interval', id: 'item-interval', tagName: 'select' },
+  { name: 'toMonth', id: 'item-to-month', tagName: 'input' }
+]);
+
 // De tre listorna, i index.html:s ordning. Varje slag ger tre id:n: knappen som
 // öppnar formuläret, listan och tomtexten.
 const LISTOR = Object.freeze(['income', 'expense', 'saving']);
@@ -217,12 +230,38 @@ export function createDom() {
   const formCard = skapa('section', 'item-form-card', { hidden: true });
   const form = new FakeForm('item-form');
   registry.set('item-form', form);
+  // Raden som säger vad läget Bara <månad> ändrar, dold från början precis som
+  // index.html skriver attributet.
+  form.append(skapa('p', 'month-only-note', { className: 'lead', hidden: true }));
+  // Namn och kategori ligger i ett fältblock med eget id: app.js döljer blocken
+  // i läget Bara <månad>, där beloppet är det enda som går att ändra. Beloppet
+  // har därför inget block — det döljs aldrig.
+  const faltblock = Object.freeze({ name: 'name-field', category: 'category-field' });
   for (const { name, id, tagName } of FALT) {
     const falt = skapa(tagName, id);
     const fel = skapa('p', `error-${name}`, { className: 'field-error' });
-    form.append(falt, fel);
+    if (Object.hasOwn(faltblock, name)) {
+      const block = skapa('div', faltblock[name], { className: 'field' });
+      block.append(falt, fel);
+      form.append(block);
+    } else {
+      form.append(falt, fel);
+    }
     form.registrera(name, falt);
   }
+  // Kryssrutan Återkommande och de två fälten den öppnar. Rutan ligger utanför
+  // #recurring-fields: den syns alltid, och det är den som öppnar blocket.
+  const recurringField = skapa('div', 'recurring-field', { className: 'field field-checkbox' });
+  recurringField.append(skapa('input', 'item-recurring', { type: 'checkbox' }));
+  form.append(recurringField);
+  const recurringFields = skapa('div', 'recurring-fields', { hidden: true });
+  for (const { name, id, tagName } of ATERKOMMANDE_FALT) {
+    const falt = skapa(tagName, id);
+    const fel = skapa('p', `error-${name}`, { className: 'field-error' });
+    recurringFields.append(falt, fel);
+    form.registrera(name, falt);
+  }
+  form.append(recurringFields);
   form.append(
     skapa('p', 'item-form-error', { className: 'form-error' }),
     skapa('button', 'item-submit', { type: 'submit', textContent: 'Spara' }),

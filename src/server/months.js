@@ -135,7 +135,14 @@ export function readMonth(userId, month, { db = getDatabase() } = {}) {
       // seriens id.
       recurring: true,
       seriesId: template.series_id,
-      overridden
+      overridden,
+      // Mallens två egna fält. Gränssnittet förifyller dem när användaren väljer
+      // "Från och med <månad>": utan dem står intervallfältet på sitt första
+      // alternativ, och en beloppsändring på en kvartalspost skrev tyst om
+      // serien till månadsvis (ARKITEKTUR.md, rättelsen "posten bär sitt
+      // intervall").
+      interval: template.interval,
+      toMonth: template.to_month
     });
   }
 
@@ -231,7 +238,13 @@ function toMonthItem(row) {
     dueDate: null,
     recurring: false,
     seriesId: null,
-    overridden: false
+    overridden: false,
+    // En engångspost har inget intervall och ingen slutmånad. De två fälten står
+    // ändå med, och som null: de två sorternas poster ska ha exakt samma fält,
+    // så att en anropare kan läsa listan utan att fråga varifrån raden kom
+    // [etapp 4, rättelsen "posten bär sitt intervall"].
+    interval: null,
+    toMonth: null
   };
 }
 

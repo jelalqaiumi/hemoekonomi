@@ -522,6 +522,54 @@ button:disabled:hover {
   cursor: help;
 }
 
+/* Kryssrutan Återkommande [etapp 4]. Utan regeln ärver rutan .field input ovan
+   och blir hundra procent bred. Rutan och sin text står på samma rad, så
+   etiketten är flex och inte block som de andra fältens etiketter. */
+.field-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.field-checkbox input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+}
+
+/* Frågan en mallrad ställer [etapp 4]: texten och de två valen. Rutan är ett
+   eget barn i .item, som radbryter, och flex-basis 100 procent lägger den därför
+   på en egen rad under knapparna i stället för att tränga ihop dem. */
+.item-question {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.question-text {
+  color: var(--text-svag);
+  font-size: 0.875rem;
+}
+
+/* Valens knappar bär varken .edit eller .remove: inget av de två valen är en
+   borttagning i sig, och färgen ska inte påstå det. */
+.item-question button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--lank);
+  border-radius: var(--radie-knapp);
+  background: var(--yta);
+  color: var(--lank);
+  font-size: 0.875rem;
+}
+
+.item-question button:hover {
+  background: var(--yta-mjuk);
+}
+
 .empty-state {
   margin: 0;
   color: var(--text-svag);
