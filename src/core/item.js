@@ -17,7 +17,8 @@
 // anropare i src/ förrän gränssnittet visar etiketterna, och en export utan
 // användare får inga meningsfulla tester (ARKITEKTUR.md, "Teststrategi").
 
-import { checkAmountSek, checkCategory, checkName, isPlainObject } from './entry.js';
+import { compareMonths, isValidIsoMonth } from './dates.js';
+import { checkAmountSek, checkCategory, checkInterval, checkName, isPlainObject } from './entry.js';
 import { sekToOre } from './money.js';
 
 // Den text den här modulen äger, ur tabellen "Den text som saknades" i
@@ -25,7 +26,16 @@ import { sekToOre } from './money.js';
 // Texten nämner inte de engelska nycklarna income, expense och saving —
 // användaren ser aldrig dem.
 const MESSAGES = Object.freeze({
-  kind: 'Välj inkomst, utgift eller sparande.'
+  kind: 'Välj inkomst, utgift eller sparande.',
+  // De två texterna för fältet Till och med [etapp 4]. interval får sin text av
+  // sin ägare, checkInterval i entry.js; toMonth har ingen ägare sedan tidigare
+  // och får den här. Texten nämner inte kolumnnamnet to_month — användaren ser
+  // bara fältets etikett.
+  toMonthFormat: 'Till och med måste anges som ÅÅÅÅ-MM, eller lämnas tomt.',
+  toMonthBeforeFrom: 'Till och med kan inte vara före den månad posten gäller från.',
+  // Texten för en avvikelse som varken är ett belopp eller en överhoppning
+  // [etapp 4].
+  overrideShape: 'Ange ett belopp för månaden, eller att posten ska hoppas över.'
 });
 
 // Ordningen är inte fri: den är sorteringsordningen för slag i en månads
@@ -101,4 +111,123 @@ export function validateMonthItemDraft(draft) {
     return { ok: false, errors };
   }
   return { ok: true, value };
+}
+
+// Mallens utkast [etapp 4]: månadspostens fyra fält plus interval och toMonth.
+//
+// Funktionen anropar validateMonthItemDraft i stället för att pröva kind, name,
+// amountSek och category en andra gång, och checkInterval i entry.js i stället
+// för att skriva av INTERVALS-villkoret. Varje fält har därmed exakt en ägare:
+// entry.js äger name, amountSek, category och interval, den här modulen äger
+// kind och toMonth. En handskriven kopia av något av dem här vore två facit för
+// samma fråga (LARDOMAR.md 2026-09-02).
+//
+// month är den månad mallen ska gälla från. Den är ingen användarinput när
+// funktionen anropas — api.js har redan avvisat en ogiltig månad i sökvägen med
+// isValidIsoMonth — så en månad som inte är en månad är ett programmeringsfel
+// och kastar, i stället för att bli ett fältfel användaren inte kan rätta.
+//
+// Fältordningen i errors är bindande och följer formuläret: kind, name,
+// amountSek, category, interval, toMonth. De två sista står sist därför att
+// kryssrutan Återkommande öppnar dem under de fyra andra. Alla sex prövas,
+// aldrig bara det första.
+export function validateTemplateDraft(draft, month) {
+  if (!isValidIsoMonth(month)) {
+    throw new RangeError(`validateTemplateDraft kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".`);
+  }
+  const source = isPlainObject(draft) ? draft : {};
+  const base = validateMonthItemDraft(draft);
+  const errors = base.ok ? [] : [...base.errors];
+  const value = base.ok ? { ...base.value } : {};
+
+  const interval = checkInterval(source.interval);
+  if (interval.message) {
+    errors.push({ field: 'interval', message: interval.message });
+  } else {
+    value.interval = interval.value;
+  }
+
+  const toMonth = checkToMonth(source.toMonth, month);
+  if (toMonth.message) {
+    errors.push({ field: 'toMonth', message: toMonth.message });
+  } else {
+    value.toMonth = toMonth.value;
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, value };
+}
+
+// Slutmånaden, eller null för "tills vidare". Enda definitionen av villkoret.
+//
+// Tomt betyder tills vidare: fältet Till och med är valfritt, och ett formulär
+// som inte fyller i det skickar antingen ingen nyckel alls, null eller den tomma
+// strängen. Alla tre ger samma svar, null, så ingen anropare behöver veta vilken
+// av de tre webbläsaren råkade skicka.
+//
+// Jämförelsen mot month ägs av compareMonths i dates.js. Den finns här och inte
+// bara som schemats CHECK (to_month IS NULL OR to_month >= from_month), eftersom
+// ett brutet CHECK ger användaren "Uppgifterna kunde inte sparas: något värde är
+// ogiltigt." och ett 500 — ett fel i ett fält användaren själv fyllt i ska ge
+// fältets egen text och ett 400 ("Två spärrar i två språk").
+function checkToMonth(raw, month) {
+  if (raw === undefined || raw === null) {
+    return { value: null };
+  }
+  if (typeof raw !== 'string') {
+    return { message: MESSAGES.toMonthFormat };
+  }
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return { value: null };
+  }
+  if (!isValidIsoMonth(trimmed)) {
+    return { message: MESSAGES.toMonthFormat };
+  }
+  if (compareMonths(trimmed, month) < 0) {
+    return { message: MESSAGES.toMonthBeforeFrom };
+  }
+  return { value: trimmed };
+}
+
+// Avvikelsens utkast [etapp 4]: antingen ett annat belopp för en enda månad,
+// eller att posten hoppas över den månaden. Aldrig båda, aldrig ingenting —
+// samma villkor som schemats
+// CHECK ((skipped = 1 AND amount_ore IS NULL) OR (skipped = 0 AND amount_ore IS NOT NULL)),
+// uttryckt en gång till på kärnans språk, där det kan ge användaren en svensk
+// text och ett 400 i stället för ett 500 ("Två spärrar i två språk").
+//
+// Kroppen har två former, och den här funktionen är ägaren till frågan vilken
+// av dem ett anrop har: { skipped: true } eller { amountSek }. Beloppet prövas
+// av sin ägare, checkAmountSek i entry.js, och räknas om av sekToOre — ingen
+// andra kopia av beloppskedjan.
+//
+// skipped prövas före amountSek: en kropp som bär båda är en kropp som ber om
+// två motstridiga saker, och "hoppa över" är den som går att utföra utan att
+// något belopp behöver tolkas. Fältordningen i errors är därmed skipped,
+// amountSek.
+export function validateOverrideDraft(draft) {
+  const source = isPlainObject(draft) ? draft : {};
+
+  if (source.skipped === true) {
+    return { ok: true, value: { skipped: true, amountOre: null } };
+  }
+
+  // Jämförelsen mot undefined och inte Object.hasOwn: de två skiljer sig bara
+  // för en kropp med amountSek: undefined, och JSON kan inte uttrycka det —
+  // JSON.stringify utelämnar nyckeln. Skillnaden är alltså onåbar genom API:t,
+  // och en onåbar skillnad är ingen spärr (LARDOMAR.md 2026-09-04). Körd
+  // mutation: Object.hasOwn(source, 'amountSek') i stället ger EXIT=0 och
+  // fail 0 på hela sviten.
+  if (source.amountSek === undefined) {
+    return { ok: false, errors: [{ field: 'skipped', message: MESSAGES.overrideShape }] };
+  }
+
+  const amount = checkAmountSek(source.amountSek);
+  if (amount.message) {
+    return { ok: false, errors: [{ field: 'amountSek', message: amount.message }] };
+  }
+  return { ok: true, value: { skipped: false, amountOre: sekToOre(amount.value) } };
 }

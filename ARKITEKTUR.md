@@ -9075,3 +9075,216 @@ adressen och `Logga ut`: en rad överst på mobil, en spalt till vänster vid 60
 I mörkt läge är `--bakgrund` samma ton som sidomenyn, så menyn skulle flyta in i
 sidan — en ram i `--guld` skiljer dem åt, och guld är den enda ton i temat som
 når 3:1 mot marinblått och samtidigt syns mot `--bakgrund` i ljust läge.
+
+---
+
+### Återkommande poster (bindande) [etapp 4]
+
+Datamodellen finns sedan etapp 1: `templates` med `series_id`, `from_month` och
+`to_month`, samt `overrides` per månad. `readMonth` läser dem redan. Det som
+saknas är vägen att **skapa och ändra** dem.
+
+#### Vad en användare ska kunna
+
+| Vad | Hur det faller ut i modellen |
+|---|---|
+| Göra en post återkommande | En rad i `templates` med `from_month` = månaden posten skapas i |
+| Välja intervall | `interval`: månadsvis, kvartalsvis, halvårsvis eller årsvis |
+| Sätta ett slutdatum | `to_month`, eller `NULL` för tills vidare |
+| Ändra beloppet **bara denna månad** | En rad i `overrides` med `amount_ore` |
+| Ändra **från och med denna månad** | Den gamla raden får `to_month` = föregående månad; en ny rad med samma `series_id` skapas från den här månaden |
+| Hoppa över **bara denna månad** | En rad i `overrides` med `skipped = 1` |
+| Avsluta serien | `to_month` = föregående månad. Tidigare månader rörs aldrig |
+
+**Historiken är oföränderlig.** Ingen av operationerna skriver om en rad som
+gäller en passerad månad. Det är hela skälet till versioneringen, och det ska
+finnas ett testfall som bevisar det för varje operation.
+
+#### Datalagret — `src/server/months.js`
+
+Varje funktion tar `userId` först och har `user_id = ?` i varje `WHERE`.
+
+```
+addTemplate(userId, month, draft)            -> den skapade mallen
+endTemplate(userId, seriesId, month)         -> avslutar serien från och med month
+changeTemplateFrom(userId, seriesId, month, draft) -> versionerar: avslutar gamla, skapar ny
+setOverride(userId, templateId, month, amountOre) -> belopp bara den månaden
+skipMonth(userId, templateId, month)         -> hoppar över den månaden
+clearOverride(userId, templateId, month)     -> tar bort en override
+```
+
+**`changeTemplateFrom` är den svåraste** och ska ske i **en transaktion**: faller
+den andra skrivningen får den första inte bli kvar. SQLite ger `BEGIN` och
+`COMMIT` genom `exec`; `db.js` äger omslutningen.
+
+**En mall som ändras från sin egen `from_month`** ska inte ge två rader där den
+gamla är tom. Sätts `to_month` till månaden före `from_month` blir serien
+ogiltig — `CHECK (to_month IS NULL OR to_month >= from_month)` fäller den. Då ska
+den gamla raden i stället **uppdateras** i stället för att versioneras, eftersom
+ingen passerad månad berörs. Skriv ut villkoret i koden.
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `POST /api/mallar/<ÅÅÅÅ-MM>` | `{ kind, name, amountSek, category, interval, toMonth }` | `201` med mallen. `400` med `fieldErrors`. `401`. `500`. |
+| `PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>` | samma plus `{ omfattning }` | `200`. `400`. `401`. `404`. `500`. |
+| `DELETE /api/mallar/<seriesId>/<ÅÅÅÅ-MM>` | `{ omfattning }` | `204`. `401`. `404`. `500`. |
+| `PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>` | `{ amountSek }` eller `{ skipped: true }` | `200`. `400`. `401`. `404`. `500`. |
+
+`omfattning` är `"denna"`, `"framat"` eller `"hela"`. Ett okänt värde ger `400`
+med `Välj om ändringen gäller den här månaden, framåt eller hela serien.`
+
+#### Gränssnittet
+
+**I formuläret** tillkommer en kryssruta `Återkommande` som öppnar två fält:
+`Intervall` med de fyra alternativen ur `INTERVAL_LABELS`, och `Till och med`
+som är valfritt och tomt betyder tills vidare.
+
+**På en rad som kommer från en mall** har `Ändra` och `Ta bort` inte längre ett
+enda utfall. Båda öppnar en fråga med tre val, formulerade så att användaren
+förstår följden utan att veta vad en mall är:
+
+| Knapp | Fråga | Val |
+|---|---|---|
+| Ändra | `Vad ska ändras?` | `Bara <månad>` · `Från och med <månad>` · `Hela serien` |
+| Ta bort | `Vad ska tas bort?` | `Bara <månad>` · `Från och med <månad>` |
+
+`<månad>` skrivs med `monthLabel`, alltså `Oktober 2026`.
+
+`Hela serien` finns bara vid ändring och betyder att även passerade månader
+ändras — det är den enda operationen som rör historiken, och knappen ska därför
+bära en varning: `Det här ändrar även tidigare månader.`
+
+**Tomläget** och summeringen är oförändrade. En mallpost räknas in i summorna på
+samma sätt som i dag.
+
+#### Kravlista [etapp 4]
+
+`tests/months.test.js`, fortsätter från (M10):
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M11) | en mall syns i varje månad från `from_month` | tre månader i rad |
+| (M12) | `endTemplate` lämnar passerade månader orörda | månaden före har posten kvar, månaden efter saknar den |
+| (M13) | `changeTemplateFrom` versionerar | två rader med samma `series_id`, den gamla med `to_month` satt |
+| (M14) | ändring framåt rör inte historiken | föregående månad har gamla beloppet, denna och nästa det nya |
+| (M15) | ändring från egen `from_month` uppdaterar i stället | en rad, inte två |
+| (M16) | `setOverride` ändrar bara sin månad | grannmånaderna oförändrade |
+| (M17) | `skipMonth` tar bort posten ur en månad | och bara ur den |
+| (M18) | `clearOverride` återställer | mallens belopp tillbaka |
+| (M19) | transaktionen håller | en `changeTemplateFrom` som faller halvvägs lämnar noll ändringar |
+| (M20) | en annan användares mall är onåbar | samma svar som för ett okänt id |
+
+`tests/month-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M21) | `POST /api/mallar/<månad>` skapar | `201`, och posten syns i `GET` för nästa månad också |
+| (M22) | okänd `omfattning` ger `400` | texten ordagrant |
+| (M23) | `DELETE` med `framat` | denna och kommande månader saknar posten, föregående har den |
+| (M24) | `PUT` med `denna` | bara den månaden ändras |
+
+`tests/app.test.js`, fortsätter från (63):
+
+| # | Fall | Kräver |
+|---|---|---|
+| (64) | kryssrutan öppnar de två fälten | de är dolda tills den kryssas |
+| (65) | en mallrads `Ändra` visar tre val | med månadens namn i |
+| (66) | en engångsposts `Ändra` visar inga val | formuläret öppnas direkt, som i dag |
+| (67) | `Hela serien` bär sin varning | texten syns |
+
+---
+
+### Rättelse av etapp 4: `omfattning` utgår (bindande)
+
+Byggaren lämnade tillbaka `PUT` och `DELETE /api/mallar/<seriesId>/<ÅÅÅÅ-MM>`
+med tre invändningar. Alla tre är riktiga, och alla tre är fel i den
+specifikation jag skrev. Det här avsnittet ersätter `omfattning` helt.
+
+#### Felen
+
+1. **`omfattning: "hela"` hade ingen funktion bland de sex.** Gränssnittet lovade
+   ett val som datalagret inte kunde utföra.
+2. **`omfattning: "denna"` dubblerade en väg som redan finns.** `setOverride` och
+   `skipMonth` tar ett `templateId`, inte ett `seriesId`, och samma operation nås
+   genom `PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>`. Dessutom kan `overrides` bara
+   bära ett belopp — det finns ingen kolumn för ett avvikande namn eller slag en
+   enskild månad.
+3. **`DELETE`-radens svarskolumn saknade `400`** medan texten under tabellen krävde
+   det. Två besked om samma väg.
+
+#### `Hela serien` tas bort som val
+
+Modellen är byggd för att en passerad månad aldrig skrivs om. Ett val som bryter
+den principen är en fälla: det ser ut som en bekvämlighet och är i själva verket
+det enda sättet att förstöra sin egen historik.
+
+Vill användaren ändra en hel serie går hen till **seriens första månad** och
+ändrar därifrån. Det är några klick mer och ett ärligt steg: den som bläddrar
+tillbaka till januari 2026 för att ändra hyran förstår att januari ändras.
+
+#### Vägarna utan `omfattning`
+
+Varje väg gör nu **en** sak, och vilken avgörs av vägen — inte av ett fält i
+kroppen.
+
+| Metod och väg | Betyder | Svar |
+|---|---|---|
+| `POST /api/mallar/<ÅÅÅÅ-MM>` | Skapa en återkommande post | `201` med mallen. `400` med `fieldErrors`. `401`. `500`. |
+| `PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>` | Ändra **från och med** månaden | `200` med den nya versionen. `400` med `fieldErrors`. `401`. `404`. `500`. |
+| `DELETE /api/mallar/<seriesId>/<ÅÅÅÅ-MM>` | Avsluta serien **från och med** månaden | `204`. `401`. `404`. `500`. |
+| `PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>` | Ändra eller hoppa över **bara den månaden** | `200` med `{ items, totals }`. `400`. `401`. `404`. `500`. |
+
+`DELETE` har ingen kropp och därför ingen `400`. `PUT /api/mallar/...` anropar
+`changeTemplateFrom`, `DELETE` anropar `endTemplate`.
+
+**Svarskroppen `{ items, totals }`** för den sista vägen är byggarens val och
+godkänns: en överhoppad månad har ingen post att svara med, så `{ item }` går
+inte, och formen är densamma som `GET /api/manad/<ÅÅÅÅ-MM>` redan ger.
+
+#### Gränssnittets två frågor skrivs om
+
+| Knapp | Fråga | Val |
+|---|---|---|
+| Ändra | `Vad ska ändras?` | `Bara <månad>` · `Från och med <månad>` |
+| Ta bort | `Vad ska tas bort?` | `Bara <månad>` · `Från och med <månad>` |
+
+`Bara <månad>` går till `PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>`; vid borttagning
+med `skipped`, vid ändring med `amountSek`. `Från och med <månad>` går till
+mallvägarna. Ingen varningstext behövs längre, eftersom ingen väg rör historiken.
+
+#### De tre texterna skrivs in i facit
+
+Byggaren skrev dem för att vägarna annars hade gett `500` ur schemats `CHECK` i
+stället för ett fältfel. De godkänns ordagrant:
+
+| Nyckel | Text |
+|---|---|
+| `toMonthFormat` | `Till och med måste anges som ÅÅÅÅ-MM, eller lämnas tomt.` |
+| `toMonthBeforeFrom` | `Till och med kan inte vara före den månad posten gäller från.` |
+| `overrideShape` | `Ange ett belopp för månaden, eller att posten ska hoppas över.` |
+
+#### Två fynd som får sina rader
+
+**Överlappande versioner.** Ändrar användaren från en framtida månad och därefter
+från en tidigare, täcker två versioner samma månader och posten visas två gånger.
+`changeTemplateFrom` ska därför ta bort varje version vars `from_month` ligger i
+eller efter den månad ändringen gäller, i samma transaktion — samma sak som
+`endTemplate` redan gör, och av samma skäl: de täcker ingen passerad månad.
+
+**Avvikelser på en passerad månad.** `setOverride` och `skipMonth` mot en månad
+som redan passerat ändrar vad den månaden visar. Det är tillåtet och avsiktligt:
+en glömd utgift ska gå att föra in i efterhand. Invarianten gäller att en
+ändring av en post aldrig får ändra *andra* månader än den som pekas ut, och den
+håller.
+
+#### Kravlistan ändras
+
+(M22) och (M23) utgår — de prövade `omfattning`. I stället:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M22) | `PUT /api/mallar/<seriesId>/<månad>` ändrar framåt | föregående månad har gamla beloppet, denna och nästa det nya |
+| (M23) | `DELETE /api/mallar/<seriesId>/<månad>` avslutar | föregående månad har posten, denna och nästa saknar den |
+| (M25) | en andra ändring från en tidigare månad ger inte två poster | serien visas en gång per månad |

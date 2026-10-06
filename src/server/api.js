@@ -6,7 +6,7 @@
 // belopp — råvärdet ur anropets JSON skickas vidare orört.
 import { isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
-import { validateMonthItemDraft } from '../core/item.js';
+import { validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
 import {
   AUTH_MESSAGES,
   clearedSessionCookie,
@@ -19,7 +19,17 @@ import {
   verifyCode
 } from './auth.js';
 import { getDatabase } from './db.js';
-import { addMonthItem, readMonth, removeMonthItem, updateMonthItem } from './months.js';
+import {
+  addMonthItem,
+  addTemplate,
+  changeTemplateFrom,
+  endTemplate,
+  readMonth,
+  removeMonthItem,
+  setOverride,
+  skipMonth,
+  updateMonthItem
+} from './months.js';
 import { loadEntries, updateEntries } from './storage.js';
 
 // Ägs här och läses av server.js för rad S1 ("Ett trasigt anrop får inte döda
@@ -48,6 +58,13 @@ const ENTRY_PATH_PREFIX = '/api/entries/';
 // inloggningens: /api/manad/<ÅÅÅÅ-MM> och /api/poster/<id>.
 const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
+
+// Mallarnas vägar [etapp 4]. Adressen är svensk, precis som månadens.
+const TEMPLATE_PATH_PREFIX = '/api/mallar/';
+// Ledet mellan postens id och månaden i /api/poster/<id>/manad/<ÅÅÅÅ-MM>. Står
+// som en konstant och inte som en literal i matchningen: samma svenska ord som
+// MONTH_PATH_PREFIX bär, och två stavningar av det hade kunnat glida isär.
+const ITEM_MONTH_SEGMENT = 'manad';
 
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
@@ -116,6 +133,45 @@ function segmentAfter(pathname, prefix) {
     return null;
   }
   return segment;
+}
+
+// De två leden i /api/poster/<id>/manad/<ÅÅÅÅ-MM>, eller null när sökvägen inte
+// har den formen. Samma regler som segmentAfter: ingen trimning, ingen
+// avkodning, och ett tomt led är ingen väg alls.
+//
+// Vägen går inte att matcha med segmentAfter, som avvisar varje led som
+// innehåller ett snedstreck — det är just det som gör att /api/poster/<id> och
+// den här vägen inte kan förväxlas med varandra.
+function itemMonthFromPath(pathname) {
+  if (!pathname.startsWith(ITEM_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(ITEM_PATH_PREFIX.length).split('/');
+  if (parts.length !== 3 || parts[1] !== ITEM_MONTH_SEGMENT) {
+    return null;
+  }
+  if (parts[0] === '' || parts[2] === '') {
+    return null;
+  }
+  return { itemId: parts[0], month: parts[2] };
+}
+
+// De två leden i /api/mallar/<seriesId>/<ÅÅÅÅ-MM>, eller null när sökvägen inte
+// har den formen. Samma regler som segmentAfter och itemMonthFromPath: ingen
+// trimning, ingen avkodning, och ett tomt led är ingen väg alls.
+//
+// Månaden prövas inte här utan i hanteraren, precis som för /api/manad/<månad>:
+// vägen finns, och en månad som inte är en månad ska ge 400 med månadens text
+// och inte 404 Okänd adress.
+function seriesMonthFromPath(pathname) {
+  if (!pathname.startsWith(TEMPLATE_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(TEMPLATE_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
+    return null;
+  }
+  return { seriesId: parts[0], month: parts[1] };
 }
 
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
@@ -197,6 +253,48 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     }
     if (req.method === 'POST') {
       await handleCreateMonthItem(req, res, now, month);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  const templateMonth = segmentAfter(pathname, TEMPLATE_PATH_PREFIX);
+  if (templateMonth !== null) {
+    if (req.method === 'POST') {
+      await handleCreateTemplate(req, res, now, templateMonth);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // De två vägar som gäller en hel serie. Vilken operation anropet gör avgörs av
+  // metoden och inte av ett fält i kroppen: PUT ändrar från och med månaden,
+  // DELETE avslutar serien från och med månaden (ARKITEKTUR.md, "Rättelse av
+  // etapp 4" — fältet omfattning utgick).
+  const seriesMonth = seriesMonthFromPath(pathname);
+  if (seriesMonth !== null) {
+    if (req.method === 'PUT') {
+      await handleChangeTemplate(req, res, now, seriesMonth.seriesId, seriesMonth.month);
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      handleEndTemplate(req, res, now, seriesMonth.seriesId, seriesMonth.month);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Prövas före den enkla /api/poster/<id>, fastän ordningen inte avgör något:
+  // segmentAfter svarar null för en sökväg med fler än ett led, så de två
+  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
+  // den är den mer specifika.
+  const itemMonth = itemMonthFromPath(pathname);
+  if (itemMonth !== null) {
+    if (req.method === 'PUT') {
+      await handleSetMonthOverride(req, res, now, itemMonth.itemId, itemMonth.month);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -363,6 +461,174 @@ async function handleUpdateMonthItem(req, res, now, itemId) {
     return;
   }
   sendJson(res, 200, { item });
+}
+
+// POST /api/mallar/<ÅÅÅÅ-MM>. 201 med mallen, 400 med fieldErrors, 401, 500.
+// Samma bindande ordning som POST /api/manad/<ÅÅÅÅ-MM>: sessionsspärren,
+// månadsspärren, valideringen, sedan datalagret. Steg tre före steg fyra
+// betyder att en ogiltig mall aldrig blir en SQL-fråga.
+async function handleCreateTemplate(req, res, now, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // draft skickas orört vidare. Allt som inte är ett vanligt objekt hanteras av
+  // validateTemplateDraft och ger fältfel. Månaden är andra argumentet och inte
+  // ett fält i kroppen: slutmånaden prövas mot den månad mallen gäller från, och
+  // den står i sökvägen.
+  const result = validateTemplateDraft(draft, month);
+  if (!result.ok) {
+    // Samma form som månadspostens väg: error är det första felet, fieldErrors
+    // är listan orörd. Alla sex fälten finns i formuläret, så ingen post har ett
+    // field utan motsvarighet i gränssnittet.
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let template;
+  try {
+    template = addTemplate(userId, month, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 201, { template });
+}
+
+// PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>. 200 med den nya versionen, 400 med
+// fieldErrors, 401, 404 om serien inte finns eller tillhör någon annan, 500.
+//
+// Kroppen är densamma som POST:ens: mallens sex fält. Samma bindande ordning
+// som varje annan skrivväg — sessionsspärren, månadsspärren, valideringen,
+// datalagret.
+async function handleChangeTemplate(req, res, now, seriesId, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const result = validateTemplateDraft(draft, month);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let template;
+  try {
+    template = changeTemplateFrom(userId, seriesId, month, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (template === null) {
+    // Samma text och samma statuskod som för ett series_id som aldrig funnits.
+    // changeTemplateFrom svarar null både då, när serien tillhör någon annan och
+    // när ingen version gäller månaden.
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  sendJson(res, 200, { template });
+}
+
+// DELETE /api/mallar/<seriesId>/<ÅÅÅÅ-MM>. 204, 401, 404, 500.
+//
+// Vägen har ingen kropp och därför ingen 400 utöver månadsspärrens — vad som
+// ska hända står i metoden och i sökvägen, ingenting läses ur anropets kropp.
+// Funktionen är inte async av just det skälet: den väntar inte på readBody.
+function handleEndTemplate(req, res, now, seriesId, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  let ended;
+  try {
+    // Beslutet "finns serien?" fattas av SQL:s WHERE med user_id = ?, inte av en
+    // läsning före: en serie som tillhör någon annan matchar då ingen rad, och
+    // svaret blir detsamma som för ett id som aldrig funnits.
+    ended = endTemplate(userId, seriesId, month);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!ended) {
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  res.writeHead(204);
+  res.end();
+}
+
+// PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>. 200, 400, 401, 404 om mallen inte finns
+// eller tillhör någon annan, 500. Samma ordning som POST.
+//
+// Svaret är månaden efter ändringen, { items, totals }, och inte den ändrade
+// posten: en överhoppad månad har ingen post att svara med, och en väg ska ha
+// en kroppsform och inte två. Formen är densamma som GET /api/manad/<ÅÅÅÅ-MM>
+// ger, så gränssnittet kan rita om vyn ur svaret utan en andra hämtning.
+async function handleSetMonthOverride(req, res, now, templateId, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // Kroppens två former ägs av validateOverrideDraft i src/core/item.js. Det här
+  // lagret läser varken skipped eller amountSek själv.
+  const result = validateOverrideDraft(body);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let changed;
+  try {
+    // Beslutet "finns mallen?" fattas av SQL:s WHERE med user_id = ?, inte av en
+    // läsning före: en mall som tillhör någon annan matchar då ingen rad, och
+    // svaret blir detsamma som för ett id som aldrig funnits.
+    changed = result.value.skipped
+      ? skipMonth(userId, templateId, month, { now })
+      : setOverride(userId, templateId, month, result.value.amountOre, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!changed) {
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  let result2;
+  try {
+    result2 = readMonth(userId, month);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { items: result2.items, totals: result2.totals });
 }
 
 // 401 med rensad cookie. En session som saknas, är återkallad eller har gått ut

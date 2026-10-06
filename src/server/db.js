@@ -202,6 +202,36 @@ export function write(db, sql, params) {
   }
 }
 
+// Flera skrivningar som ska lyckas tillsammans eller inte alls. BEGIN, COMMIT
+// och ROLLBACK går genom exec ovan, så ett fel från någon av de tre blir en
+// DatabaseError med svensk text precis som varje annan fråga i projektet.
+//
+// Omslutningen bor här och inte hos anroparen av samma skäl som readRows, exec
+// och write flyttades hit i etapp 3: en andra handskriven kopia av samma
+// omslutning är just det ägarregeln förbjuder (LARDOMAR.md 2026-09-02).
+//
+// ROLLBACK har ingen egen felhantering. Faller den är anslutningen obrukbar, och
+// ett svalt fel där hade gjort det osynligt; ett try/catch runt raden vore
+// dessutom en gren som ingen indata når (LARDOMAR.md 2026-09-04). De två grenar
+// funktionen har nås båda: den lyckade av varje anrop, den fallerande av
+// (M19) i tests/months.test.js.
+//
+// SQLite har inga nästlade transaktioner: ett BEGIN inuti en pågående
+// transaktion är ett fel. Ingen anropare i src/ anropar därför transaction
+// inuti en annan transaction.
+export function transaction(db, work) {
+  exec(db, 'BEGIN');
+  let result;
+  try {
+    result = work();
+  } catch (error) {
+    exec(db, 'ROLLBACK');
+    throw error;
+  }
+  exec(db, 'COMMIT');
+  return result;
+}
+
 // Den anslutning getDatabase() delar ut. null betyder "ingen öppen anslutning".
 // En anslutning per process: SQLite äger samtidigheten inuti filen, och
 // src/server/lock.js hindrar en andra process på samma maskin.

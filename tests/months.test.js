@@ -15,8 +15,14 @@ import { monthTotals } from '../src/core/budget.js';
 import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
 import {
   addMonthItem,
+  addTemplate,
+  changeTemplateFrom,
+  clearOverride,
+  endTemplate,
   readMonth,
   removeMonthItem,
+  setOverride,
+  skipMonth,
   updateMonthItem
 } from '../src/server/months.js';
 
@@ -444,5 +450,529 @@ test('en post ur en mall bär recurring och seriesId, en engångspost inte', () 
   assert.equal(engång.recurring, false);
   assert.equal(engång.seriesId, null);
   assert.deepEqual(Object.keys(mall).sort(), Object.keys(engång).sort());
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
+// Mallarna och avvikelserna [etapp 4]: kravlistan (M11) till (M20).
+//
+// Varje fall bygger sitt utgångsläge genom modulens egna skrivvägar och inte
+// genom insertTemplate ovan, utom där facit kräver en mall som börjat tidigare
+// än den månad fallet ändrar i. Skälet är att "historiken är oföränderlig" är
+// ett påstående om vad funktionerna gör, inte om vad en handskriven rad blir.
+// ---------------------------------------------------------------------------
+
+// Mallens utkast, på den form validateTemplateDraft ger: ören och inte kronor,
+// och toMonth som null för "tills vidare".
+const MALLUTKAST = Object.freeze({
+  kind: 'expense',
+  name: 'Hyra',
+  amountOre: 1250000,
+  category: 'housing',
+  interval: 'monthly',
+  toMonth: null
+});
+
+// Namn och belopp i en månad, i den ordning readMonth ger dem.
+function beloppIn(db, userId, month) {
+  return readMonth(userId, month, { db }).items.map((item) => [item.name, item.amountOre]);
+}
+
+function templateRows(db, seriesId) {
+  return db
+    .prepare('SELECT id, series_id, from_month, to_month, amount_ore, start_date FROM templates WHERE series_id = ? ORDER BY from_month')
+    .all(seriesId);
+}
+
+// (M11) en mall syns i varje månad från from_month, prövat över tre månader i
+// rad. Månaden före from_month har den inte.
+test('M11: en mall skapad i oktober syns i oktober, november och december', () => {
+  const db = freshDatabase();
+  const mall = addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-ny' });
+
+  assert.deepEqual(mall, {
+    id: 't-ny',
+    seriesId: 't-ny',
+    kind: 'expense',
+    name: 'Hyra',
+    amountOre: 1250000,
+    category: 'housing',
+    interval: 'monthly',
+    // start_date härleds ur månaden: formuläret har inget dagfält.
+    startDate: '2026-10-01',
+    fromMonth: '2026-10',
+    toMonth: null
+  });
+  for (const month of ['2026-10', '2026-11', '2026-12']) {
+    assert.deepEqual(namesIn(db, ANNA, month), ['Hyra'], month);
+  }
+  assert.deepEqual(namesIn(db, ANNA, '2026-09'), []);
+  db.close();
+});
+
+test('M11: toMonth ur utkastet stänger serien, och toMonth null betyder tills vidare', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', { ...MALLUTKAST, name: 'Spotify', toMonth: '2026-11' }, { db, now: NOW, makeId: () => 't-slut' });
+
+  assert.deepEqual(namesIn(db, ANNA, '2026-11'), ['Spotify']);
+  assert.deepEqual(namesIn(db, ANNA, '2026-12'), []);
+  db.close();
+});
+
+// (M12) endTemplate lämnar passerade månader orörda: månaden före har posten
+// kvar, månaden efter saknar den.
+test('M12: endTemplate från november lämnar oktober orörd och tömmer november', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.equal(endTemplate(ANNA, 't-1', '2026-11', { db }), true);
+
+  assert.deepEqual(beloppIn(db, ANNA, '2026-10'), [['Hyra', 1250000]]);
+  assert.deepEqual(namesIn(db, ANNA, '2026-11'), []);
+  assert.deepEqual(namesIn(db, ANNA, '2026-12'), []);
+  // Raden är inte borttagen: to_month är satt till månaden före, så historiken
+  // finns kvar att läsa.
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month]), [
+    ['t-1', '2026-10', '2026-10']
+  ]);
+  db.close();
+});
+
+// Gränsfallet för endTemplate: serien avslutas från samma månad som den börjar
+// i. to_month = månaden före hade då brutit CHECK (to_month IS NULL OR
+// to_month >= from_month), så versionen tas i stället bort — den gäller ingen
+// månad alls, och ingen passerad månad berörs.
+test('M12: endTemplate från seriens egen from_month tar bort versionen', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.equal(endTemplate(ANNA, 't-1', '2026-10', { db }), true);
+  assert.deepEqual(templateRows(db, 't-1'), []);
+  assert.deepEqual(namesIn(db, ANNA, '2026-10'), []);
+  db.close();
+});
+
+test('M12: endTemplate mot ett series_id som inte finns svarar false och skriver inget', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.equal(endTemplate(ANNA, 'finns-inte', '2026-11', { db }), false);
+  assert.deepEqual(templateRows(db, 't-1').map((row) => row.to_month), [null]);
+  db.close();
+});
+
+// (M13) changeTemplateFrom versionerar: två rader med samma series_id, den gamla
+// med to_month satt.
+test('M13: changeTemplateFrom ger två rader med samma series_id och den gamla avslutad', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  const ny = changeTemplateFrom(ANNA, 't-1', '2026-11', { ...MALLUTKAST, amountOre: 1300000 }, { db, now: NOW, makeId: () => 't-2' });
+
+  assert.equal(ny.id, 't-2');
+  assert.equal(ny.seriesId, 't-1');
+  assert.equal(ny.fromMonth, '2026-11');
+  assert.equal(ny.amountOre, 1300000);
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-1', '2026-10', '2026-10', 1250000],
+    ['t-2', '2026-11', null, 1300000]
+  ]);
+  db.close();
+});
+
+// Den nya versionen behåller den gamlas start_date. Dagen styr intervallets fas
+// i steg 2 av readMonth: en ny dag hade flyttat vilka månader serien träffar.
+// Prövat på en kvartalsserie, där fasen syns — med start_date satt till den nya
+// månadens första dag hade serien i stället träffat 2026-05, 2026-08 och 2026-11.
+test('M13: den nya versionen behåller start_date, så kvartalsfasen inte flyttas', () => {
+  const db = freshDatabase();
+  insertTemplate(db, {
+    id: 't-1',
+    name: 'Försäkring',
+    interval: 'quarterly',
+    start_date: '2026-01-20',
+    from_month: '2026-01',
+    amount_ore: 300000
+  });
+
+  const ny = changeTemplateFrom(ANNA, 't-1', '2026-05', { ...MALLUTKAST, name: 'Försäkring', interval: 'quarterly', amountOre: 350000 }, { db, now: NOW, makeId: () => 't-2' });
+  assert.equal(ny.startDate, '2026-01-20');
+
+  // Samma träffmånader som före ändringen: juli och oktober, inte maj och
+  // augusti.
+  assert.deepEqual(namesIn(db, ANNA, '2026-07'), ['Försäkring']);
+  assert.deepEqual(namesIn(db, ANNA, '2026-10'), ['Försäkring']);
+  assert.deepEqual(namesIn(db, ANNA, '2026-05'), []);
+  assert.deepEqual(namesIn(db, ANNA, '2026-08'), []);
+  // Och beloppet är det nya i juli, som ligger efter ändringen.
+  assert.deepEqual(beloppIn(db, ANNA, '2026-07'), [['Försäkring', 350000]]);
+  // Medan april, som ligger före, har det gamla.
+  assert.deepEqual(beloppIn(db, ANNA, '2026-04'), [['Försäkring', 300000]]);
+  db.close();
+});
+
+// (M14) ändring framåt rör inte historiken: föregående månad har gamla beloppet,
+// denna och nästa det nya.
+test('M14: en ändring från november lämnar oktober på gamla beloppet', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  changeTemplateFrom(ANNA, 't-1', '2026-11', { ...MALLUTKAST, amountOre: 1300000 }, { db, now: NOW, makeId: () => 't-2' });
+
+  assert.deepEqual(beloppIn(db, ANNA, '2026-10'), [['Hyra', 1250000]]);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1300000]]);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-12'), [['Hyra', 1300000]]);
+  // Och exakt en post per månad: versionerna överlappar inte.
+  for (const month of ['2026-10', '2026-11', '2026-12']) {
+    assert.equal(readMonth(ANNA, month, { db }).items.length, 1, month);
+  }
+  db.close();
+});
+
+// (M15) ändring från egen from_month uppdaterar i stället: en rad, inte två.
+// Att sätta to_month till månaden före from_month ger to_month < from_month,
+// vilket schemats CHECK fäller — och ingen passerad månad berörs, så raden ska
+// uppdateras.
+test('M15: en ändring från seriens egen from_month ger en rad, inte två', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  const ändrad = changeTemplateFrom(ANNA, 't-1', '2026-10', { ...MALLUTKAST, name: 'Hyra ny', amountOre: 1300000, toMonth: '2027-06' }, { db, now: NOW, makeId: () => 't-skulle-inte-skapas' });
+
+  assert.equal(ändrad.id, 't-1');
+  assert.equal(ändrad.fromMonth, '2026-10');
+  assert.equal(ändrad.toMonth, '2027-06');
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-1', '2026-10', '2027-06', 1300000]
+  ]);
+  // Ingen rad med det id makeId hade gett: ingen ny version skapades.
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM templates WHERE id = ?').get('t-skulle-inte-skapas').antal, 0);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-10'), [['Hyra ny', 1300000]]);
+  db.close();
+});
+
+test('M15: changeTemplateFrom mot en månad serien inte gäller svarar null och skriver inget', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  // September ligger före from_month, så ingen version gäller den månaden.
+  assert.equal(changeTemplateFrom(ANNA, 't-1', '2026-09', MALLUTKAST, { db, now: NOW, makeId: () => 't-2' }), null);
+  assert.equal(changeTemplateFrom(ANNA, 'finns-inte', '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-3' }), null);
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.to_month]), [['t-1', null]]);
+  db.close();
+});
+
+// (M16) setOverride ändrar bara sin månad: grannmånaderna oförändrade.
+test('M16: setOverride ändrar beloppet bara i sin månad', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.equal(setOverride(ANNA, 't-1', '2026-11', 999900, { db, now: NOW, makeId: () => 'o-1' }), true);
+
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 999900]]);
+  assert.equal(readMonth(ANNA, '2026-11', { db }).items[0].overridden, true);
+  for (const month of ['2026-10', '2026-12']) {
+    assert.deepEqual(beloppIn(db, ANNA, month), [['Hyra', 1250000]], month);
+    assert.equal(readMonth(ANNA, month, { db }).items[0].overridden, false, month);
+  }
+  db.close();
+});
+
+// En andra avvikelse för samma mall och månad ersätter den första. Utan
+// ON CONFLICT hade UNIQUE (template_id, month) fällt skrivningen.
+test('M16: ett andra setOverride för samma månad ersätter det första beloppet', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  setOverride(ANNA, 't-1', '2026-11', 999900, { db, now: NOW, makeId: () => 'o-1' });
+  assert.equal(setOverride(ANNA, 't-1', '2026-11', 111100, { db, now: NOW, makeId: () => 'o-2' }), true);
+
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 111100]]);
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 1);
+  db.close();
+});
+
+// (M17) skipMonth tar bort posten ur en månad, och bara ur den.
+test('M17: skipMonth tömmer sin månad och lämnar grannmånaderna', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.equal(skipMonth(ANNA, 't-1', '2026-11', { db, now: NOW, makeId: () => 'o-1' }), true);
+
+  assert.deepEqual(namesIn(db, ANNA, '2026-11'), []);
+  assert.equal(readMonth(ANNA, '2026-11', { db }).totals.expenseOre, 0);
+  assert.deepEqual(namesIn(db, ANNA, '2026-10'), ['Hyra']);
+  assert.deepEqual(namesIn(db, ANNA, '2026-12'), ['Hyra']);
+  db.close();
+});
+
+// En överhoppad månad som i stället får ett belopp, och tvärtom. Schemats CHECK
+// tillåter bara en av amount_ore och skipped åt gången, så övergången mellan de
+// två måste skriva båda kolumnerna.
+test('M17: skipMonth efter setOverride och tvärtom, på samma mall och månad', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  setOverride(ANNA, 't-1', '2026-11', 999900, { db, now: NOW, makeId: () => 'o-1' });
+  assert.equal(skipMonth(ANNA, 't-1', '2026-11', { db, now: NOW, makeId: () => 'o-2' }), true);
+  assert.deepEqual(namesIn(db, ANNA, '2026-11'), []);
+
+  assert.equal(setOverride(ANNA, 't-1', '2026-11', 888800, { db, now: NOW, makeId: () => 'o-3' }), true);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 888800]]);
+  db.close();
+});
+
+// (M18) clearOverride återställer: mallens belopp tillbaka.
+test('M18: clearOverride ger mallens belopp tillbaka', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  setOverride(ANNA, 't-1', '2026-11', 999900, { db, now: NOW, makeId: () => 'o-1' });
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 999900]]);
+
+  assert.equal(clearOverride(ANNA, 't-1', '2026-11', { db }), true);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1250000]]);
+  assert.equal(readMonth(ANNA, '2026-11', { db }).items[0].overridden, false);
+  // Ett andra anrop tar inte bort något och svarar false, precis som mot en
+  // månad som aldrig haft en avvikelse.
+  assert.equal(clearOverride(ANNA, 't-1', '2026-11', { db }), false);
+  db.close();
+});
+
+test('M18: clearOverride på en överhoppad månad ger posten tillbaka', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  skipMonth(ANNA, 't-1', '2026-11', { db, now: NOW, makeId: () => 'o-1' });
+
+  assert.equal(clearOverride(ANNA, 't-1', '2026-11', { db }), true);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1250000]]);
+  db.close();
+});
+
+// (M19) transaktionen håller: en changeTemplateFrom som faller halvvägs lämnar
+// noll ändringar.
+//
+// Avbrottet är inte simulerat: makeId ger ett id som redan finns, så INSERT
+// bryter PRIMARY KEY efter att UPDATE av den gamla raden redan har körts. Utan
+// transaction i db.js blir to_month = 2026-10 kvar på den gamla raden, och
+// serien slutar därmed i oktober utan att någon ny version tar över — posten
+// försvinner ur varje kommande månad.
+test('M19: en changeTemplateFrom som faller på andra skrivningen lämnar noll ändringar', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+
+  assert.throws(
+    () => changeTemplateFrom(ANNA, 't-1', '2026-11', { ...MALLUTKAST, amountOre: 1300000 }, { db, now: NOW, makeId: () => 't-1' }),
+    { name: 'DatabaseError', message: 'Uppgifterna kunde inte sparas: något värde är ogiltigt.' }
+  );
+
+  // Den gamla raden är orörd: to_month är fortfarande null, och beloppet det
+  // gamla.
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-1', '2026-10', null, 1250000]
+  ]);
+  // Och månaderna ser ut som före anropet.
+  for (const month of ['2026-10', '2026-11', '2026-12']) {
+    assert.deepEqual(beloppIn(db, ANNA, month), [['Hyra', 1250000]], month);
+  }
+  db.close();
+});
+
+// Samma avbrott i endTemplate, som också gör två skrivningar: den andra
+// skrivningen, DELETE, kan inte falla på ett CHECK, så fallet prövar i stället
+// att de två tillsammans lämnar en läsbar serie — och att en transaktion som
+// fullbordas verkligen fullbordas, alltså att COMMIT körs.
+test('M19: endTemplate fullbordar sin transaktion, så ändringen finns efter anropet', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  changeTemplateFrom(ANNA, 't-1', '2026-12', MALLUTKAST, { db, now: NOW, makeId: () => 't-2' });
+
+  // Två versioner: oktober-november och december och framåt. Serien avslutas
+  // från november, alltså mitt i den första versionen och före hela den andra.
+  assert.equal(endTemplate(ANNA, 't-1', '2026-11', { db }), true);
+
+  // Steg 1 avslutade den första versionen, steg 2 tog bort den andra.
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month]), [
+    ['t-1', '2026-10', '2026-10']
+  ]);
+  assert.deepEqual(namesIn(db, ANNA, '2026-10'), ['Hyra']);
+  assert.deepEqual(namesIn(db, ANNA, '2026-11'), []);
+  assert.deepEqual(namesIn(db, ANNA, '2026-12'), []);
+  db.close();
+});
+
+// (M20) en annan användares mall är onåbar: samma svar som för ett okänt id.
+test('M20: Berit når ingen av Annas mallar, och får samma svar som för ett okänt id', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-anna' });
+
+  // De fem funktionerna som tar ett id, var och en mot Annas id och mot ett id
+  // som inte finns. Svaren ska vara identiska.
+  assert.equal(endTemplate(BERIT, 't-anna', '2026-11', { db }), endTemplate(BERIT, 'finns-inte', '2026-11', { db }));
+  assert.equal(endTemplate(BERIT, 't-anna', '2026-11', { db }), false);
+
+  assert.equal(
+    changeTemplateFrom(BERIT, 't-anna', '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-kapad' }),
+    changeTemplateFrom(BERIT, 'finns-inte', '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-kapad2' })
+  );
+  assert.equal(changeTemplateFrom(BERIT, 't-anna', '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-kapad3' }), null);
+
+  assert.equal(setOverride(BERIT, 't-anna', '2026-11', 1, { db, now: NOW, makeId: () => 'o-1' }), setOverride(BERIT, 'finns-inte', '2026-11', 1, { db, now: NOW, makeId: () => 'o-2' }));
+  assert.equal(setOverride(BERIT, 't-anna', '2026-11', 1, { db, now: NOW, makeId: () => 'o-3' }), false);
+
+  assert.equal(skipMonth(BERIT, 't-anna', '2026-11', { db, now: NOW, makeId: () => 'o-4' }), skipMonth(BERIT, 'finns-inte', '2026-11', { db, now: NOW, makeId: () => 'o-5' }));
+  assert.equal(skipMonth(BERIT, 't-anna', '2026-11', { db, now: NOW, makeId: () => 'o-6' }), false);
+
+  assert.equal(clearOverride(BERIT, 't-anna', '2026-11', { db }), clearOverride(BERIT, 'finns-inte', '2026-11', { db }));
+  assert.equal(clearOverride(BERIT, 't-anna', '2026-11', { db }), false);
+
+  // Annas mall är orörd, och ingen avvikelse och ingen ny version skrevs.
+  assert.deepEqual(templateRows(db, 't-anna').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-anna', '2026-10', null, 1250000]
+  ]);
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM templates').get().antal, 1);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1250000]]);
+  // Och Berits egen november är tom.
+  assert.deepEqual(namesIn(db, BERIT, '2026-11'), []);
+  db.close();
+});
+
+// Berit får inte heller ta bort en framtida version av Annas serie. Fallet
+// skiljer sig från (M20) ovan: där har Annas version from_month före månaden, så
+// SQL_DELETE_TEMPLATES_FROM matchar ingen rad ens utan user_id = ?. Här ligger
+// from_month i samma månad som anropet, och det är bara ägarvillkoret i den
+// DELETE:en som skiljer de två användarna.
+test('M20: endTemplate mot någon annans framtida version tar inte bort den', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-anna' });
+
+  assert.equal(endTemplate(BERIT, 't-anna', '2026-11', { db }), endTemplate(BERIT, 'finns-inte', '2026-11', { db }));
+  assert.equal(endTemplate(BERIT, 't-anna', '2026-11', { db }), false);
+  assert.deepEqual(templateRows(db, 't-anna').map((row) => [row.id, row.from_month, row.to_month]), [
+    ['t-anna', '2026-11', null]
+  ]);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1250000]]);
+  db.close();
+});
+
+// En avvikelse som Berit försöker ta bort hos Anna ligger kvar. Fallet skiljer
+// sig från (M20) ovan: där fanns ingen avvikelse att träffa, här finns en.
+test('M20: clearOverride mot någon annans mall lämnar avvikelsen kvar', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-anna' });
+  setOverride(ANNA, 't-anna', '2026-11', 999900, { db, now: NOW, makeId: () => 'o-anna' });
+
+  assert.equal(clearOverride(BERIT, 't-anna', '2026-11', { db }), false);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 999900]]);
+  db.close();
+});
+
+// Månadsspärren i de sex nya funktionerna. Samma form som för addMonthItem:
+// en ogiltig månad blir aldrig en SQL-fråga, och meddelandet namnger funktionen.
+test('de sex nya funktionerna avvisar en månad som inte är en månad, före skrivningen', () => {
+  const db = freshDatabase();
+  insertTemplate(db, { id: 't-1', from_month: '2026-01', start_date: '2026-01-15' });
+  const fel = ['2026-13', '2026-00', '2026-1', '2026-10-01', '', null, undefined, 202610, 1n, Symbol('x')];
+  const anrop = [
+    ['addTemplate', (month) => addTemplate(ANNA, month, MALLUTKAST, { db, now: NOW, makeId: () => 't-ny' })],
+    ['endTemplate', (month) => endTemplate(ANNA, 't-1', month, { db })],
+    ['changeTemplateFrom', (month) => changeTemplateFrom(ANNA, 't-1', month, MALLUTKAST, { db, now: NOW, makeId: () => 't-ny' })],
+    ['setOverride', (month) => setOverride(ANNA, 't-1', month, 100, { db, now: NOW, makeId: () => 'o-ny' })],
+    ['skipMonth', (month) => skipMonth(ANNA, 't-1', month, { db, now: NOW, makeId: () => 'o-ny' })],
+    ['clearOverride', (month) => clearOverride(ANNA, 't-1', month, { db })]
+  ];
+
+  for (const [namn, kör] of anrop) {
+    for (const month of fel) {
+      assert.throws(
+        () => kör(month),
+        { name: 'RangeError', message: `${namn} kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".` },
+        `${namn} ${String(month)}`
+      );
+    }
+  }
+
+  // Ingen rad skrevs och ingen ändrades: en mall kvar, noll avvikelser, och
+  // to_month fortfarande null.
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM templates').get().antal, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
+  assert.equal(db.prepare('SELECT to_month FROM templates WHERE id = ?').get('t-1').to_month, null);
+  db.close();
+});
+
+test('addTemplate skriver created_at ur now och läser ingen klocka', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-ny' });
+  const rows = db.prepare('SELECT created_at FROM templates WHERE id = ?').all('t-ny');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].created_at, NOW);
+  db.close();
+});
+
+// Överlappande versioner. Ändras serien först från en framtida månad och
+// därefter från en tidigare täcker två versioner samma månader, och posten
+// visas två gånger — därför tar changeTemplateFrom bort varje version vars
+// from_month ligger i eller efter den månad ändringen gäller, i samma
+// transaktion (ARKITEKTUR.md, "Rättelse av etapp 4").
+test('changeTemplateFrom tar bort en framtida version, så ingen månad får två poster', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  // Första ändringen: från december. Serien har nu två versioner.
+  changeTemplateFrom(ANNA, 't-1', '2026-12', { ...MALLUTKAST, amountOre: 1300000 }, { db, now: NOW, makeId: () => 't-2' });
+  assert.equal(templateRows(db, 't-1').length, 2);
+
+  // Andra ändringen: från november, alltså före den första ändringen.
+  changeTemplateFrom(ANNA, 't-1', '2026-11', { ...MALLUTKAST, amountOre: 1400000 }, { db, now: NOW, makeId: () => 't-3' });
+
+  // t-2 är borta: den började i december och täckte ingen passerad månad.
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-1', '2026-10', '2026-10', 1250000],
+    ['t-3', '2026-11', null, 1400000]
+  ]);
+  // Exakt en post per månad, och oktober har kvar sitt gamla belopp.
+  for (const month of ['2026-10', '2026-11', '2026-12', '2027-01']) {
+    assert.equal(readMonth(ANNA, month, { db }).items.length, 1, month);
+  }
+  assert.deepEqual(beloppIn(db, ANNA, '2026-10'), [['Hyra', 1250000]]);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-11'), [['Hyra', 1400000]]);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-12'), [['Hyra', 1400000]]);
+  db.close();
+});
+
+// Samma borttagning i gränsfallet, där den gamla raden uppdateras i stället för
+// att versioneras: raden anropet behåller får inte tas bort, fastän dess
+// from_month är samma månad.
+test('changeTemplateFrom från egen from_month tar bort framtida versioner men behåller sin egen rad', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  changeTemplateFrom(ANNA, 't-1', '2026-12', { ...MALLUTKAST, amountOre: 1300000 }, { db, now: NOW, makeId: () => 't-2' });
+
+  // Oktober är t-1:s egen from_month: gränsfallet, alltså en uppdatering.
+  const ändrad = changeTemplateFrom(ANNA, 't-1', '2026-10', { ...MALLUTKAST, amountOre: 1500000 }, { db, now: NOW, makeId: () => 't-4' });
+
+  assert.equal(ändrad.id, 't-1');
+  assert.deepEqual(templateRows(db, 't-1').map((row) => [row.id, row.from_month, row.to_month, row.amount_ore]), [
+    ['t-1', '2026-10', null, 1500000]
+  ]);
+  for (const month of ['2026-10', '2026-11', '2026-12']) {
+    assert.deepEqual(beloppIn(db, ANNA, month), [['Hyra', 1500000]], month);
+  }
+  db.close();
+});
+
+// Avvikelsen för en borttagen version följer med, genom ON DELETE CASCADE på
+// overrides.template_id. Utan PRAGMA foreign_keys = ON hade raden blivit kvar
+// och pekat på en mall som inte finns.
+test('en avvikelse på en borttagen framtida version försvinner med den', () => {
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', MALLUTKAST, { db, now: NOW, makeId: () => 't-1' });
+  changeTemplateFrom(ANNA, 't-1', '2026-12', MALLUTKAST, { db, now: NOW, makeId: () => 't-2' });
+  setOverride(ANNA, 't-2', '2026-12', 999900, { db, now: NOW, makeId: () => 'o-1' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 1);
+
+  changeTemplateFrom(ANNA, 't-1', '2026-11', MALLUTKAST, { db, now: NOW, makeId: () => 't-3' });
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
+  assert.deepEqual(beloppIn(db, ANNA, '2026-12'), [['Hyra', 1250000]]);
   db.close();
 });

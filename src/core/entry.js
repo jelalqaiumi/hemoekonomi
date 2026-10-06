@@ -336,7 +336,10 @@ function normalizeAmountSek(raw) {
   return null;
 }
 
-function checkInterval(raw) {
+// Exporterad sedan etapp 4: src/core/item.js validerar mallens intervall med
+// samma ägare, i stället för med en andra kopia av villkoret. Samma mönster som
+// checkName, checkAmountSek och checkCategory fick i etapp 3.
+export function checkInterval(raw) {
   if (typeof raw !== 'string' || !INTERVALS.includes(raw)) {
     return { message: MESSAGES.interval };
   }
