@@ -55,9 +55,10 @@
         <!-- Sidomenyn: loggan överst, vem som är inloggad och vägen ut.
              Adressen står bredvid knappen: två som delar dator ska kunna se vems
              budget som visas. Texten skrivs av app.js ur GET /api/mig.
-             Loggan är användarens egen bild, den nedskalade kopian på 400 gånger
-             400 bildpunkter och 60 159 byte — originalet logga.png är 1024 gånger
-             1024 och 1 454 661 byte och visas bara stort, i landningssidans hero.
+             Loggan är användarens egen bild, beskuren till motivet och nedskalad:
+             480 gånger 261 bildpunkter. Originalet logga.png har motivet i bara
+             26,3 procent av ytan, så en obeskuren bild skalar med sin tomma yta
+             och märket blir litet i en rad med begränsad höjd.
              width och height står som attribut i bildens egen storlek, så att
              raden inte hoppar medan bilden laddas; visningsstorleken sätts i
              style.css. alt är tomt därför att namnet står som text intill: en
@@ -70,8 +71,8 @@
               class="sidomeny-logga"
               src="/bilder/logga-liten.png"
               alt=""
-              width="400"
-              height="400"
+              width="480"
+              height="261"
               decoding="async"
             />
             <span class="sidomeny-namn">Hem och Ekonomi</span>

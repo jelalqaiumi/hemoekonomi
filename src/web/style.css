@@ -332,9 +332,11 @@ button:disabled:hover {
    Vill man i stället ha loggan direkt på det marinblå är det de två raderna
    background och padding som ska bort — resten av sidomenyn är oberoende av
    dem. */
+/* Beskuren till motivet, alltså bred och inte kvadratisk (480 gånger 261).
+   Höjden styr, bredden följer proportionerna. */
 .sidomeny-logga {
-  width: 2.75rem;
-  height: 2.75rem;
+  height: 4.25rem;
+  width: auto;
   flex: none;
   padding: 0.2rem;
   border-radius: var(--radie-liten);

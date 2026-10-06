@@ -8962,13 +8962,18 @@ har alltså en motsvarighet i bilden, och antalet bildpunkter står utskrivet.
 | `--guld-mork` | `#D16C01` | myntets skuggkant, 765 |
 | `--guld-ljus` | `#FEED7E` | myntets högdager |
 
-Tre toner som **inte** finns i loggan och därför är valda, med skäl:
+Tonerna som **inte** finns i loggan och därför är valda, med skäl:
 
 | Token | Värde | Skäl |
 |---|---|---|
 | `--bakgrund` | `#F7F5EF` | Varm off-white. Rent vitt mot så mättade toner ger hård kontrast och gör sidan steril. |
 | `--positiv` | `#1E9E5A` | Inkomster. Ljusare än `--gron-primar` så att ett belopp inte läses som en yta. |
 | `--negativ` | `#D64545` | Utgifter. Rött finns inte i loggan, men ett negativt belopp måste skilja sig från guld. |
+| `--fel-text` | `#a52020` | Feltext i appen. `--negativ` ger 4,38:1 mot vitt, vilket räcker för stor text men inte för brödtext, och feltexterna är 0,875rem. Den här tonen ger 7,43:1. Tillkom när temat lades på appen. |
+
+`--positiv` och `--negativ` bär därför **bara** beloppet på raden *Kvar att leva
+på*, som är 1,5rem och fet, alltså stor text med kravet 3:1. All feltext i
+brödtextstorlek använder `--fel-text`.
 
 **Kontrast.** Varje kombination som bär text ska nå WCAG AA, alltså 4,5:1 för
 brödtext och 3:1 för stor text. `--guld` på vitt ger **inte** AA för brödtext och
@@ -8984,12 +8989,28 @@ off-white. Tokennamnen är desamma, så ingen komponent vet vilket läge som gä
 
 ### Loggan
 
-`src/web/bilder/logga.png` är den fulla loggan och används i hero-sektionen.
+Loggan är användarens egen bild. **Ingen ritad symbol används.** En förenklad
+SVG-symbol byggdes först, men användaren bad om originalet i stället, och
+`symbol.svg` och `symbol-mork.svg` togs bort.
 
-**En SVG-symbol byggs** för favicon och för headern: hus, mynt och stapel i
-loggans färger, utan gradienter och utan skuggor. Den är inte en kopia av
-PNG-loggan utan en förenkling som håller ned till 32 bildpunkter. Två varianter,
-en för ljus och en för mörk bakgrund.
+| Fil | Mått | Plats |
+|---|---|---|
+| `logga-beskuren.png` | 1200 x 653 | Hero |
+| `logga-liten.png` | 480 x 261 | Header, sidomeny, sidfot, favicon |
+
+**Båda är beskurna till motivet.** Originalet `logga.png` är kvadratiskt och har
+motivet i 26,3 procent av ytan — mätt med en genomgång av bildpunkternas
+alfavärde, som gav motivet i rutan x 144 till 868, y 267 till 646. I en header
+med begränsad höjd betyder det att den tomma ytan skalas med och att märket blir
+litet. Beskärningen lägger 16 bildpunkters marginal runt motivet och ger drygt
+tre gånger mer logga per bildpunkt.
+
+**Loggan är ritad för ljus botten.** 69,3 procent av dess täckande bildpunkter
+ger under 3:1 mot `--bla-marin`, medan samma toner ger 7 till 14:1 mot
+`--bakgrund`. Därför ligger den på en ljus platta i sidomenyn och i sidfoten.
+Headern behöver ingen platta: dess yta är redan `--yta`.
+
+`logga.png` behålls som original, men används inte av någon sida.
 
 ### Landningssidan
 
@@ -9043,6 +9064,14 @@ Mobil först. Ingen vågrät skrollning vid 320 bildpunkter. Knappar och fält m
 All text på svenska. Varje sektion är en egen komponent i den meningen att dess
 CSS är samlad under ett eget block med en kommentar, så att den går att flytta.
 
-Den inloggade appen byter till samma tema i ett eget steg: `src/web/style.css`
-läser samma tokens, och `--positiv` och `--negativ` ersätter de färger
-`left-positive` och `left-negative` har i dag.
+Den inloggade appen fick samma tema i ett eget steg. `src/web/style.css` gick
+från tretton hexkoder till noll och läser nu samma tokens som landningssidan;
+`--positiv` och `--negativ` bär beloppet på raden *Kvar att leva på*, och
+klassnamnen `left-positive` och `left-negative` behölls så att testfallen för dem
+gäller oförändrat.
+
+Appen fick samtidigt en sidomeny i `--morkt-block` med loggan, den inloggade
+adressen och `Logga ut`: en rad överst på mobil, en spalt till vänster vid 60rem.
+I mörkt läge är `--bakgrund` samma ton som sidomenyn, så menyn skulle flyta in i
+sidan — en ram i `--guld` skiljer dem åt, och guld är den enda ton i temat som
+når 3:1 mot marinblått och samtidigt syns mot `--bakgrund` i ljust läge.

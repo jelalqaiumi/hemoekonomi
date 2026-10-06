@@ -320,9 +320,12 @@ a:hover {
   min-width: 0;
 }
 
+/* Loggan är beskuren till motivet och därför bred, inte kvadratisk: 480 gånger
+   261 bildpunkter. Höjden styr och bredden följer med, så att bildens egna
+   proportioner behålls — en låst kvadrat skulle dra ut märket. */
 .markessymbol {
-  width: 2rem;
-  height: 2rem;
+  height: 3.25rem;
+  width: auto;
   flex: none;
 }
 
@@ -519,7 +522,7 @@ a:hover {
 
 .hero-bild img {
   width: 100%;
-  max-width: 22rem;
+  max-width: 34rem;
   height: auto;
 }
 
