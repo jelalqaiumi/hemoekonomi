@@ -864,7 +864,6 @@ a:hover {
   cursor: default;
 }
 
-.sidfot-not,
 .sidfot-rad {
   margin: 0;
   font-size: 0.9rem;
@@ -884,29 +883,7 @@ a:hover {
     justify-content: flex-end;
   }
 
-  .sidfot-not,
   .sidfot-rad {
     grid-column: 1 / -1;
   }
-}
-
-/* Portfolio-raden i sidfoten. Visas ALLTID, inte bara i demoläge: den är sann
-   oavsett (ARKITEKTUR.md, "Bannern"). Samma typografi som .sidfot-not och
-   .sidfot-rad, med länkarna som platshållare — ett a-element utan href har
-   ingen pekare i webbläsaren, så de stylas som understruken text. */
-.sidfot-portfolio {
-  margin: 0.25rem 0 0;
-  font-size: 0.85rem;
-  color: var(--text-svag-pa-mork);
-}
-
-.sidfot-portfolio-lankar {
-  display: inline-flex;
-  gap: 0.75rem;
-  margin-left: 0.5rem;
-}
-
-.sidfot-portfolio-lankar a {
-  color: var(--guld-ljus);
-  text-decoration: underline;
 }

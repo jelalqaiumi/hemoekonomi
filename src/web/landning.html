@@ -369,10 +369,11 @@
 
     <!-- ====================================================== 8. Footer
          Bakgrund --bla-marin. Logga, länkar och upphovsrättsrad.
-         Kontakt, Villkor och Integritetspolicy är a-element utan href, alltså
-         platshållarlänkar enligt HTML-standarden: sidorna byggs senare, och en
-         länk till en adress som svarar 404 är sämre än en text som säger att
-         den inte finns än. Noten under raden säger det i klartext. -->
+         Varje länk här går till en sektion som finns på sidan. Kontakt,
+         Villkor och Integritetspolicy stod först som a-element utan href,
+         alltså platshållare, men togs bort: en länk som inte leder någonstans
+         ser oavslutad ut, och en sida som säger att delar av den byggs senare
+         inger inte förtroende. De återkommer den dag sidorna finns. -->
     <footer class="sidfot">
       <div class="block sidfot-inre">
         <!-- Samma bild som i headern. Sidfoten är marinblå, och loggan är ritad
@@ -393,27 +394,13 @@
         </div>
 
         <nav class="sidfot-lankar" aria-label="Sidfot">
+          <a href="#funktioner">Funktioner</a>
           <a href="#priser">Priser</a>
           <a href="#faq">FAQ</a>
-          <a>Kontakt</a>
-          <a>Villkor</a>
-          <a>Integritetspolicy</a>
         </nav>
 
-        <p class="sidfot-not">
-          Kontakt, Villkor och Integritetspolicy byggs i ett senare steg.
-        </p>
         <p class="sidfot-rad">
           &#169; 2026 Hem och Ekonomi. Appen kör lokalt på din egen dator.
-        </p>
-        <!-- Portfolio-raden visas ALLTID, inte bara i demoläge: den är sann
-             oavsett (ARKITEKTUR.md, "Bannern"). GitHub och LinkedIn är
-             a-element utan href, alltså platshållarlänkar enligt
-             HTML-standarden, precis som Kontakt, Villkor och
-             Integritetspolicy ovan. -->
-        <p class="sidfot-portfolio">
-          Portfolio-projekt av Jelal Qaiumi
-          <span class="sidfot-portfolio-lankar"><a>GitHub</a><a>LinkedIn</a></span>
         </p>
       </div>
     </footer>
