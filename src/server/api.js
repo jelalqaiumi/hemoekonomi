@@ -25,6 +25,7 @@ import {
   changeTemplateFrom,
   endTemplate,
   readMonth,
+  readOverview,
   removeMonthItem,
   setOverride,
   skipMonth,
@@ -58,6 +59,16 @@ const ENTRY_PATH_PREFIX = '/api/entries/';
 // inloggningens: /api/manad/<ÅÅÅÅ-MM> och /api/poster/<id>.
 const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
+
+// Översiktens väg [etapp 5]: /api/oversikt/<ÅÅÅÅ-MM>. Adressen är svensk,
+// precis som månadens.
+const OVERVIEW_PATH_PREFIX = '/api/oversikt/';
+// Antalet månader i översikten. Står här och inte i vägen: en klient ska inte
+// kunna be om ett annat antal förrän det finns ett skäl, och ett antal i
+// adressen hade gjort taket i readOverview till det enda som skiljer tolv
+// månader från tiotusen. count är ändå ett argument i datalagret, eftersom
+// testerna behöver kortare serier.
+const OVERVIEW_MONTHS = 12;
 
 // Mallarnas vägar [etapp 4]. Adressen är svensk, precis som månadens.
 const TEMPLATE_PATH_PREFIX = '/api/mallar/';
@@ -259,6 +270,16 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
+  const overviewMonth = segmentAfter(pathname, OVERVIEW_PATH_PREFIX);
+  if (overviewMonth !== null) {
+    if (req.method === 'GET') {
+      handleReadOverview(req, res, now, overviewMonth);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
   const templateMonth = segmentAfter(pathname, TEMPLATE_PATH_PREFIX);
   if (templateMonth !== null) {
     if (req.method === 'POST') {
@@ -365,6 +386,32 @@ function handleReadMonth(req, res, now, month) {
     return;
   }
   sendJson(res, 200, { items: result.items, totals: result.totals });
+}
+
+// GET /api/oversikt/<ÅÅÅÅ-MM> [etapp 5]. 200 med { months, savedThisYear },
+// 400 vid fel månadsformat, 401 utan session, 500 vid DatabaseError.
+//
+// Samma ordning som handleReadMonth ovan: sessionsspärren, månadsspärren, sedan
+// datalagret. Månaden prövas här fastän readOverview prövar den igen — en
+// ogiltig månad ska bli ett 400 med den svenska texten ur MESSAGES och aldrig
+// ett 500 med ett RangeError-meddelande som namnger en funktion i datalagret.
+function handleReadOverview(req, res, now, month) {
+  const userId = sessionUserId(req, res, now);
+  if (userId === null) {
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  let result;
+  try {
+    result = readOverview(userId, month, OVERVIEW_MONTHS);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { months: result.months, savedThisYear: result.savedThisYear });
 }
 
 // DELETE /api/poster/<id>. 204, 401, 404 om posten inte finns eller tillhör

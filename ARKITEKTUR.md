@@ -9514,3 +9514,105 @@ låsas upp, medan ett fält som inte finns inte väcker frågan.
 | (70) | `Från och med` förifyller intervallet | en kvartalspost visar `Kvartalsvis` i fältet, inte `Månadsvis` |
 | (71) | en beloppsändring behåller intervallet | ändra bara beloppet på en kvartalspost: serien är kvar som kvartalsvis |
 | (72) | `Bara <månad>` döljer de fält som inte går att ändra | namn, kategori, kryssruta och de två fälten är dolda; beloppet syns |
+
+---
+
+### Historik och tolvmånadersöversikt (bindande) [etapp 5]
+
+Att bläddra bakåt fungerar sedan etapp 3: månadsväljaren visar vilken månad som
+helst, och versioneringen i etapp 4 gör att en passerad månad visar det som
+gällde då. Det som saknas är **överblicken** — tolv månader bredvid varandra.
+
+#### Datalagret
+
+```
+readOverview(userId, endMonth, count) -> { months, savedThisYear }
+```
+
+`months` är en lista med `count` poster, äldst först, var och en
+`{ month, incomeOre, expenseOre, savingOre, leftOre }`. `endMonth` är den sista
+månaden, alltså normalt den aktuella.
+
+**Summorna räknas av `monthTotals`**, samma funktion som en enskild månad
+använder. Ingen andra väg till ett tal.
+
+`savedThisYear` är summan av `savingOre` för varje månad i `endMonth`:s år, till
+och med `endMonth`. En översikt som slutar i oktober 2026 räknar alltså januari
+till oktober 2026, oavsett hur många månader `count` sträcker sig bakåt.
+
+**Spärrar, första träff vinner:**
+
+| # | Villkor | Svensk text |
+|---|---|---|
+| 1 | `endMonth` är inte en månad | `readOverview kräver en månad på formen ÅÅÅÅ-MM, fick "<värdet>".` |
+| 2 | `count` är inte ett heltal mellan 1 och 36 | `readOverview kräver ett antal månader mellan 1 och 36, fick "<värdet>".` |
+
+Taket 36 finns för att en översikt läser varje månads hela kedja: mallar,
+intervallträffar, avvikelser och engångsposter. Utan tak kan en klient be om
+tiotusen månader och få servern att arbeta i onödan.
+
+#### API-vägen
+
+| Metod och väg | Svar |
+|---|---|
+| `GET /api/oversikt/<ÅÅÅÅ-MM>` | `200` med `{ months, savedThisYear }`. `400` vid fel månadsformat. `401`. `500`. |
+
+Antalet månader är tolv och står inte i vägen — en klient ska inte kunna be om
+ett annat antal förrän det finns ett skäl. `count` är ändå ett argument i
+datalagret, eftersom testerna behöver kortare serier.
+
+#### Gränssnittet
+
+En ny vy som månadsvyn växlar till, inte en egen sida: sidomenyn får en knapp
+`Översikt`, och månadsvyn får tillbaka en knapp `Tillbaka till månaden`. Ingen
+router, samma mönster som inloggningsvyn och månadsvyn redan använder.
+
+**Överst: tre tal.**
+
+| Tal | Innehåll |
+|---|---|
+| `Sparat hittills i år` | `savedThisYear` genom `formatSek` |
+| `Snitt kvar per månad` | medelvärdet av `leftOre`, avrundat med `divideRoundHalfUp` i `money.js` |
+| `Bästa månaden` | månaden med högst `leftOre`, skriven med `monthLabel` |
+
+**Därefter ett stapeldiagram** som inline-SVG, byggt av `app.js` på samma sätt
+som kategoridiagrammet: en stapel per månad, höjden som andel av den största
+`leftOre`. En månad med negativt `leftOre` ritas **nedåt** från en nollinje och i
+`--negativ`; en positiv uppåt i `--positiv`. Nollinjen ska synas.
+
+**Och under det en tabell** med en rad per månad: månad, inkomst, utgift,
+sparande, kvar. Diagrammet visar formen, tabellen de exakta talen — den som vill
+läsa siffror ska inte behöva tolka en stapel.
+
+**Tomma månader utelämnas inte.** En månad utan poster visas med fyra nollor,
+annars ser tidslinjen ut att hoppa över tid.
+
+#### Kravlista [etapp 5]
+
+`tests/months.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M26) | tolv månader i rätt ordning | äldst först, och den sista är `endMonth` |
+| (M27) | summorna kommer ur `monthTotals` | samma tal som `readMonth` ger för varje månad |
+| (M28) | `savedThisYear` räknar årets månader | en översikt över ett årsskifte räknar bara innevarande år |
+| (M29) | en tom månad ger fyra nollor | inte en utelämnad rad |
+| (M30) | en annan användares data syns inte | tomma månader för det andra kontot |
+| (M31) | spärrarna | ett fall per rad, hela meddelandet asserterat |
+
+`tests/month-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (M32) | `GET /api/oversikt/<månad>` ger tolv månader | och `savedThisYear` |
+| (M33) | fel månadsformat ger `400` | och når aldrig datalagret |
+
+`tests/app.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (73) | `Översikt` byter vy | månadsvyn döljs, översikten visas |
+| (74) | `Tillbaka till månaden` byter tillbaka | till samma månad som innan |
+| (75) | de tre talen kommer ur svaret | inget räknas i `app.js` utom snittet, som använder `money.js` |
+| (76) | en negativ månad ritas nedåt och i `--negativ` | klassen finns på stapeln |
+| (77) | tabellen har en rad per månad | tolv rader, i samma ordning som diagrammet |

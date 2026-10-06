@@ -21,7 +21,7 @@ import { AUTH_MESSAGES, NOT_LOGGED_IN_MESSAGE } from '../src/server/auth.js';
 import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
 import { addMonthItem, addTemplate, readMonth } from '../src/server/months.js';
 import { mountBanner } from '../src/web/demo/banner.js';
-import { createDemoFetch, readDemoMonth, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
+import { createDemoFetch, readDemoMonth, readDemoOverview, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
 import { DEMO } from '../src/web/demo/demolage.js';
 import { clearState, getStorage, readState, STORAGE_KEY, writeState } from '../src/web/demo/lagring.js';
 import { createSeedState, DEMO_EMAIL, seedMonths } from '../src/web/demo/seed.js';
@@ -478,8 +478,17 @@ test('(D4) summorna kommer ur monthTotals och räknas inte av attrappen', async 
   // former en egen räkning skulle ta: en reduce över listan, eller en addition
   // av amountOre.
   const kalla = await fs.readFile(DEMO_FETCH_PATH, 'utf8');
+  // Spärren prövar BINDNINGEN och inte importradens exakta text: etapp 5 lade
+  // sumByKind till samma rad, och en spärr som läser hela raden faller då för en
+  // ändring som inte rör det den skyddar. Varje element normaliseras med
+  // split(/\s+as\s+/)[0] av samma skäl som importspärren i tests/api.test.js
+  // (LARDOMAR.md 2026-09-07, textspärren mot saveEntries går förbi med ett
+  // alias).
+  const budgetImport = /import \{([^}]*)\} from '\.\.\/\.\.\/core\/budget\.js';/.exec(kalla);
+  assert.notEqual(budgetImport, null, 'attrappen importerar inte från budget.js');
+  const budgetBindningar = budgetImport[1].split(',').map((del) => del.split(/\s+as\s+/)[0].trim());
   assert.equal(
-    kalla.includes("import { monthTotals } from '../../core/budget.js';"),
+    budgetBindningar.includes('monthTotals'),
     true,
     'attrappen hämtar summorna ur budget.js'
   );
@@ -827,4 +836,82 @@ test('de skrivna månaderna stämmer med den skrivna dagen', () => {
   assert.equal(monthOfIsoDate(IDAG), MANAD);
   assert.equal(shiftMonth(MANAD, -1), FOREGAENDE);
   assert.equal(shiftMonth(MANAD, 1), NASTA);
+});
+
+// ----------------------------------------------- översikten i demoläget [etapp 5]
+
+// Attrappen svarar på GET /api/oversikt/<ÅÅÅÅ-MM> med samma form som
+// src/server/api.js, så att en besökare ser översikten och inte en feltext.
+//
+// Seed-datan sträcker sig tre månader: den tidigaste, den aktuella och den
+// kommande. Tolv månader bakåt från den aktuella rymmer bara de två första av
+// dem, så tio av tolv rader är tomma — och de står med, med fyra nollor. En
+// utelämnad rad hade fått tidslinjen att se ut att hoppa över tid.
+test('attrappen svarar på översiktens väg med tolv månader och savedThisYear', async () => {
+  const { fetch } = riggning();
+
+  const response = await fetch(`/api/oversikt/${MANAD}`);
+  assert.equal(response.status, 200);
+  const kropp = await json(response);
+
+  assert.equal(kropp.months.length, 12);
+  // Äldst först, och den sista är den efterfrågade månaden.
+  assert.equal(kropp.months[11].month, MANAD);
+  assert.equal(kropp.months[0].month, shiftMonth(MANAD, -11));
+  assert.deepEqual(Object.keys(kropp).sort(), ['months', 'savedThisYear']);
+
+  // Varje rad bär de fyra talen ur monthTotals för just den månaden: samma
+  // ägare som en enskild månad, ingen andra väg till ett tal.
+  for (const rad of kropp.months) {
+    const manadens = readDemoMonth(createSeedState(IDAG), rad.month);
+    assert.deepEqual(
+      { incomeOre: rad.incomeOre, expenseOre: rad.expenseOre, savingOre: rad.savingOre, leftOre: rad.leftOre },
+      monthTotals(manadens.items),
+      rad.month
+    );
+  }
+
+  // De två månader seed-datan faktiskt når har innehåll, och de tio före är
+  // tomma utan att vara utelämnade. Tio och inte nio: serien slutar i den
+  // aktuella månaden, så seed-datans tredje månad (den kommande) ligger utanför
+  // den, och av de tolv raderna är exakt två fyllda.
+  const tidigaste = seedMonths(IDAG)[0];
+  assert.equal(kropp.months.find((rad) => rad.month === tidigaste).incomeOre > 0, true);
+  assert.equal(kropp.months.find((rad) => rad.month === MANAD).incomeOre > 0, true);
+  const tomma = kropp.months.filter((rad) => rad.month < tidigaste);
+  assert.equal(tomma.length, 10);
+  for (const rad of tomma) {
+    assert.deepEqual(
+      { incomeOre: rad.incomeOre, expenseOre: rad.expenseOre, savingOre: rad.savingOre, leftOre: rad.leftOre },
+      { incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 },
+      rad.month
+    );
+  }
+
+  // savedThisYear är årets sparande till och med den aktuella månaden. Seed-datan
+  // har sparande i den tidigaste och den aktuella månaden, alltså två månader av
+  // de tio i året.
+  assert.equal(kropp.savedThisYear > 0, true);
+  assert.equal(kropp.savedThisYear, readDemoOverview(createSeedState(IDAG), MANAD, 12).savedThisYear);
+});
+
+test('attrappens översiktsväg kräver session, rätt metod och en riktig månad', async () => {
+  const { fetch } = riggning();
+
+  for (const manad of ['2026-13', '2026-1', 'oktober']) {
+    const response = await fetch(`/api/oversikt/${manad}`);
+    assert.equal(response.status, 400, manad);
+    assert.deepEqual(await json(response), { error: SERVER_TEXTS.invalidMonth }, manad);
+  }
+
+  const fel = await fetch(`/api/oversikt/${MANAD}`, { method: 'POST', body: '{}' });
+  assert.equal(fel.status, 405);
+  assert.deepEqual(await json(fel), { error: SERVER_TEXTS.methodNotAllowed });
+
+  // Utloggad: sessionsspärren går före månadsspärren, precis som i api.js.
+  const utloggad = riggning();
+  utloggad.state.loggedIn = false;
+  const utan = await utloggad.fetch('/api/oversikt/2026-13');
+  assert.equal(utan.status, 401);
+  assert.deepEqual(await json(utan), { error: SERVER_TEXTS.notLoggedIn });
 });

@@ -8,7 +8,7 @@
 import { monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS } from '/core/item.js';
-import { formatSek, oreToSek } from '/core/money.js';
+import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
 
 // Text mot användaren som varken kommer från servern eller från src/core/ står
 // ordagrant i ARKITEKTUR.md och får inte skrivas om. Uppräkningen bär inget antal
@@ -98,6 +98,21 @@ const CHART_BAR_HEIGHT = 5;
 const CHART_TEXT_BASELINE = 5;
 const CHART_BAR_TOP = 7;
 
+// Översiktens diagram [etapp 5]. Staplarna står bredvid varandra, en per månad,
+// och nollinjen ligger på halva höjden: en månad får växa lika långt nedåt som
+// uppåt. OVERVIEW_CHART_HALF är därför både nollinjens y och den högsta
+// stapelns höjd.
+const OVERVIEW_CHART_WIDTH = 120;
+const OVERVIEW_CHART_HALF = 20;
+// Luften mellan två staplar, dragen från kolumnens bredd.
+const OVERVIEW_BAR_GAP = 2;
+const OVERVIEW_CHART_TITLE = 'Kvar att leva på per månad';
+// Klasserna som hämtar var(--positiv) och var(--negativ) i style.css. Står som
+// namn och inte som literaler i renderOverviewChart: samma sträng läses av
+// koden och av testfallet (76).
+const OVERVIEW_BAR_POSITIVE = 'overview-bar overview-bar-positive';
+const OVERVIEW_BAR_NEGATIVE = 'overview-bar overview-bar-negative';
+
 const LOGIN_VIEW = document.querySelector('#login-view');
 const LOGIN_STEP_EMAIL = document.querySelector('#login-step-email');
 const LOGIN_STEP_CODE = document.querySelector('#login-step-code');
@@ -124,6 +139,18 @@ const TOTAL_LEFT = document.querySelector('#total-left');
 
 const CHART = document.querySelector('#chart');
 const CHART_EMPTY = document.querySelector('#chart-empty');
+
+// Översiktens vy [etapp 5]. Knappen Översikt ligger i sidomenyn, alltså i
+// månadsvyn; Tillbaka till månaden ligger i översikten.
+const OVERVIEW_VIEW = document.querySelector('#overview-view');
+const SHOW_OVERVIEW = document.querySelector('#show-overview');
+const BACK_TO_MONTH = document.querySelector('#back-to-month');
+const OVERVIEW_LABEL = document.querySelector('#overview-label');
+const OVERVIEW_SAVED = document.querySelector('#overview-saved');
+const OVERVIEW_AVERAGE = document.querySelector('#overview-average');
+const OVERVIEW_BEST = document.querySelector('#overview-best');
+const OVERVIEW_CHART = document.querySelector('#overview-chart');
+const OVERVIEW_ROWS = document.querySelector('#overview-rows');
 
 const FORM_CARD = document.querySelector('#item-form-card');
 const FORM = document.querySelector('#item-form');
@@ -256,6 +283,7 @@ function fillOptions(selectId, labels) {
 function showLoginView() {
   LOGIN_VIEW.hidden = false;
   MONTH_VIEW.hidden = true;
+  OVERVIEW_VIEW.hidden = true;
   LOGIN_STEP_EMAIL.hidden = false;
   LOGIN_STEP_CODE.hidden = true;
   CODE_SENT.textContent = '';
@@ -265,6 +293,15 @@ function showLoginView() {
 function showMonthView() {
   LOGIN_VIEW.hidden = true;
   MONTH_VIEW.hidden = false;
+  OVERVIEW_VIEW.hidden = true;
+}
+
+// Översikten är en vy och ingen egen sida: samma tre rader som ovan, med ett
+// annat element synligt. Ingen router.
+function showOverviewView() {
+  LOGIN_VIEW.hidden = true;
+  MONTH_VIEW.hidden = true;
+  OVERVIEW_VIEW.hidden = false;
 }
 
 // Ett 401 betyder att sessionen gått ut medan sidan var öppen. Vyn byts, och
@@ -287,8 +324,11 @@ function renderUser(email) {
   USER_EMAIL.textContent = typeof email === 'string' ? email : '';
 }
 
-function cell(className, text) {
-  const element = document.createElement('span');
+// En cell med en klass och en text. tagName står som ett argument med span som
+// förval: översiktens tabell behöver td, och en andra, nästan likadan hjälpare
+// hade varit två ägare till samma tre rader.
+function cell(className, text, tagName = 'span') {
+  const element = document.createElement(tagName);
   element.className = className;
   element.textContent = text;
   return element;
@@ -872,6 +912,209 @@ async function logIn(button) {
 // inloggningsvyn, 200 visar månadsvyn. Ett annat svar visar också
 // inloggningsvyn, och då med serverns text — ett 500 från databasen får inte bli
 // en tom skärm.
+// --------------------------------------------------------- översikten [etapp 5]
+//
+// Tolv månader bredvid varandra. Talen kommer ur
+// GET /api/oversikt/<ÅÅÅÅ-MM> och räknas aldrig här — med ett undantag,
+// snittet, där app.js summerar leftOre och låter divideRoundHalfUp i money.js
+// äga avrundningen. Varje annat tal är ett fält i svaret, och textspärren (75)
+// i tests/app.test.js förbjuder en loop eller en reduce i samma sats som något
+// av de tre elementen.
+
+// Rubriken i översikten. Bär inget antal: ett krav med siffra blir falskt av
+// nästa ändring av OVERVIEW_MONTHS i src/server/api.js (LARDOMAR.md
+// 2026-09-12).
+function overviewHeadingText(month) {
+  return `Översikt till och med ${monthLabel(month)}`;
+}
+
+// Det största beloppet i serien, mätt utan tecken: stapelns höjd är andelen av
+// den, så att den kraftigaste månaden — plus eller minus — fyller halva
+// diagrammet. Andel av summan hade gjort varje stapel kort så snart en månad
+// dominerar, precis som för kategoridiagrammet ovan.
+function largestLeftMagnitude(months) {
+  let largest = 0;
+  for (const row of months) {
+    const magnitude = Math.abs(oreFromResponse(row.leftOre));
+    if (magnitude > largest) {
+      largest = magnitude;
+    }
+  }
+  return largest;
+}
+
+// Månaden med högst leftOre. Jämförelsen är strikt, så den äldsta av två lika
+// månader vinner — serien är äldst först, och ett oavgjort fall ska svara
+// likadant vid varje hämtning.
+//
+// null när serien är tom. Det inträffar bara för ett 200 med en kropp som inte
+// bär months, samma fall som oreFromResponse finns för.
+function bestMonth(months) {
+  let best = null;
+  for (const row of months) {
+    if (best === null || oreFromResponse(row.leftOre) > oreFromResponse(best.leftOre)) {
+      best = row;
+    }
+  }
+  return best;
+}
+
+// Snittet: det enda tal app.js räknar fram. Avrundningen ägs av
+// divideRoundHalfUp i src/core/money.js — ingen division med / och ingen
+// Math.round här, och summan byggs i den här funktionen och aldrig i satsen som
+// skriver elementet, så att textspärren i (75) kan förbjuda en loop i just den
+// satsen.
+function averageLeftOre(months) {
+  // divideRoundHalfUp kräver en nämnare större än 0 och kastar annars.
+  if (months.length === 0) {
+    return 0;
+  }
+  let sum = 0;
+  for (const row of months) {
+    sum += oreFromResponse(row.leftOre);
+    // Samma regel som oreFromResponse för ett enskilt tal, tillämpad på summan:
+    // tolv belopp som var för sig är säkra heltal kan tillsammans ligga utanför
+    // området, och villkoret är divideRoundHalfUps eget giltighetsområde
+    // (2 * täljaren + nämnaren). Utan raden kastar money.js och vyn stannar
+    // mitt i renderingen.
+    if (!Number.isSafeInteger(2 * sum + months.length)) {
+      return 0;
+    }
+  }
+  return divideRoundHalfUp(sum, months.length);
+}
+
+function renderOverviewTotals(months, savedThisYear) {
+  OVERVIEW_SAVED.textContent = formatSek(oreFromResponse(savedThisYear));
+  OVERVIEW_AVERAGE.textContent = formatSek(averageLeftOre(months));
+  const best = bestMonth(months);
+  OVERVIEW_BEST.textContent = best === null ? '' : monthLabel(best.month);
+}
+
+// Stapeldiagrammet som inline-SVG, byggt på samma sätt som kategoridiagrammet:
+// ingen bildfil, inget bibliotek, inget canvas.
+//
+// En månad med negativt kvar ritas NEDÅT från nollinjen och bär klassen som
+// hämtar var(--negativ); en positiv ritas uppåt och bär klassen för
+// var(--positiv). Noll räknas som positivt, precis som på raden Kvar att leva
+// på. Nollinjen ritas som en egen linje och finns alltid, också när varje månad
+// är noll — utan den går det inte att se vilka månader som gick back.
+function renderOverviewChart(months) {
+  OVERVIEW_CHART.replaceChildren();
+  if (months.length === 0) {
+    return;
+  }
+
+  const svg = svgElement('svg', {
+    role: 'img',
+    viewBox: `0 0 ${OVERVIEW_CHART_WIDTH} ${2 * OVERVIEW_CHART_HALF}`
+  });
+  const title = svgElement('title', {});
+  title.textContent = OVERVIEW_CHART_TITLE;
+  svg.append(title);
+
+  // Nollinjen först, så att staplarna ritas över den.
+  svg.append(svgElement('line', {
+    class: 'overview-zero-line',
+    x1: 0,
+    y1: OVERVIEW_CHART_HALF,
+    x2: OVERVIEW_CHART_WIDTH,
+    y2: OVERVIEW_CHART_HALF
+  }));
+
+  const largest = largestLeftMagnitude(months);
+  const columnWidth = OVERVIEW_CHART_WIDTH / months.length;
+  for (const [index, row] of months.entries()) {
+    const left = oreFromResponse(row.leftOre);
+    // Varje månad är noll: då finns ingen största stapel att ta andel av, och
+    // varje höjd är noll. Nollinjen står kvar och är hela diagrammet.
+    const height = largest === 0 ? 0 : Math.round((Math.abs(left) * OVERVIEW_CHART_HALF) / largest);
+    const negative = left < 0;
+    const bar = svgElement('rect', {
+      class: negative ? OVERVIEW_BAR_NEGATIVE : OVERVIEW_BAR_POSITIVE,
+      x: index * columnWidth,
+      // En negativ stapel börjar PÅ nollinjen och växer nedåt; en positiv
+      // slutar på den och har därför sin överkant höjden ovanför.
+      y: negative ? OVERVIEW_CHART_HALF : OVERVIEW_CHART_HALF - height,
+      width: columnWidth - OVERVIEW_BAR_GAP,
+      height
+    });
+    const barTitle = svgElement('title', {});
+    barTitle.textContent = `${monthLabel(row.month)}: ${formatSek(left)}`;
+    bar.append(barTitle);
+    svg.append(bar);
+  }
+
+  OVERVIEW_CHART.append(svg);
+}
+
+// Tabellen: en rad per månad, i samma ordning som diagrammet. En tom månad står
+// med, med fyra nollor — annars ser tidslinjen ut att hoppa över tid.
+function overviewRow(row) {
+  const tr = document.createElement('tr');
+  const left = oreFromResponse(row.leftOre);
+  tr.append(
+    cell('overview-month', monthLabel(row.month), 'td'),
+    cell('overview-income', formatSek(oreFromResponse(row.incomeOre)), 'td'),
+    cell('overview-expense', formatSek(oreFromResponse(row.expenseOre)), 'td'),
+    cell('overview-saving', formatSek(oreFromResponse(row.savingOre)), 'td'),
+    // Samma två klasser som raden Kvar att leva på i månadsvyn: färgen ligger i
+    // style.css och aldrig som ett style-attribut här.
+    cell(left < 0 ? 'overview-left left-negative' : 'overview-left left-positive', formatSek(left), 'td')
+  );
+  return tr;
+}
+
+function renderOverviewRows(months) {
+  OVERVIEW_ROWS.replaceChildren();
+  for (const row of months) {
+    OVERVIEW_ROWS.append(overviewRow(row));
+  }
+}
+
+function renderOverview(body) {
+  const months = Array.isArray(body.months) ? body.months : [];
+  OVERVIEW_LABEL.textContent = overviewHeadingText(currentMonth);
+  renderOverviewTotals(months, body.savedThisYear);
+  renderOverviewChart(months);
+  renderOverviewRows(months);
+}
+
+// Hämtar översikten och byter vy först när svaret är läst. Ordningen är inte
+// likgiltig: byttes vyn först skulle ett misslyckat anrop lämna användaren i en
+// vy med tre tomma rutor och en tom tabell, alltså ett tillstånd som varken är
+// "tolv månader" eller "månadsvyn" (LARDOMAR.md 2026-09-10, "ett tredje
+// tillstånd som specen inte nämner"). Felet skrivs därför i månadsvyns felruta,
+// där användaren fortfarande står.
+async function showOverview(button) {
+  button.disabled = true;
+  try {
+    let response;
+    try {
+      response = await fetch(`/api/oversikt/${currentMonth}`);
+    } catch {
+      MONTH_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    const body = await readJson(response);
+    if (response.status !== 200) {
+      MONTH_ERROR.textContent = generalText(body);
+      return;
+    }
+
+    MONTH_ERROR.textContent = '';
+    renderOverview(body);
+    showOverviewView();
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadMe() {
   let response;
   try {
@@ -925,6 +1168,18 @@ LOG_OUT.addEventListener('click', () => {
 
 CANCEL_BUTTON.addEventListener('click', () => {
   closeForm();
+});
+
+SHOW_OVERVIEW.addEventListener('click', () => {
+  void showOverview(SHOW_OVERVIEW);
+});
+
+// Tillbaka till månaden byter bara vy: månadsvyn är kvar som den var, och
+// currentMonth har inte rörts, så användaren kommer tillbaka till samma månad.
+// Ingen ny hämtning — en omhämtning som misslyckas hade kunnat lämna månadsvyn
+// med ett fel som användaren inte bad om.
+BACK_TO_MONTH.addEventListener('click', () => {
+  showMonthView();
 });
 
 MONTH_PREV.addEventListener('click', () => {

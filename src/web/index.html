@@ -78,6 +78,11 @@
             <span class="sidomeny-namn">Hem och Ekonomi</span>
           </div>
           <span id="user-email"></span>
+          <!-- Vägen till tolvmånadersöversikten [etapp 5]. Ingen router och
+               ingen egen sida: knappen byter vilken av sektionerna som bär
+               hidden, samma mönster som inloggningsvyn och månadsvyn redan
+               använder. -->
+          <button type="button" class="secondary" id="show-overview">Översikt</button>
           <button type="button" class="secondary" id="log-out">Logga ut</button>
         </aside>
 
@@ -226,6 +231,67 @@
                fälten. -->
           <p class="form-error" id="month-error" role="alert"></p>
         </div>
+      </section>
+
+      <!-- Översikten [etapp 5]: tolv månader bredvid varandra. Dold från början,
+           precis som månadsvyn; knappen Översikt i sidomenyn visar den och
+           Tillbaka till månaden visar månadsvyn igen. Talen kommer ur
+           GET /api/oversikt/<ÅÅÅÅ-MM> och räknas aldrig här — med ett undantag,
+           snittet, som app.js avrundar med divideRoundHalfUp i money.js. -->
+      <section id="overview-view" hidden>
+        <div class="card overview-head">
+          <h2 id="overview-label"></h2>
+          <button type="button" id="back-to-month">Tillbaka till månaden</button>
+        </div>
+
+        <!-- De tre talen. Etiketterna är statisk text; app.js sätter bara
+             textContent på de tre beloppselementen. -->
+        <div class="card summary">
+          <p class="summary-row">
+            <span class="summary-label">Sparat hittills i år</span>
+            <span class="summary-amount" id="overview-saved"></span>
+          </p>
+          <p class="summary-row">
+            <span class="summary-label">Snitt kvar per månad</span>
+            <span class="summary-amount" id="overview-average"></span>
+          </p>
+          <p class="summary-row">
+            <span class="summary-label">Bästa månaden</span>
+            <span class="summary-amount" id="overview-best"></span>
+          </p>
+        </div>
+
+        <!-- Stapeldiagrammet: inline-SVG som app.js bygger, en stapel per månad.
+             En månad med negativt kvar ritas nedåt från nollinjen, en positiv
+             uppåt. Nollinjen ritas som en egen linje och syns alltid — utan den
+             går det inte att se vilka månader som gick back. -->
+        <div class="card">
+          <div id="overview-chart" class="chart"></div>
+        </div>
+
+        <!-- Tabellen med de exakta talen. Diagrammet visar formen, tabellen
+             siffrorna: den som vill läsa ett belopp ska inte behöva tolka en
+             stapel. En tom månad står med, med fyra nollor — annars ser
+             tidslinjen ut att hoppa över tid. -->
+        <div class="card">
+          <table class="overview-table">
+            <thead>
+              <tr>
+                <th scope="col">Månad</th>
+                <th scope="col">Inkomst</th>
+                <th scope="col">Utgift</th>
+                <th scope="col">Sparande</th>
+                <th scope="col">Kvar</th>
+              </tr>
+            </thead>
+            <tbody id="overview-rows"></tbody>
+          </table>
+        </div>
+
+        <!-- Ingen egen felruta: översikten hämtas FÖRE vyn byts, så ett
+             misslyckat anrop lämnar användaren i månadsvyn och skriver sin text
+             i #month-error. En vy som visas utan data skulle annars ha tre tomma
+             rutor och en tom tabell (LARDOMAR.md 2026-09-10). -->
       </section>
     </main>
 

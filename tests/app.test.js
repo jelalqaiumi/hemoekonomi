@@ -20,8 +20,9 @@ import fs from 'node:fs/promises';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { monthLabel } from '../src/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
-import { formatSek } from '../src/core/money.js';
+import { divideRoundHalfUp, formatSek } from '../src/core/money.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
 // Text mot användaren som app.js skriver själv, alltså varken hämtar ur svaret
@@ -1798,4 +1799,381 @@ test('(33) laddarens after-hook lämnar tillbaka globalThis efter ett avvisat an
     FETCH_FORE_TESTERNA,
     'globalThis.fetch är inte värdet från före testfallen: attrappen står kvar'
   );
+});
+
+// De tre talen i översikten, som namn i app.js. Textspärren i (75) läser
+// källan och letar efter en loop i samma sats som något av dem.
+const OVERSIKTSELEMENT = Object.freeze(['OVERVIEW_SAVED', 'OVERVIEW_AVERAGE', 'OVERVIEW_BEST']);
+
+// En inloggad session där EN väg svarar olika i tur och ordning och varje annan
+// GET ger en tom månad.
+function ikoordningFor(vag, svar) {
+  const nasta = ikoordning(svar);
+  return (anropet) => {
+    if (anropet.url === '/api/mig') {
+      return MIG_200;
+    }
+    if (anropet.url === vag) {
+      return nasta();
+    }
+    if (anropet.method === 'GET') {
+      return manadssvar([]);
+    }
+    return null;
+  };
+}
+
+// ------------------------------------------- (73) till (77) översikten [etapp 5]
+
+// Tolv månader som slutar i den visade månaden, äldst först — samma form som
+// src/server/months.js lämnar dem: ören, och fyra tal per månad. Talen står
+// skrivna och räknas inte här: leftOre är serverns fält, inte testets summa.
+//
+// Tabellen har en negativ månad (december 2025), en tom månad (februari 2026)
+// och en bästa månad (september 2026), så att varje fall nedan har en månad som
+// skiljer sig från sina grannar.
+const OVERSIKTSMANADER = Object.freeze([
+  Object.freeze({ month: '2025-10', incomeOre: 3000000, expenseOre: 1000000, savingOre: 200000, leftOre: 1800000 }),
+  Object.freeze({ month: '2025-11', incomeOre: 3000000, expenseOre: 1100000, savingOre: 200000, leftOre: 1700000 }),
+  Object.freeze({ month: '2025-12', incomeOre: 3000000, expenseOre: 4000000, savingOre: 200000, leftOre: -1200000 }),
+  Object.freeze({ month: '2026-01', incomeOre: 3000000, expenseOre: 900000, savingOre: 300000, leftOre: 1800000 }),
+  Object.freeze({ month: '2026-02', incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 }),
+  Object.freeze({ month: '2026-03', incomeOre: 3000000, expenseOre: 1000000, savingOre: 100000, leftOre: 1900000 }),
+  Object.freeze({ month: '2026-04', incomeOre: 3000000, expenseOre: 1000000, savingOre: 100000, leftOre: 1900000 }),
+  Object.freeze({ month: '2026-05', incomeOre: 3000000, expenseOre: 1200000, savingOre: 100000, leftOre: 1700000 }),
+  Object.freeze({ month: '2026-06', incomeOre: 3000000, expenseOre: 1000000, savingOre: 100000, leftOre: 1900000 }),
+  Object.freeze({ month: '2026-07', incomeOre: 3000000, expenseOre: 1000000, savingOre: 100000, leftOre: 1900000 }),
+  Object.freeze({ month: '2026-08', incomeOre: 3000000, expenseOre: 1000000, savingOre: 100000, leftOre: 1900000 }),
+  Object.freeze({ month: '2026-09', incomeOre: 3500007, expenseOre: 1000000, savingOre: 100000, leftOre: 2400007 })
+]);
+
+// savedThisYear är serverns eget fält och inte serien summerad: värdet är med
+// flit ett annat tal än summan av savingOre i de tolv månaderna, som är
+// 1600000 ören. En vy som räknade själv skulle visa 1600000 och falla på (75).
+const SPARAT_I_AR = 900000;
+// Summan av leftOre i serien, skriven ut. 17700007 ören delat på tolv månader är
+// 1475000,5833…, alltså ett värde där "halva öret uppåt" och en avhuggning ger
+// olika svar — annars kan inget testfall skilja divideRoundHalfUp från
+// Math.floor.
+const SUMMA_LEFT = 17700007;
+const SNITT_LEFT = 1475001;
+
+const OVERSIKTSVAG = `/api/oversikt/${MANAD}`;
+const OVERSIKTSVAG_FOREGAENDE = `/api/oversikt/${FOREGAENDE_MANAD}`;
+const OVERSIKTSRUBRIK = 'Översikt till och med September 2026';
+const OVERSIKT_DIAGRAMTITEL = 'Kvar att leva på per månad';
+const OVERSIKTSSVAR = Object.freeze({
+  status: 200,
+  json: { months: OVERSIKTSMANADER, savedThisYear: SPARAT_I_AR }
+});
+
+// En inloggad session där månadsvägen ger en tom månad och översiktsvägen ger
+// serien ovan. Skriven för hand i stället för med planInloggad: den planen
+// svarar på VARJE GET med månadssvaret, och översikten är en annan väg.
+function planOversikt(svar = OVERSIKTSSVAR) {
+  return (anropet) => {
+    if (anropet.url === '/api/mig') {
+      return MIG_200;
+    }
+    if (anropet.url === OVERSIKTSVAG || anropet.url === OVERSIKTSVAG_FOREGAENDE) {
+      return svar;
+    }
+    if (anropet.method === 'GET') {
+      return manadssvar([]);
+    }
+    return null;
+  };
+}
+
+// Öppnar översikten från en inloggad månadsvy.
+async function oppnaOversikten(dom) {
+  await flush();
+  dom.falt('show-overview').utlos('click');
+  await flush();
+}
+
+// SVG:n i översiktens diagram, plus staplarna och nollinjen var för sig.
+function diagrammet(dom) {
+  const barn = dom.falt('overview-chart').children;
+  assert.equal(barn.length, 1, 'översiktens diagram har ingen SVG');
+  const svg = barn[0];
+  return {
+    svg,
+    titel: svg.children.find((element) => element.tagName === 'title'),
+    staplar: svg.children.filter((element) => element.tagName === 'rect'),
+    linjer: svg.children.filter((element) => element.tagName === 'line')
+  };
+}
+
+// Cellen Kvar i en tabellrad. Den bär TVÅ klasser — overview-left plus
+// left-positive eller left-negative — så celltext, som jämför hela className,
+// hittar den inte.
+function kvarcell(rad) {
+  const cell = rad.children.find((barn) => barn.className.startsWith('overview-left'));
+  assert.notEqual(cell, undefined, 'raden saknar cellen Kvar');
+  return cell;
+}
+
+test('(73) knappen Översikt hämtar översikten och byter vy', async (t) => {
+  const { dom, anrop } = await starta(t, planOversikt());
+  await flush();
+
+  // Utgångsläget: månadsvyn syns, översikten är dold, och ingen översikt har
+  // hämtats.
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('overview-view').hidden, true);
+  assert.equal(anrop.filter((anropet) => anropet.url === OVERSIKTSVAG).length, 0);
+
+  dom.falt('show-overview').utlos('click');
+  await flush();
+
+  // Ett eget anrop till översiktens väg, med den visade månaden som slutmånad.
+  // Antalet månader står inte i adressen.
+  const oversikt = anrop.filter((anropet) => anropet.url === OVERSIKTSVAG);
+  assert.equal(oversikt.length, 1);
+  assert.equal(oversikt[0].method, 'GET');
+
+  assert.equal(dom.falt('month-view').hidden, true);
+  assert.equal(dom.falt('overview-view').hidden, false);
+  assert.equal(dom.falt('login-view').hidden, true);
+  assert.equal(dom.falt('overview-label').textContent, OVERSIKTSRUBRIK);
+  // Knappen är påslagen igen när svaret kommit.
+  assert.equal(dom.falt('show-overview').disabled, false);
+});
+
+test('(73) ett misslyckat anrop lämnar användaren i månadsvyn med en feltext', async (t) => {
+  const { dom } = await starta(t, (anropet) => {
+    if (anropet.url === '/api/mig') {
+      return MIG_200;
+    }
+    if (anropet.url === OVERSIKTSVAG) {
+      return new Error('nätverket föll');
+    }
+    return manadssvar([]);
+  });
+  await flush();
+
+  dom.falt('show-overview').utlos('click');
+  await flush();
+
+  // Vyn byts INTE: en översikt som visas utan data har tre tomma rutor och en
+  // tom tabell, alltså ett tillstånd som varken är tolv månader eller
+  // månadsvyn (LARDOMAR.md 2026-09-10).
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('overview-view').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('overview-saved').textContent, '');
+  assert.equal(dom.rader('overview-rows').length, 0);
+  assert.equal(dom.falt('show-overview').disabled, false);
+});
+
+test('(73) ett 401 från översikten visar inloggningsvyn och ingen av de två andra', async (t) => {
+  const { dom } = await starta(t, planOversikt({ status: 401, json: { error: 'Du är inte inloggad.' } }));
+  await flush();
+
+  dom.falt('show-overview').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('login-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+  assert.equal(dom.falt('overview-view').hidden, true);
+});
+
+test('(74) Tillbaka till månaden byter tillbaka till samma månad som innan', async (t) => {
+  const { dom, anrop } = await starta(t, planOversikt());
+  await flush();
+
+  // Först en annan månad än dagens, så att "samma månad som innan" går att
+  // skilja från "dagens månad".
+  dom.falt('month-prev').utlos('click');
+  await flush();
+  assert.equal(dom.falt('month-label').textContent, FOREGAENDE_RUBRIK);
+
+  dom.falt('show-overview').utlos('click');
+  await flush();
+  // Slutmånaden är den visade månaden och inte dagens.
+  assert.equal(anrop.filter((anropet) => anropet.url === OVERSIKTSVAG_FOREGAENDE).length, 1);
+  assert.equal(anrop.filter((anropet) => anropet.url === OVERSIKTSVAG).length, 0);
+  assert.equal(dom.falt('overview-view').hidden, false);
+
+  const foreTillbaka = anrop.length;
+  dom.falt('back-to-month').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('overview-view').hidden, true);
+  assert.equal(dom.falt('login-view').hidden, true);
+  // Samma månad som innan, och ingen ny hämtning: månadsvyn står kvar som den
+  // var.
+  assert.equal(dom.falt('month-label').textContent, FOREGAENDE_RUBRIK);
+  assert.equal(anrop.length, foreTillbaka);
+});
+
+test('(75) de tre talen kommer ur svaret, och snittet avrundas av money.js', async (t) => {
+  const { dom } = await starta(t, planOversikt());
+  await oppnaOversikten(dom);
+
+  // Sparat hittills i år är svarets eget fält. Summan av savingOre i serien är
+  // 1600000 ören, alltså ett annat tal — en vy som räknade själv skulle visa
+  // det.
+  assert.equal(dom.falt('overview-saved').textContent, formatSek(SPARAT_I_AR));
+  assert.notEqual(formatSek(SPARAT_I_AR), formatSek(1600000));
+
+  // Snittet: det enda tal app.js räknar fram, avrundat med halva öret uppåt av
+  // divideRoundHalfUp i src/core/money.js. Facit kommer ur ägaren, och raden
+  // efter visar att en avhuggning hade gett ett annat svar.
+  assert.equal(dom.falt('overview-average').textContent, formatSek(divideRoundHalfUp(SUMMA_LEFT, 12)));
+  assert.equal(dom.falt('overview-average').textContent, formatSek(SNITT_LEFT));
+  assert.notEqual(formatSek(SNITT_LEFT), formatSek(Math.floor(SUMMA_LEFT / 12)));
+
+  // Bästa månaden: högst leftOre i serien, skriven med monthLabel.
+  assert.equal(dom.falt('overview-best').textContent, monthLabel('2026-09'));
+});
+
+test('(75) app.js räknar aldrig fram översiktens tal själv', async () => {
+  const kalla = await fs.readFile(APP_KALLA_PATH, 'utf8');
+
+  // Ingen sats som rör ett av de tre talen får innehålla en loop eller en
+  // reduce. Diagrammets och tabellens loopar är tillåtna — de rör inget av de
+  // tre elementen — och summan bakom snittet byggs i averageLeftOre, i en egen
+  // sats. Förbudet mot .reduce( i hela filen står i (55).
+  for (const sats of kalla.split(';')) {
+    const traffar = OVERSIKTSELEMENT.filter((namn) => sats.includes(namn));
+    if (traffar.length === 0) {
+      continue;
+    }
+    for (const forbjudet of ['reduce', 'for (', 'for(']) {
+      assert.equal(
+        sats.includes(forbjudet),
+        false,
+        `satsen med ${traffar.join(', ')} innehåller ${forbjudet}: ${sats.trim()}`
+      );
+    }
+  }
+
+  // Sparat hittills i år läses ur svarets eget fält.
+  assert.equal(kalla.includes('savedThisYear'), true, 'app.js läser inte savedThisYear ur svaret');
+  // Snittet går genom divideRoundHalfUp och aldrig genom / eller Math.round.
+  assert.equal(kalla.includes('divideRoundHalfUp('), true, 'app.js avrundar inte snittet med divideRoundHalfUp');
+  assert.equal(kalla.includes('Math.round(sum'), false, 'app.js avrundar snittet med Math.round');
+});
+
+test('(76) en negativ månad ritas nedåt från nollinjen och i --negativ', async (t) => {
+  const { dom } = await starta(t, planOversikt());
+  await oppnaOversikten(dom);
+
+  const { svg, titel, staplar, linjer } = diagrammet(dom);
+  assert.equal(svg.namespace, 'http://www.w3.org/2000/svg');
+  assert.equal(svg.getAttribute('role'), 'img');
+  assert.equal(titel.textContent, OVERSIKT_DIAGRAMTITEL);
+  assert.equal(staplar.length, OVERSIKTSMANADER.length);
+
+  // Nollinjen finns och är ritad som en egen linje: utan den går det inte att
+  // se vilka månader som gick back.
+  assert.equal(linjer.length, 1);
+  assert.equal(linjer[0].getAttribute('class'), 'overview-zero-line');
+  const nollinje = Number(linjer[0].getAttribute('y1'));
+  assert.equal(Number(linjer[0].getAttribute('y2')), nollinje);
+  assert.equal(nollinje > 0, true, 'nollinjen ligger i överkanten, så ingen stapel kan ritas nedåt');
+
+  // December 2025 är index 2 i serien och den enda månaden med negativt kvar.
+  const negativ = staplar[2];
+  assert.equal(negativ.getAttribute('class'), 'overview-bar overview-bar-negative');
+  // Nedåt: stapelns överkant ligger PÅ nollinjen, så den växer nedåt.
+  assert.equal(Number(negativ.getAttribute('y')), nollinje);
+  assert.equal(Number(negativ.getAttribute('height')) > 0, true);
+
+  // September 2026 har högst kvar och fyller därför halvan uppåt. Uppåt: den
+  // undre kanten ligger på nollinjen.
+  const positiv = staplar[11];
+  assert.equal(positiv.getAttribute('class'), 'overview-bar overview-bar-positive');
+  assert.equal(Number(positiv.getAttribute('y')) < nollinje, true);
+  assert.equal(
+    Number(positiv.getAttribute('y')) + Number(positiv.getAttribute('height')),
+    nollinje
+  );
+  assert.equal(Number(positiv.getAttribute('height')), nollinje);
+
+  // Varje annan månad är positiv, också den tomma: noll räknas som positivt,
+  // precis som på raden Kvar att leva på.
+  for (const [index, stapel] of staplar.entries()) {
+    const forvantad = index === 2 ? 'overview-bar overview-bar-negative' : 'overview-bar overview-bar-positive';
+    assert.equal(stapel.getAttribute('class'), forvantad, OVERSIKTSMANADER[index].month);
+  }
+  // Den tomma månaden har ingen stapel att visa, men nollinjen står kvar.
+  assert.equal(Number(staplar[4].getAttribute('height')), 0);
+});
+
+test('(77) tabellen har en rad per månad, i samma ordning som diagrammet', async (t) => {
+  const { dom } = await starta(t, planOversikt());
+  await oppnaOversikten(dom);
+
+  const rader = dom.rader('overview-rows');
+  assert.equal(rader.length, OVERSIKTSMANADER.length);
+
+  // Samma ordning som svaret, äldst först, och samma ordning som diagrammets
+  // staplar: varje stapel bär sin månad i sin title.
+  const { staplar } = diagrammet(dom);
+  for (const [index, rad] of rader.entries()) {
+    const manaden = OVERSIKTSMANADER[index];
+    assert.equal(celltext(rad, 'overview-month'), monthLabel(manaden.month), manaden.month);
+    assert.equal(
+      staplar[index].children[0].textContent,
+      `${monthLabel(manaden.month)}: ${formatSek(manaden.leftOre)}`,
+      manaden.month
+    );
+    assert.equal(celltext(rad, 'overview-income'), formatSek(manaden.incomeOre), manaden.month);
+    assert.equal(celltext(rad, 'overview-expense'), formatSek(manaden.expenseOre), manaden.month);
+    assert.equal(celltext(rad, 'overview-saving'), formatSek(manaden.savingOre), manaden.month);
+    assert.equal(kvarcell(rad).textContent, formatSek(manaden.leftOre), manaden.month);
+  }
+
+  // Den tomma månaden står med, med fyra nollor — annars ser tidslinjen ut att
+  // hoppa över tid.
+  assert.equal(celltext(rader[4], 'overview-month'), monthLabel('2026-02'));
+  assert.deepEqual(
+    [
+      celltext(rader[4], 'overview-income'),
+      celltext(rader[4], 'overview-expense'),
+      celltext(rader[4], 'overview-saving'),
+      kvarcell(rader[4]).textContent
+    ],
+    [formatSek(0), formatSek(0), formatSek(0), formatSek(0)]
+  );
+
+  // Kvar bär samma två klasser som månadsvyns summering, och noll räknas som
+  // positivt.
+  assert.equal(kvarcell(rader[2]).className, 'overview-left left-negative');
+  assert.equal(kvarcell(rader[4]).className, 'overview-left left-positive');
+  assert.equal(kvarcell(rader[11]).className, 'overview-left left-positive');
+});
+
+// En andra rendering med en kortare serie: en renderingsfunktion som bygger men
+// aldrig tömmer fälls bara av ett andra anrop vars utgångsläge är det förstas
+// motsats (LARDOMAR.md 2026-09-12).
+test('(77) en andra hämtning ersätter tabellen och diagrammet i stället för att bygga på', async (t) => {
+  const kortSerie = Object.freeze({
+    status: 200,
+    json: {
+      months: [
+        { month: '2026-08', incomeOre: 1000000, expenseOre: 0, savingOre: 0, leftOre: 1000000 },
+        { month: '2026-09', incomeOre: 2000000, expenseOre: 0, savingOre: 0, leftOre: 2000000 }
+      ],
+      savedThisYear: 0
+    }
+  });
+  const { dom } = await starta(t, ikoordningFor(OVERSIKTSVAG, [OVERSIKTSSVAR, kortSerie]));
+
+  await oppnaOversikten(dom);
+  assert.equal(dom.rader('overview-rows').length, 12);
+  assert.equal(diagrammet(dom).staplar.length, 12);
+
+  dom.falt('back-to-month').utlos('click');
+  dom.falt('show-overview').utlos('click');
+  await flush();
+
+  assert.equal(dom.rader('overview-rows').length, 2);
+  assert.equal(diagrammet(dom).staplar.length, 2);
+  assert.equal(celltext(dom.rader('overview-rows')[0], 'overview-month'), monthLabel('2026-08'));
+  assert.equal(dom.falt('overview-saved').textContent, formatSek(0));
 });

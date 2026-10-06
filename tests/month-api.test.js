@@ -1143,3 +1143,122 @@ test('de tre mallvägarna gör tre olika saker för samma serie', async (t) => {
   const december2 = await call('GET', '/api/manad/2026-12', { cookie });
   assert.deepEqual(december2.res.body.items.map((item) => item.amountOre), [1300000]);
 });
+
+// ---------------------------------------------------------------------------
+// Översiktens väg [etapp 5]: GET /api/oversikt/<ÅÅÅÅ-MM>.
+// ---------------------------------------------------------------------------
+
+// (M32) tolv månader och savedThisYear.
+test('M32: GET /api/oversikt/<månad> ger 200 med tolv månader och savedThisYear', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+  const anna = userId(db, EPOST);
+  // Två månader med innehåll, resten tomma: serien ska vara tolv rader lång
+  // ändå, och de tomma ska bära fyra nollor.
+  addMonthItem(anna, '2026-09', { kind: 'saving', name: 'Buffert', amountOre: 200000, category: 'savings' }, { db, now: NU, makeId: () => 'm-spar-09' });
+  addMonthItem(anna, MANAD, { kind: 'income', name: 'Lön', amountOre: 3000000, category: 'other' }, { db, now: NU, makeId: () => 'm-lon' });
+  addMonthItem(anna, MANAD, { kind: 'saving', name: 'Buffert', amountOre: 100000, category: 'savings' }, { db, now: NU, makeId: () => 'm-spar-10' });
+
+  const { handled, res } = await call('GET', `/api/oversikt/${MANAD}`, { cookie });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'application/json; charset=utf-8');
+  // Antalet månader är tolv och står inte i vägen: klienten ber bara om en
+  // slutmånad.
+  assert.equal(res.body.months.length, 12);
+  assert.deepEqual(res.body.months.map((rad) => rad.month), [
+    '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04',
+    '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'
+  ]);
+  // Sista raden är den efterfrågade månaden, med de fyra talen ur monthTotals.
+  assert.deepEqual(res.body.months[11], {
+    month: '2026-10',
+    incomeOre: 3000000,
+    expenseOre: 0,
+    savingOre: 100000,
+    leftOre: 2900000
+  });
+  // En tom månad är med i serien och utelämnas inte.
+  assert.deepEqual(res.body.months[0], {
+    month: '2025-11',
+    incomeOre: 0,
+    expenseOre: 0,
+    savingOre: 0,
+    leftOre: 0
+  });
+  // savedThisYear är årets sparande till och med oktober, alltså de två
+  // sparandeposterna — inte serien, som också omfattar november och december
+  // 2025.
+  assert.equal(res.body.savedThisYear, 300000);
+  // Svaret har exakt de två fälten.
+  assert.deepEqual(Object.keys(res.body).sort(), ['months', 'savedThisYear']);
+});
+
+// (M33) fel månadsformat ger 400 och når aldrig datalagret. Hade anropet nått
+// readOverview hade svaret blivit 500 med RangeError-texten
+// "readOverview kräver en månad på formen ÅÅÅÅ-MM, fick ...", så statuskoden och
+// texten tillsammans visar vilken spärr som vann.
+test('M33: GET /api/oversikt/<månad> ger 400 vid fel månadsformat, och når aldrig datalagret', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  for (const manad of ['2026-13', '2026-00', '2026-1', '2026', '2026-10-01', 'oktober', '2026-1O']) {
+    const { res } = await call('GET', `/api/oversikt/${manad}`, { cookie });
+    assert.equal(res.statusCode, 400, manad);
+    assert.deepEqual(res.body, { error: FEL_MANAD }, manad);
+    assert.equal(res.body.error.includes('readOverview'), false, manad);
+  }
+});
+
+test('GET /api/oversikt/ utan månad är ingen översiktsväg utan Okänd adress', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  for (const pathname of ['/api/oversikt', '/api/oversikt/', '/api/oversikt/2026-10/manader']) {
+    const { res } = await call('GET', pathname, { cookie });
+    assert.equal(res.statusCode, 404, pathname);
+    assert.deepEqual(res.body, { error: 'Okänd adress.' }, pathname);
+  }
+});
+
+test('GET /api/oversikt/<månad> ger 401 utan session, och sessionsspärren går före månadsspärren', async (t) => {
+  const { call } = await apiDatabase(t);
+
+  const { res } = await call('GET', `/api/oversikt/${MANAD}`);
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: NOT_LOGGED_IN_MESSAGE });
+  assert.match(res.cookie, /^hemochekonomi_session=;/);
+
+  // En ogiltig månad utan session ger 401 och inte 400: annars läcker vägen att
+  // adressen finns till den som inte är inloggad.
+  const utan = await call('GET', '/api/oversikt/2026-13');
+  assert.equal(utan.res.statusCode, 401);
+  assert.deepEqual(utan.res.body, { error: NOT_LOGGED_IN_MESSAGE });
+});
+
+test('en annan användares översikt är onåbar: A:s cookie ger aldrig B:s summor', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const aCookie = await loggaIn(db, call, { email: EPOST, kod: KOD });
+  const bCookie = await loggaIn(db, call, { email: ANNAN_EPOST, kod: ANNAN_KOD });
+  addMonthItem(userId(db, EPOST), MANAD, { kind: 'income', name: 'Lön', amountOre: 3000000, category: 'other' }, { db, now: NU, makeId: () => 'm-a' });
+
+  const a = await call('GET', `/api/oversikt/${MANAD}`, { cookie: aCookie });
+  const b = await call('GET', `/api/oversikt/${MANAD}`, { cookie: bCookie });
+
+  assert.equal(a.res.body.months[11].incomeOre, 3000000);
+  assert.equal(b.res.statusCode, 200);
+  assert.equal(b.res.body.months.length, 12);
+  assert.equal(b.res.body.months[11].incomeOre, 0);
+  assert.equal(b.res.body.savedThisYear, 0);
+});
+
+test('andra metoder än GET mot /api/oversikt/<månad> ger 405', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  for (const method of ['POST', 'PUT', 'DELETE']) {
+    const { res } = await call(method, `/api/oversikt/${MANAD}`, { cookie, body: {} });
+    assert.equal(res.statusCode, 405, method);
+    assert.deepEqual(res.body, { error: 'Metoden stöds inte.' }, method);
+  }
+});

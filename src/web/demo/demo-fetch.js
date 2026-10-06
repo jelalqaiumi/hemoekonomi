@@ -18,8 +18,8 @@
 // samma fil i webbläsaren, eftersom new URL('../../core/x.js', '…/demo/y.js')
 // ger /core/x.js, men bara den relativa formen pekar på src/core/ också när ett
 // testfall importerar den här filen från disk.
-import { monthTotals } from '../../core/budget.js';
-import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
+import { monthTotals, sumByKind } from '../../core/budget.js';
+import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
 import { nextDueDate } from '../../core/schedule.js';
 import { DEMO } from './demolage.js';
@@ -55,7 +55,13 @@ const API_PREFIX = '/api/';
 const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
 const TEMPLATE_PATH_PREFIX = '/api/mallar/';
+const OVERVIEW_PATH_PREFIX = '/api/oversikt/';
 const ITEM_MONTH_SEGMENT = 'manad';
+
+// Antalet månader i översikten. Samma tolv som OVERVIEW_MONTHS i
+// src/server/api.js: antalet står inte i adressen, så en klient kan inte be om
+// ett annat antal, och attrappen har därför ingen count att validera.
+const OVERVIEW_MONTHS = 12;
 
 // Kodens längd. Samma sex siffror som CODE_LENGTH i src/server/auth.js.
 const CODE_DIGITS = 6;
@@ -256,6 +262,37 @@ export function readDemoMonth(state, month) {
   // Steg 6: summorna. budget.js äger räkningen, inklusive "kvar att leva på" —
   // attrappen adderar ingenting själv.
   return { items, totals: monthTotals(items) };
+}
+
+// Tolv månader bredvid varandra, i minnet. Stegen är readOverview i
+// src/server/months.js, i samma ordning och med samma regler: varje månads
+// summor kommer ur readDemoMonth ovan, alltså ur monthTotals, och en tom månad
+// utelämnas inte.
+//
+// Exporterad utöver att GET-vägen anropar den inne i filen: tests/demo.test.js
+// läser serien direkt, eftersom frågan "vilka månader står i översikten" är
+// kedjans och inte HTTP-lagrets — samma skäl som readDemoMonth.
+export function readDemoOverview(state, endMonth, count) {
+  const months = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const month = shiftMonth(endMonth, -offset);
+    months.push({ month, ...readDemoMonth(state, month).totals });
+  }
+
+  // savedThisYear täcker januari till och med endMonth i endMonth:s år, oavsett
+  // hur långt count sträcker sig bakåt. Månadsnumret läses genom dates.js och
+  // klipps inte ur strängen här.
+  const januaryOffset = parseIsoDate(firstDayOfMonth(endMonth)).month - 1;
+  const yearItems = [];
+  for (let offset = januaryOffset; offset >= 0; offset -= 1) {
+    for (const item of readDemoMonth(state, shiftMonth(endMonth, -offset)).items) {
+      yearItems.push(item);
+    }
+  }
+  // Summan räknas av sumByKind, monthTotals egen summerare, precis som i
+  // src/server/months.js: additionen har då en enda ägare i projektet, och
+  // spärren mot en summa som lämnar det säkra heltalsområdet följer med.
+  return { months, savedThisYear: sumByKind(yearItems, 'saving') };
 }
 
 // Den version av en serie som gäller en månad, eller null. Samma periodvillkor
@@ -580,6 +617,25 @@ export function createDemoFetch({
       };
       state.monthItems.push(row);
       return sparaOch(svar(201, { item: toMonthItem(row) }));
+    }
+
+    // GET /api/oversikt/<ÅÅÅÅ-MM>. Samma ordning som api.js: sessionen först,
+    // metoden, sedan månaden.
+    const overviewMonth = segmentAfter(pathname, OVERVIEW_PATH_PREFIX);
+    if (overviewMonth !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'GET') {
+        return metodStods();
+      }
+      const felManad = kraverManad(overviewMonth);
+      if (felManad !== null) {
+        return felManad;
+      }
+      const result = readDemoOverview(state, overviewMonth, OVERVIEW_MONTHS);
+      return svar(200, { months: result.months, savedThisYear: result.savedThisYear });
     }
 
     const templateMonth = segmentAfter(pathname, TEMPLATE_PATH_PREFIX);

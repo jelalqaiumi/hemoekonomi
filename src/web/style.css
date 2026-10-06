@@ -607,3 +607,73 @@ button:disabled:hover {
 .chart-bar {
   fill: var(--ikon-bla);
 }
+
+/* ---------------------------------------------------- översikten [etapp 5] */
+
+/* Rubriken till vänster, vägen tillbaka till höger — samma form som
+   månadsväljaren, med en knapp i stället för två. */
+.overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.overview-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+/* Staplarna är grafik och inte text, så kravet är 3:1. --positiv och --negativ
+   är temats två valda toner för inkomst och utgift, samma par som raden Kvar
+   att leva på bär: 3,45:1 respektive 4,38:1 mot --yta i det ljusa läget och
+   5,85:1 respektive 5,35:1 i det mörka. */
+.overview-bar-positive {
+  fill: var(--positiv);
+}
+
+.overview-bar-negative {
+  fill: var(--negativ);
+}
+
+/* Nollinjen ska synas: utan den går det inte att se vilka månader som gick
+   back, eftersom en nedåtstapel och en uppåtstapel annars bara skiljer sig i
+   färg. --text-svag är linjens ton, inte --kant: linjen bär betydelse och ska
+   läsas, och vid 0,5 enheter i ett viewBox på 120 blir den en hårfin linje. */
+.overview-zero-line {
+  stroke: var(--text-svag);
+  stroke-width: 0.5;
+}
+
+/* Tabellen bär de exakta talen. Månaden till vänster, de fyra beloppen
+   högerställda i tabular-nums, så att siffrorna står i kolumn. */
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-table th,
+.overview-table td {
+  padding: 0.35rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid var(--kant);
+}
+
+.overview-table th:first-child,
+.overview-table td:first-child {
+  text-align: left;
+}
+
+.overview-table th {
+  font-size: 0.875rem;
+  color: var(--text-svag);
+  font-weight: 600;
+}
+
+/* Beloppet i kolumnen Kvar bär left-positive eller left-negative, samma två
+   klasser som månadsvyns summering — färgen ligger här och aldrig som ett
+   style-attribut i app.js. */
+.overview-table .overview-left {
+  font-weight: 600;
+}

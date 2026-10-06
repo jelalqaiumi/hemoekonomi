@@ -284,6 +284,23 @@ export function createDom() {
     skapa('p', 'month-error', { className: 'form-error' })
   );
 
+  // Knappen som byter till översikten ligger i sidomenyn, alltså i månadsvyn
+  // [etapp 5]. Varje nytt id i index.html betyder ett nytt FakeElement här —
+  // testfallet (56) jämför de två listorna, så ett glömt element fäller sviten.
+  monthView.append(skapa('button', 'show-overview', { type: 'button', className: 'secondary', textContent: 'Översikt' }));
+
+  // Översikten, dold från början precis som index.html skriver attributet.
+  const overviewView = skapa('section', 'overview-view', { hidden: true });
+  overviewView.append(
+    skapa('h2', 'overview-label'),
+    skapa('button', 'back-to-month', { type: 'button', textContent: 'Tillbaka till månaden' }),
+    skapa('span', 'overview-saved', { className: 'summary-amount' }),
+    skapa('span', 'overview-average', { className: 'summary-amount' }),
+    skapa('span', 'overview-best', { className: 'summary-amount' }),
+    skapa('div', 'overview-chart', { className: 'chart' }),
+    skapa('tbody', 'overview-rows')
+  );
+
   const document = {
     querySelector(selector) {
       assert.equal(selector.startsWith('#'), true, `DOM-attrappen stöder inte selektorn ${selector}`);
@@ -308,6 +325,7 @@ export function createDom() {
     form,
     loginView,
     monthView,
+    overviewView,
     ids: [...registry.keys()].sort(),
     // Uppslag på id. Namnet är kvar från den gamla vyn, där varje uppslag var ett
     // formulärfält; funktionen har alltid bara varit ett uppslag i registret.

@@ -23,8 +23,8 @@
 // skriven created_at inte att testa.
 import crypto from 'node:crypto';
 
-import { monthTotals } from '../core/budget.js';
-import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, nowIso, shiftMonth } from '../core/dates.js';
+import { monthTotals, sumByKind } from '../core/budget.js';
+import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, nowIso, parseIsoDate, shiftMonth } from '../core/dates.js';
 import { ITEM_KINDS } from '../core/item.js';
 import { nextDueDate } from '../core/schedule.js';
 import { getDatabase, readRows, transaction, write } from './db.js';
@@ -84,6 +84,13 @@ const SQL_DELETE_MONTH_ITEM = `
 DELETE FROM month_items
  WHERE user_id = ?
    AND id = ?`;
+
+// Gränserna för count i readOverview nedan. Talen står som namn och inte som
+// literaler: var och en läses både av villkoret och av felmeddelandet, alltså i
+// samma roll på två ställen, och två handskrivna kopior kan glida isär utan att
+// något test märker det.
+const OVERVIEW_MIN_MONTHS = 1;
+const OVERVIEW_MAX_MONTHS = 36;
 
 // En månads innehåll och summor. Kedjan står som pseudokod i ARKITEKTUR.md under
 // "En månads innehåll — kedjan", och stegen nedan är numrerade efter den.
@@ -156,6 +163,75 @@ export function readMonth(userId, month, { db = getDatabase() } = {}) {
   items.sort(compareItems);
   // Steg 6: summorna. budget.js äger räkningen, inklusive "kvar att leva på".
   return { items, totals: monthTotals(items) };
+}
+
+// Tolv månader bredvid varandra [etapp 5]. Svaret är
+// { months, savedThisYear }, där months är count poster, äldst först, och den
+// sista är endMonth.
+//
+// Varje månads summor kommer ur readMonth ovan, alltså ur monthTotals i
+// src/core/budget.js. Ingen andra väg till ett tal: ingen SQL summerar, och
+// ingen rad här adderar ett belopp. En tom månad utelämnas inte — readMonth
+// svarar med fyra nollor för en månad utan poster, och raden skrivs som varje
+// annan, annars ser tidslinjen ut att hoppa över tid.
+export function readOverview(userId, endMonth, count, { db = getDatabase() } = {}) {
+  // Rad 1 i spärrtabellen. isValidIsoMonth i src/core/dates.js äger frågan,
+  // precis som för de övriga funktionerna i modulen; texten är readOverviews
+  // egen eftersom ingen annan funktion i kedjan behöver månaden först.
+  if (!isValidIsoMonth(endMonth)) {
+    throw new RangeError(`readOverview kräver en månad på formen ÅÅÅÅ-MM, fick "${String(endMonth)}".`);
+  }
+  // Rad 2. Taket finns för att en översikt läser varje månads hela kedja:
+  // mallar, intervallträffar, avvikelser och engångsposter. Utan tak kan en
+  // klient be om tiotusen månader och få servern att arbeta i onödan.
+  //
+  // Number.isInteger coercar inte: 1n och Symbol('x') ger false i stället för
+  // att kasta TypeError från jämförelsen, och NaN, Infinity och 12.5 avvisas
+  // här i stället för att bli ett antal varv i loopen nedan. Värdet tas genom
+  // String() i meddelandet av samma skäl: ${Symbol('x')} kastar TypeError.
+  if (!Number.isInteger(count) || count < OVERVIEW_MIN_MONTHS || count > OVERVIEW_MAX_MONTHS) {
+    throw new RangeError(`readOverview kräver ett antal månader mellan ${OVERVIEW_MIN_MONTHS} och ${OVERVIEW_MAX_MONTHS}, fick "${String(count)}".`);
+  }
+
+  // Ingen cache över de månader som behövs både i months och i savedThisYear.
+  // En Map med uppslaget "har månaden lästs" stod här först, och den togs bort
+  // efter en mutationskörning: med grenen alltid tagen (varje månad läst om)
+  // gav hela sviten fortfarande fail 0 och EXIT=0, eftersom en andra läsning av
+  // samma månad ger samma rader och samma summor. En gren vars frånvaro ingen
+  // indata kan skilja från dess närvaro är ingen spärr utan ett påstående om
+  // arbete, och arbetet är redan begränsat av taket ovan: högst 36 månader i
+  // serien plus högst 12 i året (LARDOMAR.md 2026-09-04).
+  const months = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const month = shiftMonth(endMonth, -offset);
+    // Summorna sprids in som de kommer ur monthTotals, utan att något tal rörs:
+    // de fyra fälten incomeOre, expenseOre, savingOre och leftOre är budget.js
+    // namn, och en omskrivning här vore en andra datamodell för samma summor.
+    months.push({ month, ...readMonth(userId, month, { db }).totals });
+  }
+
+  // savedThisYear täcker januari till och med endMonth i endMonth:s år, oavsett
+  // hur långt count sträcker sig bakåt. Månadsnumret läses genom dates.js och
+  // klipps inte ur strängen här: monthOfIsoDate är det enda stället som delar
+  // ett datum, och parseIsoDate det enda som läser ut dess delar.
+  const januaryOffset = parseIsoDate(firstDayOfMonth(endMonth)).month - 1;
+  const yearItems = [];
+  for (let offset = januaryOffset; offset >= 0; offset -= 1) {
+    for (const item of readMonth(userId, shiftMonth(endMonth, -offset), { db }).items) {
+      yearItems.push(item);
+    }
+  }
+  // Summan räknas av sumByKind, monthTotals egen summerare, och inte av en
+  // addition här. Två skäl: additionen har då bara en ägare i projektet, och
+  // spärren mot en summa som lämnar det säkra heltalsområdet följer med —
+  // tolv savingOre som var för sig är säkra heltal kan tillsammans ligga
+  // utanför, och den spärren har redan en utskriven svensk text
+  // ("monthTotals kräver att summan är ett säkert heltal."). Talet är detsamma:
+  // summan av varje månads savingOre är summan av alla månadernas
+  // sparandeposter.
+  const savedThisYear = sumByKind(yearItems, 'saving');
+
+  return { months, savedThisYear };
 }
 
 // Månadens engångspost. Svaret är den skapade posten, på samma form som en post

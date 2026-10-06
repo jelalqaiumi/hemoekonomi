@@ -20,6 +20,7 @@ import {
   clearOverride,
   endTemplate,
   readMonth,
+  readOverview,
   removeMonthItem,
   setOverride,
   skipMonth,
@@ -1018,5 +1019,182 @@ test('en avvikelse på en borttagen framtida version försvinner med den', () =>
 
   assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
   assert.deepEqual(beloppIn(db, ANNA, '2026-12'), [['Hyra', 1250000]]);
+  db.close();
+});
+
+// ---------------------------------------------------------------------------
+// Tolvmånadersöversikten [etapp 5]. readOverview läser samma kedja som
+// readMonth, en månad i taget, och summerar ingenting själv.
+// ---------------------------------------------------------------------------
+
+// Tre mallar som ger en översikt något att visa: inkomst, utgift och sparande,
+// alla månadsvisa från januari 2026.
+function insertYear(db, userId = ANNA) {
+  insertTemplate(db, { id: `${userId}-lon`, user_id: userId, kind: 'income', name: 'Lön', amount_ore: 3000000, category: 'other', interval: 'monthly', start_date: '2026-01-01', from_month: '2026-01' });
+  insertTemplate(db, { id: `${userId}-hyra`, user_id: userId, kind: 'expense', name: 'Hyra', amount_ore: 1250000, category: 'housing', interval: 'monthly', start_date: '2026-01-01', from_month: '2026-01' });
+  insertTemplate(db, { id: `${userId}-buffert`, user_id: userId, kind: 'saving', name: 'Buffert', amount_ore: 200000, category: 'savings', interval: 'monthly', start_date: '2026-01-01', from_month: '2026-01' });
+}
+
+// (M26) tolv månader i rätt ordning: äldst först, och den sista är endMonth.
+test('M26: readOverview ger tolv månader, äldst först, med endMonth sist', () => {
+  const db = freshDatabase();
+  insertYear(db);
+
+  const översikt = readOverview(ANNA, '2026-10', 12, { db });
+
+  assert.equal(översikt.months.length, 12);
+  assert.deepEqual(översikt.months.map((rad) => rad.month), [
+    '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04',
+    '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'
+  ]);
+  // Äldst först, inte nyast först: den sista raden är endMonth.
+  assert.equal(översikt.months[11].month, '2026-10');
+  assert.equal(översikt.months[0].month, '2025-11');
+  db.close();
+});
+
+// (M27) summorna kommer ur monthTotals: samma tal som readMonth ger för varje
+// månad. Jämförelsen sker mot monthTotals(readMonth(...).items) och inte mot
+// handräknade tal — ett handräknat facit vore en andra väg till samma summa.
+test('M27: varje rad i översikten bär exakt de tal readMonth ger för månaden', () => {
+  const db = freshDatabase();
+  insertYear(db);
+  // En engångspost och en avvikelse, så att inte alla månader är lika: tolv
+  // identiska rader kan inte skilja en läsning per månad från en upprepad
+  // läsning av samma månad.
+  insertMonthItemRow(db, { id: 'm-tand', month: '2026-08', kind: 'expense', name: 'Tandläkare', amount_ore: 95000, category: 'other' });
+  insertOverrideRow(db, { id: 'o-hyra', template_id: `${ANNA}-hyra`, month: '2026-09', amount_ore: 1300000, skipped: 0 });
+
+  const översikt = readOverview(ANNA, '2026-10', 12, { db });
+
+  for (const rad of översikt.months) {
+    const totals = monthTotals(readMonth(ANNA, rad.month, { db }).items);
+    assert.deepEqual(
+      { incomeOre: rad.incomeOre, expenseOre: rad.expenseOre, savingOre: rad.savingOre, leftOre: rad.leftOre },
+      totals,
+      rad.month
+    );
+  }
+  // De två avvikande månaderna syns verkligen i serien, så att loopen ovan inte
+  // bara jämför tolv identiska rader.
+  assert.equal(översikt.months.find((rad) => rad.month === '2026-08').expenseOre, 1250000 + 95000);
+  assert.equal(översikt.months.find((rad) => rad.month === '2026-09').expenseOre, 1300000);
+  db.close();
+});
+
+// (M28) savedThisYear räknar årets månader, från januari till och med endMonth,
+// oavsett hur långt count sträcker sig bakåt. Översikten går över ett årsskifte:
+// tolv månader bakåt från mars 2026 börjar i april 2025, men bara januari till
+// mars 2026 ska räknas.
+test('M28: savedThisYear räknar bara innevarande år, också över ett årsskifte', () => {
+  const db = freshDatabase();
+  // Sparande hela 2025 och hela 2026, med olika belopp per år: räknas 2025 med
+  // blir summan en annan.
+  insertTemplate(db, { id: 't-2025', kind: 'saving', name: 'Buffert 2025', amount_ore: 500000, category: 'savings', interval: 'monthly', start_date: '2025-01-01', from_month: '2025-01', to_month: '2025-12' });
+  insertTemplate(db, { id: 't-2026', kind: 'saving', name: 'Buffert 2026', amount_ore: 200000, category: 'savings', interval: 'monthly', start_date: '2026-01-01', from_month: '2026-01' });
+
+  const översikt = readOverview(ANNA, '2026-03', 12, { db });
+
+  // Serien börjar i april 2025 och innehåller alltså nio månader med 2025:s
+  // sparande — de ska inte vara med i savedThisYear.
+  assert.equal(översikt.months[0].month, '2025-04');
+  assert.equal(översikt.months[0].savingOre, 500000);
+  assert.equal(översikt.savedThisYear, 3 * 200000);
+
+  // Samma svar med en kortare serie: savedThisYear beror på endMonth:s år och
+  // inte på count. Här sträcker sig serien inte ens tillbaka till januari.
+  assert.equal(readOverview(ANNA, '2026-03', 2, { db }).savedThisYear, 3 * 200000);
+  // I januari är det bara januari.
+  assert.equal(readOverview(ANNA, '2026-01', 12, { db }).savedThisYear, 200000);
+  // Och i december hela året.
+  assert.equal(readOverview(ANNA, '2026-12', 12, { db }).savedThisYear, 12 * 200000);
+  db.close();
+});
+
+// (M29) en tom månad ger fyra nollor och inte en utelämnad rad: utan den ser
+// tidslinjen ut att hoppa över tid.
+test('M29: en månad utan poster står med i serien, med fyra nollor', () => {
+  const db = freshDatabase();
+  // Mallen gäller från september. De tio månaderna före är tomma.
+  insertTemplate(db, { id: 't-kort', kind: 'expense', name: 'Hyra', amount_ore: 1250000, category: 'housing', interval: 'monthly', start_date: '2026-09-01', from_month: '2026-09' });
+
+  const översikt = readOverview(ANNA, '2026-10', 12, { db });
+
+  assert.equal(översikt.months.length, 12);
+  const tomma = översikt.months.filter((rad) => rad.month < '2026-09');
+  assert.equal(tomma.length, 10);
+  for (const rad of tomma) {
+    assert.deepEqual(
+      { incomeOre: rad.incomeOre, expenseOre: rad.expenseOre, savingOre: rad.savingOre, leftOre: rad.leftOre },
+      { incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 },
+      rad.month
+    );
+  }
+  // Månaderna med innehåll är kvar, så serien är inte bara nollor.
+  assert.equal(översikt.months[10].expenseOre, 1250000);
+  assert.equal(översikt.months[11].expenseOre, 1250000);
+  db.close();
+});
+
+// (M30) en annan användares data syns inte: Berits konto är tomt fastän Annas
+// har tolv månader med poster.
+test('M30: readOverview för Berit ger tomma månader fastän Anna har poster', () => {
+  const db = freshDatabase();
+  insertYear(db, ANNA);
+  insertMonthItemRow(db, { id: 'm-anna', user_id: ANNA, month: '2026-10' });
+
+  const annas = readOverview(ANNA, '2026-10', 12, { db });
+  const berits = readOverview(BERIT, '2026-10', 12, { db });
+
+  assert.equal(annas.months[11].incomeOre, 3000000);
+  assert.equal(annas.savedThisYear, 10 * 200000);
+  assert.equal(berits.months.length, 12);
+  assert.deepEqual(berits.months.map((rad) => rad.month), annas.months.map((rad) => rad.month));
+  for (const rad of berits.months) {
+    assert.deepEqual(
+      { incomeOre: rad.incomeOre, expenseOre: rad.expenseOre, savingOre: rad.savingOre, leftOre: rad.leftOre },
+      { incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 },
+      rad.month
+    );
+  }
+  assert.equal(berits.savedThisYear, 0);
+  db.close();
+});
+
+// (M31) spärrarna, ett fall per rad i tabellen och hela meddelandet asserterat:
+// en assert.throws mot enbart feltypen kan inte skilja rad 1 från rad 2
+// (LARDOMAR.md 2026-09-16).
+test('M31: readOverview avvisar en endMonth som inte är en månad, före varje fråga', () => {
+  const db = freshDatabase();
+  insertYear(db);
+  for (const endMonth of ['2026-13', '2026-00', '2026-1', '2026-10-01', '', null, undefined, 202610, 1n, Symbol('x')]) {
+    assert.throws(
+      () => readOverview(ANNA, endMonth, 12, { db }),
+      { name: 'RangeError', message: `readOverview kräver en månad på formen ÅÅÅÅ-MM, fick "${String(endMonth)}".` },
+      String(endMonth)
+    );
+  }
+  db.close();
+});
+
+// (M31) rad 2, med ett eget fall för taket: utan det kan en klient be om
+// tiotusen månader och få servern att läsa tiotusen hela kedjor. Båda gränserna
+// prövas från båda sidor, eftersom ett villkor med < och > annars kan vara
+// skrivet med fel tecken utan att något test märker det.
+test('M31: readOverview avvisar ett antal månader utanför 1 till 36', () => {
+  const db = freshDatabase();
+  insertYear(db);
+  for (const count of [0, -1, 37, 10000, 1e9, 12.5, NaN, Infinity, -Infinity, '12', null, undefined, true, 1n, Symbol('x'), {}]) {
+    assert.throws(
+      () => readOverview(ANNA, '2026-10', count, { db }),
+      { name: 'RangeError', message: `readOverview kräver ett antal månader mellan 1 och 36, fick "${String(count)}".` },
+      String(count)
+    );
+  }
+  // De två gränserna själva går igenom.
+  assert.equal(readOverview(ANNA, '2026-10', 1, { db }).months.length, 1);
+  assert.equal(readOverview(ANNA, '2026-10', 1, { db }).months[0].month, '2026-10');
+  assert.equal(readOverview(ANNA, '2026-10', 36, { db }).months.length, 36);
+  assert.equal(readOverview(ANNA, '2026-10', 36, { db }).months[0].month, '2023-11');
   db.close();
 });
