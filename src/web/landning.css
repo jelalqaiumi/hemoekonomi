@@ -515,30 +515,17 @@ a:hover {
   gap: 0.75rem;
 }
 
-.hero-bild {
-  display: flex;
-  justify-content: center;
-}
-
-.hero-bild img {
-  width: 100%;
-  max-width: 34rem;
-  height: auto;
-}
-
+/* Hero bar först loggan bredvid texten. Användaren bad om att den togs bort:
+   märket står redan i headern strax ovanför, och två loggor inom en skärmhöjd
+   säger inget nytt. Texten får därför hela bredden, men med en övre gräns —
+   en rad som löper över hela ett brett fönster blir svårläst. */
 @media (min-width: 840px) {
   .hero-inre {
-    flex-direction: row;
-    align-items: center;
     padding: 4.5rem 1rem 5rem;
   }
 
   .hero-text {
-    flex: 1 1 56%;
-  }
-
-  .hero-bild {
-    flex: 1 1 44%;
+    max-width: 46rem;
   }
 
   .hero h1 {
