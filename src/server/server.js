@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { UNPARSABLE_MESSAGE, handleApiRequest } from './api.js';
 import { DataFileLockError, acquireDataFileLock, releaseDataFileLock } from './lock.js';
-import { getCoreDir, getImageDir, getWebDir } from './paths.js';
+import { getCoreDir, getDemoDir, getImageDir, getWebDir } from './paths.js';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
@@ -63,6 +63,25 @@ const CORE_TYPE = JS_TYPE;
 // sökvägssammanslagningen, aldrig efter: mönstret tillåter varken punkt, snedstreck
 // eller versaler, så "..", "../paths.js" och "%2e%2e" kan aldrig nå path.join.
 const CORE_FILE_PATTERN = /^[a-z0-9-]+\.js$/;
+
+// Demofilerna under src/web/demo/. Samma form som /core/ och av samma skäl:
+// mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt,
+// snedstreck eller versaler, så "..", "../paths.js" och "%2e%2e" kan aldrig nå
+// sammanslagningen.
+//
+// Katalogen serveras oavsett om DEMO är sann: index.html och landning.html
+// hämtar /demo/demo-fetch.js vid varje laddning, och med flaggan falsk gör filen
+// ingenting. Ett 404 i stället hade gett ett fel i webbläsarens konsol på varje
+// sidladdning.
+const DEMO_PREFIX = '/demo/';
+// Ändelsen fångas av gruppen och avgör innehållstypen, precis som för
+// bilderna: en fil kan därför aldrig serveras med en typ som inte hör till
+// dess namn.
+const DEMO_FILE_PATTERN = /^[a-z0-9-]+\.(js|css)$/;
+const DEMO_TYPES = Object.freeze(Object.assign(Object.create(null), {
+  js: JS_TYPE,
+  css: CSS_TYPE
+}));
 
 // Bilderna under src/web/bilder/. Samma form som /core/ och av samma skäl:
 // mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
@@ -121,6 +140,18 @@ function resolveStaticFile(pathname) {
       return null;
     }
     return { filePath: path.join(getCoreDir(), name), type: CORE_TYPE };
+  }
+
+  if (pathname.startsWith(DEMO_PREFIX)) {
+    const name = pathname.slice(DEMO_PREFIX.length);
+    const match = DEMO_FILE_PATTERN.exec(name);
+    if (match === null) {
+      return null;
+    }
+    // match[1] är 'js' eller 'css' och ingenting annat: mönstret har redan
+    // avgjort det, och tabellen har nollprototyp av samma skäl som
+    // STATIC_ROUTES.
+    return { filePath: path.join(getDemoDir(), name), type: DEMO_TYPES[match[1]] };
   }
 
   if (pathname.startsWith(IMAGE_PREFIX)) {

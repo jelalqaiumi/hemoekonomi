@@ -406,7 +406,21 @@
         <p class="sidfot-rad">
           &#169; 2026 Hem och Ekonomi. Appen kör lokalt på din egen dator.
         </p>
+        <!-- Portfolio-raden visas ALLTID, inte bara i demoläge: den är sann
+             oavsett (ARKITEKTUR.md, "Bannern"). GitHub och LinkedIn är
+             a-element utan href, alltså platshållarlänkar enligt
+             HTML-standarden, precis som Kontakt, Villkor och
+             Integritetspolicy ovan. -->
+        <p class="sidfot-portfolio">
+          Portfolio-projekt av Jelal Qaiumi
+          <span class="sidfot-portfolio-lankar"><a>GitHub</a><a>LinkedIn</a></span>
+        </p>
       </div>
     </footer>
+
+    <!-- Demoläget. Samma fil och samma skäl som i index.html: med DEMO falsk gör
+         den ingenting, och landningssidan fungerar fortfarande helt utan
+         JavaScript. Är flaggan sann ritar den bannern högst upp. -->
+    <script type="module" src="/demo/demo-fetch.js"></script>
   </body>
 </html>

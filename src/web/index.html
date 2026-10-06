@@ -189,6 +189,13 @@
       </section>
     </main>
 
+    <!-- Demoläget. Filen laddas alltid och gör ingenting när DEMO i
+         /demo/demolage.js är falsk — ingen annan fil under /demo/ hämtas då, och
+         globalThis.fetch rörs inte. Är flaggan sann ersätter den fetch och ritar
+         bannern, och den står därför FÖRE /app.js: ett modulskript med await på
+         översta nivån fördröjer nästa modulskript, så app.js hinner inte anropa
+         fetch innan attrappen är på plats. -->
+    <script type="module" src="/demo/demo-fetch.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

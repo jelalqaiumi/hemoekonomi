@@ -57,6 +57,12 @@ export function getImageDir() {
   return path.join(SRC_DIR, 'web', 'bilder');
 }
 
+// Demokatalogen under src/web/. Samma form och samma skäl som getImageDir:
+// den här filen är enda stället som känner till sökvägar på disk.
+export function getDemoDir() {
+  return path.join(SRC_DIR, 'web', 'demo');
+}
+
 // Låsfilen hör till datafilen och inte till porten: två instanser med var sin
 // HEMOCHEKONOMI_DATA_FILE låser inte varandra. Sökvägen läses genom
 // getDataFilePath() och aldrig ur miljövariabeln själv — två uppslag vore två

@@ -9288,3 +9288,161 @@ håller.
 | (M22) | `PUT /api/mallar/<seriesId>/<månad>` ändrar framåt | föregående månad har gamla beloppet, denna och nästa det nya |
 | (M23) | `DELETE /api/mallar/<seriesId>/<månad>` avslutar | föregående månad har posten, denna och nästa saknar den |
 | (M25) | en andra ändring från en tidigare månad ger inte två poster | serien visas en gång per månad |
+
+---
+
+## Del 4: demoläge
+
+Appen ska kunna visas för arbetsgivare på en egen domän utan att någon backend,
+databas eller betalning körs. Allt ligger i `src/web/demo/` och är avstängt som
+förval.
+
+### Varför ingen MSW
+
+Uppdraget föreslår Mock Service Worker. Den används inte, och skälet ska stå
+skrivet: MSW finns för att fånga anrop i en app vars kod man inte äger eller inte
+vill röra. Här äger projektet varje rad, och `tests/helpers/dom.js` har redan en
+fetch-attrapp — `createFetch` — byggd för samma syfte. En modul som ersätter
+`globalThis.fetch` gör samma sak utan ett beroende, och projektets regel om noll
+beroenden står därför orörd.
+
+Följden är dessutom praktisk: demon är rena statiska filer. Ingen byggkedja,
+ingen serviceworker att registrera, inget som kan misslyckas i produktion.
+
+### Flaggan
+
+`src/web/demo/demolage.js` exporterar `DEMO`, en boolesk konstant.
+
+```js
+export const DEMO = false;
+```
+
+**Raden byts till `true` vid publicering** och är det enda som skiljer demon från
+den riktiga appen. Ingen miljövariabel, eftersom projektet inte har någon
+byggkedja som kan läsa en.
+
+Är `DEMO` falsk laddas ingen annan fil under `demo/`, och appen beter sig exakt
+som i dag. Det ska finnas ett testfall som kräver det.
+
+### Attrappen
+
+`src/web/demo/demo-fetch.js` ersätter `globalThis.fetch` innan `app.js` laddas,
+och svarar på de sju vägarna med **samma JSON och samma statuskoder som servern**:
+
+| Väg | Svar |
+|---|---|
+| `POST /api/auth/kod` | `202` utan kropp |
+| `POST /api/auth/logga-in` | `204` |
+| `POST /api/auth/logga-ut` | `204` |
+| `GET /api/mig` | `200 { email }` eller `401 { error }` |
+| `GET /api/manad/<ÅÅÅÅ-MM>` | `200 { items, totals }` |
+| `POST /api/manad/<ÅÅÅÅ-MM>` | `201 { item }` eller `400 { error, fieldErrors }` |
+| `PUT`/`DELETE /api/poster/<id>` | `200`/`204` eller `404` |
+| Mallvägarna | som servern |
+
+**Summorna räknas av `budget.js` och posterna av samma kedja som `months.js`
+använder** — attrappen får inte räkna själv. Kärnan i `src/core/` körs redan i
+webbläsaren, så `monthTotals`, `nextDueDate` och `validateMonthItemDraft`
+anropas direkt. Då visar demon den verkliga logiken, inte en efterhärmning.
+
+Valideringen ska ge **samma fältfel** som servern: skriver besökaren `12 000` får
+hen den vägledande beloppstexten, precis som i den riktiga appen.
+
+### Seed-data
+
+`src/web/demo/seed.js`. Demoanvändaren är `anna.andersson@exempel.se` — en
+påhittad adress på ett domännamn som inte kan ta emot post.
+
+Tre månader, med den aktuella månaden som mitten. Beloppen är realistiska för ett
+svenskt hushåll:
+
+| Slag | Namn | Belopp | Intervall |
+|---|---|---|---|
+| Inkomst | Lön | 32 000 kr | månadsvis |
+| Inkomst | Barnbidrag | 1 250 kr | månadsvis |
+| Utgift | Hyra | 8 900 kr | månadsvis |
+| Utgift | El | 760 kr | månadsvis |
+| Utgift | Mat | 6 200 kr | månadsvis |
+| Utgift | Mobil och bredband | 598 kr | månadsvis |
+| Utgift | Hemförsäkring | 1 450 kr | kvartalsvis |
+| Utgift | Bilskatt | 2 800 kr | halvårsvis |
+| Sparande | Buffert | 3 000 kr | månadsvis |
+| Sparande | Pension | 1 500 kr | månadsvis |
+
+De återkommande posterna är mallar, så besökaren ser märket och kan bläddra
+mellan månader och se dem följa med. Kvartals- och halvårsposterna syns bara de
+månader de dras — det visar intervallogiken utan att något behöver förklaras.
+
+Minst en månad ska ha en **avvikelse**: elräkningen högre i januari. Det visar
+att ett belopp kan ändras för en enda månad.
+
+### Lagring
+
+`src/web/demo/lagring.js`. Varje ändring besökaren gör sparas i `localStorage`
+under en egen nyckel, så demon känns levande mellan sidladdningar.
+
+`localStorage` kan saknas eller kasta — i privat läge, med blockerad lagring. Varje
+läsning och skrivning omsluts, och demon ska fungera utan lagring: då försvinner
+ändringarna vid omladdning, vilket är bättre än ett fel.
+
+`Återställ demo` tömmer nyckeln och laddar om seed-datan.
+
+### Bannern
+
+`src/web/demo/banner.js` ritar en smal rad högst upp på båda sidorna, i temats
+färger:
+
+```
+Demoversion - ingen riktig data eller betalning.  [Se koden på GitHub]  [Återställ demo]
+```
+
+Den går att fälla ihop till en smal remsa men aldrig dölja helt. GitHub-länken är
+en platshållare tills repot finns.
+
+Sidfoten får raden `Portfolio-projekt av Jelal Qaiumi` med platshållare för
+GitHub och LinkedIn. **Den visas alltid**, inte bara i demoläge — den är sann
+oavsett.
+
+### Inloggning i demoläge
+
+Inloggningsvyn får knappen `Logga in som demoanvändare`, som **bara visas när
+`DEMO` är sann**. Den loggar in direkt, utan kod.
+
+Formuläret för e-post och kod står kvar och fungerar: skriver besökaren en adress
+får hen en kod — attrappen visar den i bannern i stället för att mejla den, så
+att hela flödet går att prova. Ingen adress skickas någonstans och ingen sparas
+utanför `localStorage`.
+
+### Det demon inte visar
+
+Skrivs ut i bannerns hjälptext och i README: prisplaner, behörighet, sparmål,
+räkningspåminnelser, delat hushåll och Mina funktioner är **inte byggda**. De
+står på landningssidan som design. En planväxlare har därför inget att växla
+mellan och byggs inte.
+
+### Publicering
+
+Demon är statiska filer: `landning.html`, `index.html`, `app.js`, de tre
+CSS-filerna, `bilder/` och `core/`. De kan läggas på vilken statisk värd som
+helst — Vercel, Netlify, GitHub Pages.
+
+**Två vägar måste fungera:** `/` ger landningssidan och `/app` ger appen. På en
+statisk värd betyder det en omskrivningsregel, eller att `index.html` döps om.
+Skriv ut vilket och varför i README.
+
+Ingen serviceworker, inget `mockServiceWorker.js`, ingen byggkedja.
+
+### Kravlista [demoläge]
+
+| # | Fall | Kräver |
+|---|---|---|
+| (D1) | `DEMO` är falsk som förval | filen exporterar `false`, och ett testfall kräver det |
+| (D2) | avstängt läge rör ingenting | med `DEMO` falsk laddas ingen demofil, och appens testfall passerar oförändrade |
+| (D3) | attrappen svarar som servern | varje väg jämförs mot den riktiga serverns statuskod och JSON-form |
+| (D4) | summorna kommer ur `budget.js` | attrappen räknar inte själv |
+| (D5) | valideringen ger samma fältfel | `12 000` ger den vägledande texten |
+| (D6) | en ny post överlever omladdning | sparad i `localStorage`, läst tillbaka |
+| (D7) | `Återställ demo` ger seed-datan | ändringen borta, ursprunget tillbaka |
+| (D8) | utan `localStorage` fungerar demon | läsningen kastar, appen visar ändå seed-datan |
+| (D9) | en återkommande post följer med | syns i tre månader i rad |
+| (D10) | kvartalsposten syns bara sina månader | tre månader, en träff |
