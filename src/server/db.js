@@ -75,7 +75,8 @@ const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
   email       TEXT NOT NULL UNIQUE,
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  plan        TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'))
 );
 
 -- En utskickad engångskod. Koden lagras ALDRIG i klartext: kolumnen bär
@@ -157,6 +158,38 @@ CREATE TABLE IF NOT EXISTS overrides (
 );
 CREATE INDEX IF NOT EXISTS idx_overrides_user_month ON overrides (user_id, month);
 `;
+
+// Kolumnen users.plan [steg 1 i del 5]. Står ordagrant som i ARKITEKTUR.md under
+// "Kopplingen till schemat", på två ställen med flit: i CREATE TABLE ovan för en
+// databas som skapas nu, och här för en databas som redan finns — CREATE TABLE
+// IF NOT EXISTS lägger inte till en kolumn i en tabell som är skapad.
+//
+// Värdelistan skrivs för hand i SQL och härleds inte ur PLANS i
+// src/core/plans.js: ett CHECK är text som SQLite tolkar, inte ett uttryck som
+// går att bygga av en JavaScript-lista utan att samtidigt öppna för att listan
+// klistras in i SQL. Kopplingen mellan de två hålls av (P6) i tests/db.test.js,
+// som läser villkoret ur sqlite_master och jämför med Object.keys(PLANS) —
+// samma prov som redan binder kind till ITEM_KINDS.
+//
+// Förvalet 'bas' är hela migreringen: varje befintlig rad får 'bas' av SQLite
+// när kolumnen läggs till, så ingen UPDATE behövs och ingen rad skrivs om.
+const ADD_PLAN_COLUMN_SQL =
+  "ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'));";
+
+// Steget körs bara när kolumnen saknas, och villkoret är kolumnen själv och
+// inte PRAGMA user_version: ALTER TABLE ADD COLUMN är ett fel om kolumnen redan
+// finns, och en databas som skapats av CREATE TABLE ovan har den från början.
+// Ett villkor på user_version hade behövt svara på frågan "finns kolumnen?"
+// indirekt, genom ett tal som en äldre körning kan ha satt av ett annat skäl.
+//
+// PRAGMA table_info ger en rad per kolumn. Läses genom prepare().all(), som
+// db.test.js redan gör för PRAGMA user_version.
+function hasPlanColumn(database) {
+  return database
+    .prepare('PRAGMA table_info(users)')
+    .all()
+    .some((row) => row.name === 'plan');
+}
 
 // Varje node:sqlite-fraga i projektet gar genom en av de tva funktionerna nedan,
 // och ingen av dem slapper ut ett engelskt fel. Lasning ger rad 2 i feltabellen,
@@ -263,6 +296,12 @@ export function openDatabase(filePath) {
     database = new DatabaseSync(filePath);
     database.exec(PRAGMA_SQL);
     database.exec(SCHEMA_SQL);
+    // Samma rad i feltabellen som de tre stegen ovan: en databas vars kolumn
+    // inte gick att lägga till kan inte användas, och svaret är därför
+    // openFailed och inte en egen text.
+    if (!hasPlanColumn(database)) {
+      database.exec(ADD_PLAN_COLUMN_SQL);
+    }
     database.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
   } catch (error) {
     // Öppnades anslutningen men föll ett senare steg ligger handtaget kvar och

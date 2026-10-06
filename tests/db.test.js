@@ -9,9 +9,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 
 import { INTERVALS } from '../src/core/entry.js';
 import { ITEM_KINDS } from '../src/core/item.js';
+import { PLANS } from '../src/core/plans.js';
 import {
   DatabaseError,
   MEMORY_PATH,
@@ -293,6 +295,101 @@ test('ett konto som tas bort tar sina rader med sig', () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM month_items').get().antal, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
   db.close();
+});
+
+// (P6) Samma prov som för ITEM_KINDS och INTERVALS ovan, för plan-kolumnen:
+// värdelistan i schemats CHECK ska vara densamma som Object.keys(PLANS) i
+// src/core/plans.js. Utan provet kan en plan läggas till i modulen utan att
+// databasen tar emot den, och tvärtom.
+test('(P6) värdelistan i plan-kolumnens CHECK är Object.keys(PLANS)', () => {
+  const db = freshDatabase();
+  const sql = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")
+    .get().sql;
+  const lista = Object.keys(PLANS).map((key) => `'${key}'`).join(', ');
+  assert.equal(sql.includes(`plan IN (${lista})`), true, sql);
+
+  // Varje plannyckel går igenom, så villkoret avvisar inte för mycket. Listan
+  // kommer ur PLANS och skrivs inte av här: mutationen "lägg till en plan i
+  // PLANS" ska fälla ett test, och med en handskriven kopia fäller den inget.
+  for (const [index, plan] of Object.keys(PLANS).entries()) {
+    db.prepare('INSERT INTO users (id, email, created_at, plan) VALUES (?, ?, ?, ?)')
+      .run(`p-${index}`, `plan-${index}@example.se`, NOW, plan);
+  }
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS antal FROM users WHERE plan = ?').get(Object.keys(PLANS)[0]).antal,
+    // Kontot i freshDatabase har också 'bas', genom förvalet.
+    2
+  );
+  // Ett värde utanför listan avvisas av databasen och inte bara av koden.
+  assert.throws(
+    () => db.prepare('INSERT INTO users (id, email, created_at, plan) VALUES (?, ?, ?, ?)')
+      .run('p-fel', 'guld@example.se', NOW, 'guld'),
+    /CHECK constraint failed: plan IN \('bas', 'plus', 'premium'\)/
+  );
+  // NOT NULL: kolumnen får inte vara tom heller.
+  assert.throws(
+    () => db.prepare('INSERT INTO users (id, email, created_at, plan) VALUES (?, ?, ?, ?)')
+      .run('p-null', 'null@example.se', NOW, null),
+    /NOT NULL constraint failed: users.plan/
+  );
+  db.close();
+});
+
+// (P7) Förvalet är 'bas', både för en rad som skrivs utan plan i en ny databas
+// och för en rad som redan fanns när kolumnen lades till.
+test('(P7) en rad utan plan får bas, också i en databas som saknade kolumnen', () => {
+  // Första halvan: en databas som skapas nu. INSERT:en nämner inte plan.
+  const db = openDatabase(MEMORY_PATH);
+  db.prepare('INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)')
+    .run(USER_ID, 'anna@example.se', NOW);
+  assert.equal(db.prepare('SELECT plan FROM users WHERE id = ?').get(USER_ID).plan, 'bas');
+  assert.equal(Object.keys(PLANS)[0], 'bas');
+  db.close();
+
+  // Andra halvan: en databas som redan finns, med den users-tabell etapp 2
+  // skapade och en rad i den. Migreringen ska lägga till kolumnen och ge den
+  // befintliga raden 'bas' genom förvalet — ingen rad skrivs om, och databasen
+  // behöver inte byggas om.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hemochekonomi-db-'));
+  const filePath = path.join(dir, 'gammal.sqlite');
+  try {
+    const gammal = new DatabaseSync(filePath);
+    gammal.exec(`CREATE TABLE users (
+      id          TEXT PRIMARY KEY,
+      email       TEXT NOT NULL UNIQUE,
+      created_at  TEXT NOT NULL
+    );`);
+    gammal.prepare('INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)')
+      .run(USER_ID, 'anna@example.se', NOW);
+    assert.equal(
+      gammal.prepare('PRAGMA table_info(users)').all().some((row) => row.name === 'plan'),
+      false
+    );
+    gammal.close();
+
+    const migrerad = openDatabase(filePath);
+    assert.equal(migrerad.prepare('SELECT plan FROM users WHERE id = ?').get(USER_ID).plan, 'bas');
+    // Raden är i övrigt orörd: migreringen rör inget annat än kolumnen.
+    const rad = migrerad.prepare('SELECT id, email, created_at FROM users WHERE id = ?').get(USER_ID);
+    assert.equal(rad.email, 'anna@example.se');
+    assert.equal(rad.created_at, NOW);
+    // CHECK:en följde med ALTER TABLE och gäller i den migrerade databasen.
+    assert.throws(
+      () => migrerad.prepare('INSERT INTO users (id, email, created_at, plan) VALUES (?, ?, ?, ?)')
+        .run('p-fel', 'guld@example.se', NOW, 'guld'),
+      /CHECK constraint failed: plan IN \('bas', 'plus', 'premium'\)/
+    );
+    // Ett tredje öppnande kör inte ALTER TABLE igen: ett andra ADD COLUMN med
+    // samma namn är ett fel, och steget körs bara när kolumnen saknas.
+    migrerad.prepare('UPDATE users SET plan = ? WHERE id = ?').run('plus', USER_ID);
+    migrerad.close();
+    const igen = openDatabase(filePath);
+    assert.equal(igen.prepare('SELECT plan FROM users WHERE id = ?').get(USER_ID).plan, 'plus');
+    igen.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('att köra schemaskapandet två gånger är ofarligt', () => {

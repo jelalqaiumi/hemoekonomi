@@ -7,6 +7,7 @@
 import { isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
 import { validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
+import { FEATURES, hasFeature, isPlanKey } from '../core/plans.js';
 import {
   AUTH_MESSAGES,
   clearedSessionCookie,
@@ -16,6 +17,7 @@ import {
   requestCode,
   requireSession,
   sessionCookie,
+  setPlan,
   verifyCode
 } from './auth.js';
 import { getDatabase } from './db.js';
@@ -48,7 +50,11 @@ const MESSAGES = Object.freeze({
   // flit: användaren ska inte kunna se skillnad på de två, och två olika
   // strängar för samma svar vore två facit (ARKITEKTUR.md, "Månadens API").
   entryNotFound: 'Posten finns inte.',
-  invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.'
+  invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.',
+  // Texten för en plan som inte står i PLANS [steg 1 i del 5]. Står under
+  // "Byta plan" i ARKITEKTUR.md och nämner de tre svenska namnen, aldrig de
+  // engelska nycklarna bas, plus och premium — användaren ser aldrig dem.
+  invalidPlan: 'Välj Bas, Plus eller Premium.'
 });
 
 const API_PREFIX = '/api/';
@@ -76,6 +82,10 @@ const TEMPLATE_PATH_PREFIX = '/api/mallar/';
 // som en konstant och inte som en literal i matchningen: samma svenska ord som
 // MONTH_PATH_PREFIX bär, och två stavningar av det hade kunnat glida isär.
 const ITEM_MONTH_SEGMENT = 'manad';
+
+// Planens väg [steg 1 i del 5]. Adressen är ett ord som är detsamma på svenska
+// och engelska, så den behöver ingen översättning.
+const PLAN_PATH = '/api/plan';
 
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
@@ -233,6 +243,19 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
+  if (pathname === PLAN_PATH) {
+    if (req.method === 'GET') {
+      handleReadPlan(req, res, now);
+      return true;
+    }
+    if (req.method === 'PUT') {
+      await handleChangePlan(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
   if (pathname === ENTRIES_PATH) {
     if (req.method === 'GET') {
       await handleList(res);
@@ -347,7 +370,7 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
 // 401 ges av sessionsspärren innan vägen körs, inte av vägen själv
 // (ARKITEKTUR.md, "API-vägar"). user_id kommer ur sessionen och aldrig ur
 // anropet.
-function sessionUserId(req, res, now) {
+function sessionOrNull(req, res, now) {
   let guard;
   try {
     guard = requireSession(getDatabase(), { token: readSessionToken(req), now });
@@ -361,7 +384,82 @@ function sessionUserId(req, res, now) {
     sendUnauthorized(res, guard.message);
     return null;
   }
-  return guard.session.userId;
+  return guard.session;
+}
+
+// Samma spärr, för de vägar som bara behöver användarens id. Byggd på
+// sessionOrNull och inte som en andra kopia: 401-svaret och 500-svaret har en
+// enda ägare, och en kopia per form är en kopia som kan glida.
+function sessionUserId(req, res, now) {
+  const session = sessionOrNull(req, res, now);
+  return session === null ? null : session.userId;
+}
+
+// Svarskroppen för planens två vägar: { plan, features }. En enda ägare till
+// formen, så att GET och PUT inte kan svara olika — gränssnittet ritar om vyn
+// ur PUT:ens svar utan en andra hämtning.
+//
+// features är de funktioner planen *har*, med arvet upplöst: hasFeature i
+// src/core/plans.js äger upplösningen, och den här filen räknar inte ut den
+// själv. Ordningen är FEATURES ordning, alltså planordning.
+function planBody(plan) {
+  return { plan, features: FEATURES.filter((feature) => hasFeature(plan, feature)) };
+}
+
+// GET /api/plan [steg 1 i del 5]. 200 { plan, features }, 401 utan session,
+// 500 vid DatabaseError.
+//
+// Planen läses ur sessionen och aldrig ur anropet, av samma skäl som user_id:
+// sessionen är den enda källan till vem användaren är och vad hen har betalt
+// för. Ingen extra fråga mot databasen behövs — requireSession läser redan
+// kontots rad.
+function handleReadPlan(req, res, now) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  sendJson(res, 200, planBody(session.plan));
+}
+
+// PUT /api/plan [steg 1 i del 5]. 200 { plan, features }, 400 vid okänd plan,
+// 401 utan session, 500 vid DatabaseError.
+//
+// Samma bindande ordning som varje annan skrivväg: sessionsspärren,
+// valideringen, sedan datalagret. Vägen har ingen månadsspärr — den gäller
+// kontot och inte en månad.
+//
+// Ingen betalning sker och ingen betalning förbereds: bytet är en UPDATE av en
+// kolumn. Att svaret kommer direkt är hela poängen med demon — gränssnittet
+// visar texten om att ingen betalning genomförs.
+async function handleChangePlan(req, res, now) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // isPlanKey i src/core/plans.js äger villkoret "detta är en känd plan". Det
+  // här lagret skriver ingen egen lista över plannycklar, precis som det inte
+  // skriver något eget månadsmönster. Allt som inte är en plannyckel — null, en
+  // array, ett objekt, en felstavad nyckel — ger samma 400 med samma text.
+  const plan = body?.plan;
+  if (!isPlanKey(plan)) {
+    sendJson(res, 400, { error: MESSAGES.invalidPlan });
+    return;
+  }
+  try {
+    setPlan(getDatabase(), { userId: session.userId, plan });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  // Svaret bär den nya planen och ingenting annat: en nedgradering raderar
+  // ingen rad, så ingen lista behöver skickas med och ingen ändring behöver
+  // ångras (ARKITEKTUR.md, "Nedgradering raderar ingen data").
+  sendJson(res, 200, planBody(plan));
 }
 
 // GET /api/manad/<ÅÅÅÅ-MM>. 200 med poster och summor, 400 vid fel

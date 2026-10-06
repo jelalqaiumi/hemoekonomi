@@ -9616,3 +9616,154 @@ annars ser tidslinjen ut att hoppa över tid.
 | (75) | de tre talen kommer ur svaret | inget räknas i `app.js` utom snittet, som använder `money.js` |
 | (76) | en negativ månad ritas nedåt och i `--negativ` | klassen finns på stapeln |
 | (77) | tabellen har en rad per månad | tolv rader, i samma ordning som diagrammet |
+
+---
+
+## Del 5: planer och behörighet
+
+### En källa för planerna (bindande)
+
+`src/core/plans.js` är **den enda** platsen som vet vad en plan kostar och vad
+den innehåller. Prissidan, appen och servern läser alla därifrån. Modulen är ren
+kärna — ingen `node:`-import — eftersom både servern och webbläsaren behöver den.
+
+```
+PLANS           -> fryst, de tre planerna i ordning
+FEATURES        -> fryst lista med funktionsnycklarna
+PLAN_LABELS     -> svenska namn
+hasFeature(plan, feature) -> boolean
+planFor(feature)          -> den lägsta plan som har funktionen
+```
+
+#### Planerna
+
+| Nyckel | Namn | Pris per månad | Funktioner utöver den lägre |
+|---|---|---|---|
+| `bas` | Bas | `9900` ören | `budget`, `billReminders`, `overview` |
+| `plus` | Plus | `14900` | `savingsGoals`, `sharedHousehold`, `reports` |
+| `premium` | Premium | `17900` | `customFeatures`, `prioritySupport` |
+
+**Priserna lagras i ören**, som varje annat belopp i projektet, och skrivs ut med
+`formatSek`. En plan ärver den lägre planens funktioner — `hasFeature` löser
+upp det, så ingen lista räknar upp samma nyckel två gånger.
+
+**`FEATURES` är frusen och uttömmande.** `hasFeature` med en nyckel som inte står
+där kastar `RangeError` med texten
+`hasFeature kräver en känd funktion, fick "<värdet>".` Skälet är detsamma som
+gav `cost.js` sin spärr: ett uppslag med en okänd nyckel ger annars tyst `false`,
+och en funktion som råkat stavas fel ser då ut att vara låst för alla.
+
+#### Kopplingen till schemat
+
+`users` får kolumnen `plan`:
+
+```sql
+plan TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'))
+```
+
+Ett testfall ska jämföra `CHECK`-listan mot `Object.keys(PLANS)`, på samma sätt
+som `kind` redan jämförs mot `ITEM_KINDS` — annars kan de två glida isär.
+
+**Befintliga rader får `bas`** genom kolumnens förval. Ingen migrering behövs
+utöver `ALTER TABLE`, och den körs bara när kolumnen saknas.
+
+### Behörigheten på servern
+
+En spärr i `src/server/api.js`, byggd som **en funktion varje skyddad väg går
+genom** — aldrig en kontroll upprepad per väg, eftersom en upprepad kontroll är
+en som glöms på en väg.
+
+```
+requireFeature(session, feature) -> null eller ett svar
+```
+
+Räcker planen inte svarar vägen `403` med:
+
+```json
+{ "error": "<text>", "feature": "<nyckel>", "requiredPlan": "<plan>" }
+```
+
+Texten är `Funktionen ingår i <Plan>. Uppgradera för att låsa upp.` där
+`<Plan>` är det svenska namnet ur `PLAN_LABELS`.
+
+**`feature` och `requiredPlan` i svaret** finns för att gränssnittet ska kunna
+visa rätt ruta utan att gissa ur texten.
+
+**Spärren prövas efter sessionen men före allt annat.** Ordningen är bindande:
+session, behörighet, månadsspärr, validering, datalager. En utan session ska få
+`401` och inte `403` — annars avslöjar svaret vilka funktioner som finns för den
+som inte är inloggad.
+
+### Nedgradering raderar ingen data
+
+En användare som går från Plus till Bas behåller varje rad. Data blir
+**skrivskyddad och dold**, inte borttagen:
+
+- Läsvägar för en funktion planen saknar svarar `403`.
+- Skrivvägar svarar `403`.
+- Ingenting raderas, och en uppgradering gör allt synligt igen.
+
+Det ska finnas ett testfall som skapar data på Plus, går ned till Bas, går upp
+igen och kräver att raden är oförändrad.
+
+### Byta plan
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `GET /api/plan` | ingen | `200 { plan, features }` |
+| `PUT /api/plan` | `{ plan }` | `200 { plan, features }`. `400` vid okänd plan. `401`. |
+
+`400`-texten är `Välj Bas, Plus eller Premium.`
+
+**Ingen betalning.** Bytet sparas direkt, och gränssnittet visar
+`Demo: ingen betalning genomförs.` Det står så tills en riktig betalning finns —
+och ingen knapp får antyda att pengar dras innan dess.
+
+### Gränssnittet
+
+**Prissidan renderas ur `PLANS`.** De tre korten byggs av `landning.html` med
+data ur modulen, inte med inskriven text. Priset skrivs med `formatSek`.
+Texten under korten blir:
+
+```
+Detta är en demo - du kan byta plan fritt och ingen betalning dras.
+```
+
+**Sidomenyn visar låsta funktioner** med en låsikon. Ett klick ger en ruta:
+
+```
+Funktionen ingår i <Plan>. Uppgradera för att låsa upp.   [Se planer]
+```
+
+**Inställningar → Min plan** visar nuvarande plan och tre knappar. Byte sker
+direkt, och vyn ritas om så att låsta funktioner låses upp utan omladdning.
+
+### Kravlista [steg 1]
+
+`tests/plans.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (P1) | `hasFeature` ärver uppåt | Premium har `budget`, Bas har inte `reports` |
+| (P2) | okänd funktion kastar | hela meddelandet asserterat |
+| (P3) | `planFor` ger lägsta planen | `reports` ger `plus` |
+| (P4) | listorna är frysta | `Object.freeze` håller |
+| (P5) | `FEATURES` täcker varje plans funktioner | ingen nyckel i en plan saknas i `FEATURES` |
+
+`tests/db.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (P6) | `plan`-kolumnens `CHECK` är `Object.keys(PLANS)` | läst ur `sqlite_master` |
+| (P7) | förvalet är `bas` | en rad utan `plan` får `bas` |
+
+`tests/plan-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (P8) | Bas får `403` på en Plus-väg | med `feature` och `requiredPlan` i svaret |
+| (P9) | Plus får `200` på samma väg | |
+| (P10) | utan session ges `401`, inte `403` | behörigheten avslöjas inte för utloggad |
+| (P11) | `PUT /api/plan` byter | och `GET` visar den nya |
+| (P12) | okänd plan ger `400` | texten ordagrant |
+| (P13) | nedgradering raderar inget | data på Plus, ned till Bas, upp igen: raden oförändrad |

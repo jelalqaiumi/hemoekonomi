@@ -163,8 +163,11 @@ function findUserByEmail(db, email) {
 }
 
 // Uppslaget i users på id, det andra undantaget.
+// plan läses med samma SELECT som id och email [steg 1 i del 5]: planen hör till
+// kontot och ska följa med sessionen, så att behörigheten kan avgöras utan en
+// andra fråga per anrop.
 function findUserById(db, userId) {
-  const rows = readRows(db, 'SELECT id, email FROM users WHERE id = ?', [userId]);
+  const rows = readRows(db, 'SELECT id, email, plan FROM users WHERE id = ?', [userId]);
   return rows.length === 0 ? null : rows[0];
 }
 
@@ -406,7 +409,23 @@ export function authenticate(db, { token, now }) {
   if (user === null) {
     return null;
   }
-  return { userId: user.id, email: user.email };
+  return { userId: user.id, email: user.email, plan: user.plan };
+}
+
+// Kontots plan [steg 1 i del 5]. Skrivvägen för users.plan: UPDATE och aldrig
+// INSERT, eftersom kontot redan finns när planen byts.
+//
+// Funktionen bor i den här filen därför att auth.js äger tabellen users —
+// findUserById och createUser är de enda andra satserna mot den. Värdet prövas
+// inte här: src/server/api.js avvisar en okänd plan med 400 och den svenska
+// texten innan datalagret nås, och schemats CHECK är den andra spärren. Når ett
+// okänt värde ändå hit svarar db.js med constraintFailed, som är rätt svar på
+// ett programmeringsfel.
+//
+// UPDATE:n bär user_id enligt ägarregeln, och user_id kommer ur sessionen och
+// aldrig ur anropet.
+export function setPlan(db, { userId, plan }) {
+  write(db, 'UPDATE users SET plan = ? WHERE id = ?', [plan, userId]);
 }
 
 // Utloggning. Sätter revoked_at och svarar aldrig med ett fel: utloggning ska
