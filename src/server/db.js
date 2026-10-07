@@ -138,7 +138,16 @@ CREATE TABLE IF NOT EXISTS month_items (
   name        TEXT NOT NULL,
   amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
   category    TEXT NOT NULL,
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  -- Dagen utgiften gjordes, NULL när användaren inte anger den [steg 2]. Den är
+  -- inte dueDate: dueDate räknas fram ur en malls interval och start_date och
+  -- står inte i någon kolumn, occurred_on är en dag användaren skriver in. En
+  -- post kan ha båda, och de två namnen hålls isär överallt.
+  occurred_on TEXT CHECK (occurred_on IS NULL OR occurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  -- Fritext, högst 200 tecken. Längden står inte som ett CHECK här: SQLite:s
+  -- length() räknar tecken i en annan mening än [...note].length, och kärnan
+  -- äger regeln (checkNote i src/core/entry.js).
+  note        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_month_items_user_month ON month_items (user_id, month);
 
@@ -157,6 +166,27 @@ CREATE TABLE IF NOT EXISTS overrides (
   UNIQUE (template_id, month)
 );
 CREATE INDEX IF NOT EXISTS idx_overrides_user_month ON overrides (user_id, month);
+
+-- Ett tak för en kategori och en månad [steg 2]. UNIQUE hindrar två tak för
+-- samma kategori och månad, och gör PUT till en enda operation: ON CONFLICT
+-- ersätter i stället för att falla.
+--
+-- category har inget CHECK. Kategorilistan ägs av CATEGORIES i src/core/entry.js
+-- och prövas av checkCategory där; ett CHECK här hade blivit en andra kopia som
+-- kan glida isär (ARKITEKTUR.md under "Tabellen").
+--
+-- Ingen egen idx_-rad: UNIQUE (user_id, month, category) ger ett index med
+-- user_id och month som sina första kolumner, alltså just det uppslag
+-- readMonth gör.
+CREATE TABLE IF NOT EXISTS budgets (
+  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  month       TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  category    TEXT NOT NULL,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
+  created_at  TEXT NOT NULL,
+  UNIQUE (user_id, month, category)
+);
 `;
 
 // Kolumnen users.plan [steg 1 i del 5]. Står ordagrant som i ARKITEKTUR.md under
@@ -176,19 +206,47 @@ CREATE INDEX IF NOT EXISTS idx_overrides_user_month ON overrides (user_id, month
 const ADD_PLAN_COLUMN_SQL =
   "ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'));";
 
-// Steget körs bara när kolumnen saknas, och villkoret är kolumnen själv och
+// De två kolumnerna på month_items [steg 2], av samma skäl och på samma två
+// ställen som plan ovan: i CREATE TABLE för en databas som skapas nu, och här
+// för en databas som redan finns. Villkoret och CHECK-texten står ordagrant som
+// i CREATE TABLE — en avvikelse mellan de två hade gjort att en migrerad databas
+// avvisade en rad en ny databas tar emot.
+//
+// Körd på Node v24.19.0: ALTER TABLE ADD COLUMN tar emot ett CHECK på den nya
+// kolumnen, och ett INSERT med occurred_on '2026-13-99x' faller därefter med
+// errstr 'constraint failed' också i den migrerade databasen. Varje befintlig rad
+// får NULL i båda kolumnerna, så ingen UPDATE behövs och ingen rad skrivs om.
+const ADD_OCCURRED_ON_COLUMN_SQL =
+  "ALTER TABLE month_items ADD COLUMN occurred_on TEXT CHECK (occurred_on IS NULL OR occurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');";
+
+const ADD_NOTE_COLUMN_SQL = 'ALTER TABLE month_items ADD COLUMN note TEXT;';
+
+// Varje steg körs bara när kolumnen saknas, och villkoret är kolumnen själv och
 // inte PRAGMA user_version: ALTER TABLE ADD COLUMN är ett fel om kolumnen redan
 // finns, och en databas som skapats av CREATE TABLE ovan har den från början.
 // Ett villkor på user_version hade behövt svara på frågan "finns kolumnen?"
 // indirekt, genom ett tal som en äldre körning kan ha satt av ett annat skäl.
 //
+// Listan står som data och inte som tre if-satser: frågan "finns kolumnen?" har
+// då en enda ägande funktion, hasColumn nedan, i stället för en handskriven kopia
+// per kolumn (LARDOMAR.md 2026-09-02).
+const COLUMN_MIGRATIONS = Object.freeze([
+  Object.freeze({ table: 'users', column: 'plan', sql: ADD_PLAN_COLUMN_SQL }),
+  Object.freeze({ table: 'month_items', column: 'occurred_on', sql: ADD_OCCURRED_ON_COLUMN_SQL }),
+  Object.freeze({ table: 'month_items', column: 'note', sql: ADD_NOTE_COLUMN_SQL })
+]);
+
 // PRAGMA table_info ger en rad per kolumn. Läses genom prepare().all(), som
 // db.test.js redan gör för PRAGMA user_version.
-function hasPlanColumn(database) {
+//
+// Tabellnamnet kommer ur COLUMN_MIGRATIONS ovan och aldrig utifrån: PRAGMA tar
+// inga parametrar, så namnet måste stå i SQL-texten, och den enda listan som
+// når hit är den frysta.
+function hasColumn(database, table, column) {
   return database
-    .prepare('PRAGMA table_info(users)')
+    .prepare(`PRAGMA table_info(${table})`)
     .all()
-    .some((row) => row.name === 'plan');
+    .some((row) => row.name === column);
 }
 
 // Varje node:sqlite-fraga i projektet gar genom en av de tva funktionerna nedan,
@@ -299,8 +357,10 @@ export function openDatabase(filePath) {
     // Samma rad i feltabellen som de tre stegen ovan: en databas vars kolumn
     // inte gick att lägga till kan inte användas, och svaret är därför
     // openFailed och inte en egen text.
-    if (!hasPlanColumn(database)) {
-      database.exec(ADD_PLAN_COLUMN_SQL);
+    for (const migration of COLUMN_MIGRATIONS) {
+      if (!hasColumn(database, migration.table, migration.column)) {
+        database.exec(migration.sql);
+      }
     }
     database.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
   } catch (error) {

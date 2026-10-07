@@ -6,8 +6,8 @@
 // belopp — råvärdet ur anropets JSON skickas vidare orört.
 import { isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
-import { validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
-import { FEATURES, hasFeature, isPlanKey } from '../core/plans.js';
+import { validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
+import { FEATURES, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../core/plans.js';
 import {
   AUTH_MESSAGES,
   clearedSessionCookie,
@@ -28,7 +28,9 @@ import {
   endTemplate,
   readMonth,
   readOverview,
+  removeBudget,
   removeMonthItem,
+  setBudget,
   setOverride,
   skipMonth,
   updateMonthItem
@@ -86,6 +88,11 @@ const ITEM_MONTH_SEGMENT = 'manad';
 // Planens väg [steg 1 i del 5]. Adressen är ett ord som är detsamma på svenska
 // och engelska, så den behöver ingen översättning.
 const PLAN_PATH = '/api/plan';
+
+// Budgetens väg [steg 2]: /api/budget/<ÅÅÅÅ-MM> och
+// /api/budget/<ÅÅÅÅ-MM>/<kategori>. Ordet budget är detsamma på svenska och
+// engelska, precis som plan, så adressen behöver ingen översättning.
+const BUDGET_PATH_PREFIX = '/api/budget/';
 
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
@@ -195,6 +202,24 @@ function seriesMonthFromPath(pathname) {
   return { seriesId: parts[0], month: parts[1] };
 }
 
+// De två leden i /api/budget/<ÅÅÅÅ-MM>/<kategori>, eller null när sökvägen inte
+// har den formen [steg 2]. Samma regler som seriesMonthFromPath: ingen trimning,
+// ingen avkodning, och ett tomt led är ingen väg alls.
+//
+// Varken månaden eller kategorin prövas här utan i hanteraren: vägen finns, och
+// en månad som inte är en månad ska ge 400 med månadens text och inte 404 Okänd
+// adress. Kategorin prövas inte alls på den här vägen — se handleDeleteBudget.
+function budgetCategoryFromPath(pathname) {
+  if (!pathname.startsWith(BUDGET_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(BUDGET_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
+    return null;
+  }
+  return { month: parts[0], category: parts[1] };
+}
+
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
 //
 // now är tidsstämpeln anropet ska räknas mot, injicerad av samma skäl som
@@ -273,6 +298,30 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   if (id !== null) {
     if (req.method === 'DELETE') {
       await handleDelete(res, id);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Prövas före den enkla /api/budget/<månad>, fastän ordningen inte avgör något:
+  // segmentAfter svarar null för en sökväg med fler än ett led, så de två
+  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
+  // den är den mer specifika — samma ordning som för postens två vägar nedan.
+  const budgetCategory = budgetCategoryFromPath(pathname);
+  if (budgetCategory !== null) {
+    if (req.method === 'DELETE') {
+      handleDeleteBudget(req, res, now, budgetCategory.month, budgetCategory.category);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  const budgetMonth = segmentAfter(pathname, BUDGET_PATH_PREFIX);
+  if (budgetMonth !== null) {
+    if (req.method === 'PUT') {
+      await handleSetBudget(req, res, now, budgetMonth);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -395,6 +444,45 @@ function sessionUserId(req, res, now) {
   return session === null ? null : session.userId;
 }
 
+// Behörighetsspärren, byggd som en funktion varje skyddad väg går genom — aldrig
+// en kontroll upprepad per väg, eftersom en upprepad kontroll är en som glöms på
+// en väg (ARKITEKTUR.md under "Behörigheten på servern").
+//
+// Svaret är null när planen räcker, annars kroppen till ett 403. Anroparen
+// skickar den: funktionen tar session och feature och ingenting mer, precis som
+// signaturen i ARKITEKTUR.md, och är därmed ren — den rör aldrig res.
+//
+// feature och requiredPlan står i svaret för att gränssnittet ska kunna visa rätt
+// ruta utan att gissa ur texten. requiredPlan kommer ur planFor och PLAN_LABELS
+// ger det svenska namnet; ingen av de två skrivs av här.
+//
+// Spärren prövas efter sessionen men före allt annat. Ordningen är bindande:
+// session, behörighet, månadsspärr, validering, datalager. En utan session ska få
+// 401 och inte 403 — annars avslöjar svaret vilka funktioner som finns för den
+// som inte är inloggad.
+//
+// Grenen som ger ett 403 har i dag ingen nåbar indata: den enda skyddade vägen är
+// budgetens, och budget står i alla tre planerna, så hasFeature är true för varje
+// plan en session kan bära (körd: bas, plus och premium ger alla true). Mutation
+// "ta bort if-satsen" överlever därför hela sviten, och det är väntat —
+// ARKITEKTUR.md skriver ut skälet: vägen går ändå genom spärren "så att den dagen
+// något ändras finns kontrollen på plats". Samma form som user_id = ? i
+// SQL_TEMPLATE_BY_ID i months.js, som också står för en regel och inte för ett
+// nåbart fall. Raden går inte att pröva med en riktig session förrän en väg
+// skyddas av en funktion som inte finns i Bas; (P8) och (P9) i ARKITEKTUR.md är
+// kvar hos arkitekten av exakt det skälet.
+function requireFeature(session, feature) {
+  if (hasFeature(session.plan, feature)) {
+    return null;
+  }
+  const requiredPlan = planFor(feature);
+  return {
+    error: `Funktionen ingår i ${PLAN_LABELS[requiredPlan]}. Uppgradera för att låsa upp.`,
+    feature,
+    requiredPlan
+  };
+}
+
 // Svarskroppen för planens två vägar: { plan, features }. En enda ägare till
 // formen, så att GET och PUT inte kan svara olika — gränssnittet ritar om vyn
 // ur PUT:ens svar utan en andra hämtning.
@@ -483,7 +571,107 @@ function handleReadMonth(req, res, now, month) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-  sendJson(res, 200, { items: result.items, totals: result.totals });
+  // budgets står med sedan steg 2: kortet Budget i månadsvyn ritas ur samma svar
+  // som listan och summorna, så vyn behöver inte en andra hämtning.
+  sendJson(res, 200, { items: result.items, totals: result.totals, budgets: result.budgets });
+}
+
+// PUT /api/budget/<ÅÅÅÅ-MM> [steg 2]. 200 med månadens budgetar, 400 med
+// fieldErrors, 401 utan session, 403 utan behörighet, 500 vid DatabaseError.
+//
+// Ordningen är den bindande: sessionsspärren, behörigheten, månadsspärren,
+// valideringen, sedan datalagret. Steg fyra före steg fem betyder att ett
+// ogiltigt tak aldrig blir en SQL-fråga.
+//
+// Vägen skapar taket eller ersätter det som finns — UNIQUE i schemat gör det till
+// en operation, så kroppen behöver inget fält som säger vilket av de två som
+// avses.
+//
+// Svaret är månadens budgetar och inte den enda raden som skrevs: kortet Budget
+// visar en rad per kategori med ett tak, så gränssnittet kan rita om hela kortet
+// ur svaret utan en andra hämtning. spentOre och leftOre kommer därmed ur
+// readMonth, som är den enda ägaren till formen.
+async function handleSetBudget(req, res, now, month) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const denied = requireFeature(session, 'budget');
+  if (denied !== null) {
+    sendJson(res, 403, denied);
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // Kroppens två fält ägs av validateBudgetDraft i src/core/item.js. Det här
+  // lagret läser varken category eller amountSek själv, och har ingen egen lista
+  // över kategorier.
+  const result = validateBudgetDraft(body);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let budgets;
+  try {
+    setBudget(session.userId, month, result.value.category, result.value.amountOre, { now });
+    budgets = readMonth(session.userId, month).budgets;
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { budgets });
+}
+
+// DELETE /api/budget/<ÅÅÅÅ-MM>/<kategori> [steg 2]. 204, 400 vid fel
+// månadsformat, 401, 403, 404 när taket inte finns eller tillhör någon annan,
+// 500.
+//
+// Vägen har ingen kropp och därför ingen 400 utöver månadsspärrens — vad som ska
+// hända står i metoden och i sökvägen. Funktionen är inte async av just det
+// skälet: den väntar inte på readBody.
+//
+// Kategorin prövas inte mot CATEGORIES. En kategori som inte finns matchar ingen
+// rad, och svaret blir då detsamma som för en kategori utan tak: 404 med samma
+// text som för en post som inte finns. Tabellen under "API-vägar" räknar upp
+// 204, 401, 404 och 500 för den här vägen och ingen 400 för kategorin, så en
+// egen spärr här hade lagt till ett svar tabellen inte har.
+function handleDeleteBudget(req, res, now, month, category) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const denied = requireFeature(session, 'budget');
+  if (denied !== null) {
+    sendJson(res, 403, denied);
+    return;
+  }
+  if (!isValidIsoMonth(month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  let removed;
+  try {
+    // Beslutet "finns taket?" fattas av SQL:s WHERE med user_id = ?, inte av en
+    // läsning före: ett tak som tillhör någon annan matchar då ingen rad, och
+    // svaret blir detsamma som för en kategori som aldrig haft ett tak.
+    removed = removeBudget(session.userId, month, category);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!removed) {
+    sendJson(res, 404, { error: MESSAGES.entryNotFound });
+    return;
+  }
+  res.writeHead(204);
+  res.end();
 }
 
 // GET /api/oversikt/<ÅÅÅÅ-MM> [etapp 5]. 200 med { months, savedThisYear },
@@ -773,7 +961,11 @@ async function handleSetMonthOverride(req, res, now, templateId, month) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-  sendJson(res, 200, { items: result2.items, totals: result2.totals });
+  // Samma tre fält som GET /api/manad/<ÅÅÅÅ-MM> ger. Formen ska vara densamma,
+  // så att gränssnittet kan rita om hela vyn ur svaret utan en andra hämtning —
+  // och en avvikelse ändrar månadens utgifter, alltså också spentOre och leftOre
+  // i varje tak.
+  sendJson(res, 200, { items: result2.items, totals: result2.totals, budgets: result2.budgets });
 }
 
 // 401 med rensad cookie. En session som saknas, är återkallad eller har gått ut

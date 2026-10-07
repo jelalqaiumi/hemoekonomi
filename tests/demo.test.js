@@ -217,6 +217,8 @@ test('(D3) månadens och postens vägar svarar som servern', async () => {
     'interval',
     'kind',
     'name',
+    'note',
+    'occurredOn',
     'overridden',
     'recurring',
     'seriesId',

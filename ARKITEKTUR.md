@@ -9767,3 +9767,125 @@ direkt, och vyn ritas om så att låsta funktioner låses upp utan omladdning.
 | (P11) | `PUT /api/plan` byter | och `GET` visar den nya |
 | (P12) | okänd plan ger `400` | texten ordagrant |
 | (P13) | nedgradering raderar inget | data på Plus, ned till Bas, upp igen: raden oförändrad |
+
+---
+
+### Budget per kategori (bindande) [steg 2]
+
+Priskortet lovar `Budget och utgiftsregistrering` på Bas. Registreringen finns
+sedan etapp 3. Det som saknas är **taket** — ett belopp per kategori och per
+månad, och visningen av hur mycket som är kvar av det.
+
+Punkten lovar också **datum och kommentar** på en post. De fälten finns inte.
+
+#### Tabellen
+
+```sql
+CREATE TABLE IF NOT EXISTS budgets (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  month       TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  category    TEXT NOT NULL,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
+  created_at  TEXT NOT NULL,
+  UNIQUE (user_id, month, category)
+);
+```
+
+`UNIQUE` hindrar två tak för samma kategori och månad. `category` prövas mot
+`CATEGORY_LABELS` i kärnan, inte i schemat — kategorilistan ägs av `entry.js`
+och ett `CHECK` här hade blivit en andra kopia.
+
+**Ett tak gäller en månad.** Vill användaren ha samma tak varje månad sätts det
+per månad; en återkommande budget är en annan funktion och byggs inte nu.
+
+#### Två nya fält på en post
+
+`month_items` får:
+
+```sql
+occurred_on TEXT CHECK (occurred_on IS NULL OR occurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+note        TEXT
+```
+
+`occurred_on` är dagen utgiften gjordes, `null` när användaren inte anger den.
+Den **får inte** blandas ihop med `dueDate`, som räknas fram ur en mall — en
+inskriven dag och en härledd dragningsdag är två olika saker, och fältnamnen
+ska hållas isär.
+
+`note` är fritext, högst 200 tecken, mätt med `[...note].length` som `checkName`
+redan gör. Längre ger `Kommentaren får vara högst 200 tecken.`
+
+Mallar får **inte** de två fälten: en återkommande post har ingen enskild dag
+och ingen enskild kommentar.
+
+#### Kvar av budgeten
+
+`readMonth` svarar med ett fält till:
+
+```
+budgets: [ { category, amountOre, spentOre, leftOre } ]
+```
+
+`spentOre` är summan av månadens **utgifter** i kategorin — inkomster och
+sparande räknas inte. `leftOre = amountOre - spentOre` och **får vara negativt**:
+har användaren dragit över taket ska det synas som ett minusbelopp, inte som
+noll.
+
+Bara kategorier med ett tak kommer med. En kategori utan tak har ingen budget
+att vara kvar av.
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `PUT /api/budget/<ÅÅÅÅ-MM>` | `{ category, amountSek }` | `200` med månadens budgetar. `400` med `fieldErrors`. `401`. `500`. |
+| `DELETE /api/budget/<ÅÅÅÅ-MM>/<kategori>` | ingen | `204`. `401`. `404`. `500`. |
+
+`PUT` skapar taket eller ersätter det som finns — `UNIQUE` gör det till en
+operation. Behörighet: `budget` finns i alla tre planerna, så spärren släpper
+igenom var och en, men vägen går ändå genom `requireFeature` så att den dagen
+något ändras finns kontrollen på plats.
+
+#### Gränssnittet
+
+**I månadsvyn, under utgiftslistan:** ett kort `Budget` med en rad per kategori
+som har ett tak:
+
+```
+Mat        4 000,00 kr    kvar 1 240,00 kr
+Boende     9 000,00 kr    kvar -300,00 kr
+```
+
+Kvar-beloppet bär `left-positive` eller `left-negative`, samma klasser som
+summeringen redan använder. En knapp `+ Sätt tak` öppnar ett litet formulär med
+kategori och belopp.
+
+**I postformuläret** tillkommer `Datum` (valfritt) och `Kommentar` (valfritt).
+De döljs när kryssrutan `Återkommande` är ikryssad, eftersom en mall inte har
+dem — samma mönster som `Bara <månad>` redan använder för att dölja fält som
+inte går att ändra.
+
+#### Kravlista [steg 2]
+
+`tests/months.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (B1) | ett tak syns bara i sin månad | grannmånaderna har inget |
+| (B2) | `spentOre` räknar bara utgifter | en inkomst och ett sparande i samma kategori påverkar inte |
+| (B3) | `leftOre` får vara negativt | ett överdrag ger ett minusbelopp |
+| (B4) | `PUT` ersätter ett befintligt tak | en rad, inte två |
+| (B5) | kategori utan tak saknas i `budgets` | listan bär bara satta tak |
+| (B6) | en annan användares tak syns inte | |
+| (B7) | `occurred_on` och `note` sparas och läses | och är `null` när de inte anges |
+| (B8) | en för lång kommentar avvisas | texten ordagrant |
+| (B9) | en mall får inte de två fälten | utkastet avvisas eller fälten ignoreras — skriv ut vilket |
+
+`tests/app.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (78) | budgetkortet visar kvar per kategori | tre rader, rätt belopp |
+| (79) | ett överdrag får `left-negative` | klassen finns |
+| (80) | `Återkommande` döljer datum och kommentar | och visar dem igen när rutan avmarkeras |

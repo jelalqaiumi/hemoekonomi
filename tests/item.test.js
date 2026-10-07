@@ -56,7 +56,17 @@ test('V1: ett giltigt utkast ger ok och amountOre i heltal ören', () => {
   const resultat = validateMonthItemDraft(draft());
   assert.deepEqual(resultat, {
     ok: true,
-    value: { kind: 'expense', name: 'Tandläkare', amountOre: 95050, category: 'other' }
+    value: {
+      kind: 'expense',
+      name: 'Tandläkare',
+      amountOre: 95050,
+      category: 'other',
+      // De två valfria fälten står alltid i value, som null när användaren
+      // lämnat dem tomma [steg 2]. Två former av samma value hade tvingat varje
+      // anropare att fråga vilken av dem den fick.
+      occurredOn: null,
+      note: null
+    }
   });
   // Kronor finns inte kvar i svaret: fältet heter amountOre och amountSek är borta.
   assert.equal(Object.hasOwn(resultat.value, 'amountSek'), false);
@@ -361,4 +371,99 @@ test('validateOverrideDraft ger formtexten för en kropp som varken är belopp e
       String(draft)
     );
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// Postens tva nya falt [steg 2]: occurredOn och note. Texterna star i
+// src/core/item.js och prövas ordagrant; längdgränsen prövas från båda sidor och
+// i båda mätsätten.
+// ---------------------------------------------------------------------------
+
+const DATUM_TEXT = 'Datum måste vara ett giltigt datum på formen ÅÅÅÅ-MM-DD, eller lämnas tomt.';
+const NOTE_TEXT_TYP = 'Kommentaren måste vara text.';
+const NOTE_TEXT_LANG = 'Kommentaren får vara högst 200 tecken.';
+
+test('occurredOn och note är valfria: utan dem, som null och som tom sträng ger null', () => {
+  // Tre vägar in för "inget värde": nyckeln saknas, null, och den tomma strängen.
+  // Alla tre ska ge samma svar, så ingen anropare behöver veta vilken av de tre
+  // webbläsaren råkade skicka.
+  for (const extra of [{}, { occurredOn: null, note: null }, { occurredOn: '', note: '' }, { occurredOn: '   ', note: '   ' }]) {
+    const resultat = validateMonthItemDraft(draft(extra));
+    assert.equal(resultat.ok, true, JSON.stringify(extra));
+    assert.equal(resultat.value.occurredOn, null, JSON.stringify(extra));
+    assert.equal(resultat.value.note, null, JSON.stringify(extra));
+  }
+});
+
+test('occurredOn tas emot som ett datum och trimmas, och är inte dueDate', () => {
+  assert.equal(validateMonthItemDraft(draft({ occurredOn: '2026-10-03' })).value.occurredOn, '2026-10-03');
+  assert.equal(validateMonthItemDraft(draft({ occurredOn: '  2026-10-03  ' })).value.occurredOn, '2026-10-03');
+  // Den 29:e i februari ett skottår finns, den 30:e finns inte.
+  assert.equal(validateMonthItemDraft(draft({ occurredOn: '2024-02-29' })).value.occurredOn, '2024-02-29');
+  // Fältet heter occurredOn och aldrig dueDate: dueDate räknas fram ur en malls
+  // interval och start_date och kommer aldrig från användaren.
+  assert.equal(Object.hasOwn(validateMonthItemDraft(draft({ occurredOn: '2026-10-03' })).value, 'dueDate'), false);
+});
+
+test('ett occurredOn som inte är ett giltigt datum avvisas med textens exakta lydelse', () => {
+  const trasiga = [
+    '2026-10-3', '20261003', '2026-10', '2026-13-01', '2026-00-01', '2026-02-30',
+    '2026-04-31', '2026-10-32', '2026-10-00', 'igår', '2026-10-03T00:00:00.000Z',
+    42, true, {}, [], 1n, Symbol('x'), new Date('2026-10-03')
+  ];
+  for (const occurredOn of trasiga) {
+    const resultat = validateMonthItemDraft(draft({ occurredOn }));
+    assert.equal(resultat.ok, false, String(occurredOn));
+    assert.deepEqual(resultat.errors, [{ field: 'occurredOn', message: DATUM_TEXT }], String(occurredOn));
+  }
+});
+
+test('note trimmas, tar emot 200 tecken och avvisar 201 i tecken och inte i kodenheter', () => {
+  assert.equal(validateMonthItemDraft(draft({ note: '  lagning  ' })).value.note, 'lagning');
+  // 200 tecken går igenom, 201 avvisas. Emojifallet står med därför att
+  // .length ger 400 respektive 402 för samma två strängar: mäts längden i
+  // kodenheter avvisas 200 emoji, som är 200 tecken (LARDOMAR.md 2026-08-18).
+  for (const tecken of ['a', '\u{1f600}']) {
+    assert.equal(validateMonthItemDraft(draft({ note: tecken.repeat(200) })).ok, true, tecken);
+    const resultat = validateMonthItemDraft(draft({ note: tecken.repeat(201) }));
+    assert.equal(resultat.ok, false, tecken);
+    assert.deepEqual(resultat.errors, [{ field: 'note', message: NOTE_TEXT_LANG }], tecken);
+  }
+  // En miljon tecken ger samma text. Ingen assertion på körtid: ARKITEKTUR.md
+  // räknar upp de tillåtna tidsberoende villkoren i projektet, och ett fall som
+  // det här står inte där. Att svaret kommer utan mätbar fördröjning är i stället
+  // snabbvägens uppgift — avvisandet sker på 2 * NOTE_MAX_LENGTH kodenheter, före
+  // spridningen som materialiserar hela indatan (LARDOMAR.md 2026-08-23). Samma
+  // form som namnfallet i tests/entry.test.js rad 320.
+  assert.deepEqual(
+    validateMonthItemDraft(draft({ note: 'a'.repeat(1000000) })).errors,
+    [{ field: 'note', message: NOTE_TEXT_LANG }]
+  );
+});
+
+test('en note som inte är text avvisas med sin egen text', () => {
+  for (const note of [42, true, {}, [], 1n, Symbol('x'), new Date()]) {
+    const resultat = validateMonthItemDraft(draft({ note }));
+    assert.equal(resultat.ok, false, String(note));
+    assert.deepEqual(resultat.errors, [{ field: 'note', message: NOTE_TEXT_TYP }], String(note));
+  }
+});
+
+test('fältordningen i errors är kind, name, amountSek, category, occurredOn, note', () => {
+  const resultat = validateMonthItemDraft({
+    kind: 'gift',
+    name: '',
+    amountSek: 'abc',
+    category: 'x',
+    occurredOn: 'igår',
+    note: 42
+  });
+  assert.equal(resultat.ok, false);
+  assert.deepEqual(resultat.errors.map((fel) => fel.field), [
+    'kind', 'name', 'amountSek', 'category', 'occurredOn', 'note'
+  ]);
+  // Alla sex prövas, aldrig bara det första: ett formulär med sex fel ska visa
+  // sex meddelanden samtidigt.
+  assert.equal(resultat.errors.length, 6);
 });

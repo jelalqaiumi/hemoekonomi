@@ -169,7 +169,10 @@ test('GET /api/manad/<månad> ger 200 med tom lista och fyra nollor för en tom 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, {
     items: [],
-    totals: { incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 }
+    totals: { incomeOre: 0, expenseOre: 0, savingOre: 0, leftOre: 0 },
+    // Tredje fältet sedan steg 2. En tom lista betyder att inget tak är satt, och
+    // inte att taken inte kom med: bara kategorier med ett tak står i listan.
+    budgets: []
   });
 });
 
@@ -415,6 +418,10 @@ test('V8: PUT /api/poster/<id> ger 200, och GET visar nytt belopp och nya summor
     name: 'Tandvård',
     amountOre: 120000,
     category: 'other',
+    // Kroppen bär varken datum eller kommentar, så posten får null i båda
+    // [steg 2].
+    occurredOn: null,
+    note: null,
     dueDate: null,
     recurring: false,
     seriesId: null,
@@ -1260,5 +1267,207 @@ test('andra metoder än GET mot /api/oversikt/<månad> ger 405', async (t) => {
     const { res } = await call(method, `/api/oversikt/${MANAD}`, { cookie, body: {} });
     assert.equal(res.statusCode, 405, method);
     assert.deepEqual(res.body, { error: 'Metoden stöds inte.' }, method);
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Budgetens två vägar [steg 2]: PUT /api/budget/<ÅÅÅÅ-MM> och
+// DELETE /api/budget/<ÅÅÅÅ-MM>/<kategori>.
+//
+// Samma bindande ordning som varje annan skrivväg, med ett testfall per steg:
+// sessionsspärren, behörigheten, månadsspärren, valideringen, datalagret. Varje
+// fall som ger 400 kontrollerar dessutom att ingen rad nådde databasen.
+// ---------------------------------------------------------------------------
+
+// Antalet rader i budgets, oavsett ägare: ett 400 får inte skriva något alls.
+function budgetRader(db) {
+  return db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal;
+}
+
+test('PUT /api/budget/<månad> ger 200 med månadens budgetar', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+  addMonthItem(userId(db, EPOST), MANAD, { kind: 'expense', name: 'Hyra', amountOre: 1250000, category: 'housing' }, { db, now: NU, makeId: () => 'm-hyra' });
+  // En inkomst i samma kategori: spentOre ska inte räkna den.
+  addMonthItem(userId(db, EPOST), MANAD, { kind: 'income', name: 'Hyresbidrag', amountOre: 500000, category: 'housing' }, { db, now: NU, makeId: () => 'm-bidrag' });
+
+  const { handled, res } = await call('PUT', `/api/budget/${MANAD}`, {
+    cookie,
+    body: { category: 'housing', amountSek: '15000' }
+  });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'application/json; charset=utf-8');
+  assert.deepEqual(res.body, {
+    budgets: [{ category: 'housing', amountOre: 1500000, spentOre: 1250000, leftOre: 250000 }]
+  });
+
+  // Samma tre fält i månadens egen väg, så att gränssnittet kan rita om vyn ur
+  // båda svaren.
+  const efter = await call('GET', `/api/manad/${MANAD}`, { cookie });
+  assert.deepEqual(efter.res.body.budgets, res.body.budgets);
+});
+
+test('PUT /api/budget/<månad> ersätter ett befintligt tak, en rad och inte två', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  const första = await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'other', amountSek: '1000' } });
+  assert.equal(första.res.statusCode, 200);
+  const andra2 = await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'other', amountSek: '2500' } });
+  assert.equal(andra2.res.statusCode, 200);
+  assert.deepEqual(andra2.res.body.budgets, [
+    { category: 'other', amountOre: 250000, spentOre: 0, leftOre: 250000 }
+  ]);
+  assert.equal(budgetRader(db), 1);
+});
+
+test('PUT /api/budget/<månad> ger 400 med fieldErrors, och når aldrig datalagret', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  // Båda fälten fel: errors bär båda, i valideringens ordning, och error är det
+  // första.
+  const { res } = await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'mat', amountSek: '0' } });
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body.fieldErrors.map((fel) => fel.field), ['category', 'amountSek']);
+  assert.equal(res.body.error, res.body.fieldErrors[0].message);
+  assert.equal(res.body.error, 'Välj en giltig kategori.');
+  assert.equal(res.body.fieldErrors[1].message, 'Beloppet måste vara större än 0 kr.');
+
+  // En tom kropp, en kropp som inte är ett objekt och en kropp som inte gick att
+  // tolka: alla ger 400 och ingen rad.
+  for (const body of [{}, null, 'abc', 42, []]) {
+    const svar = await call('PUT', `/api/budget/${MANAD}`, { cookie, body });
+    assert.equal(svar.res.statusCode, 400, JSON.stringify(body));
+  }
+  const otolkbar = await call('PUT', `/api/budget/${MANAD}`, { cookie, body: undefined });
+  assert.equal(otolkbar.res.statusCode, 400);
+  assert.deepEqual(otolkbar.res.body, { error: 'Kunde inte tolka anropet.' });
+  assert.equal(budgetRader(db), 0);
+});
+
+test('PUT /api/budget/<månad> ger 400 vid fel månadsformat, och når aldrig datalagret', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  for (const manad of ['2026-13', '2026-00', '2026-1', '2026', '2026-10-01', 'oktober']) {
+    const { res } = await call('PUT', `/api/budget/${manad}`, { cookie, body: { category: 'other', amountSek: '1000' } });
+    assert.equal(res.statusCode, 400, manad);
+    assert.deepEqual(res.body, { error: FEL_MANAD }, manad);
+  }
+  assert.equal(budgetRader(db), 0);
+});
+
+test('budgetens vägar kräver session: 401 utan cookie, och ingen rad skrivs', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  await loggaIn(db, call);
+
+  const put = await call('PUT', `/api/budget/${MANAD}`, { body: { category: 'other', amountSek: '1000' } });
+  assert.equal(put.res.statusCode, 401);
+  assert.deepEqual(put.res.body, { error: NOT_LOGGED_IN_MESSAGE });
+  const del = await call('DELETE', `/api/budget/${MANAD}/other`);
+  assert.equal(del.res.statusCode, 401);
+  assert.deepEqual(del.res.body, { error: NOT_LOGGED_IN_MESSAGE });
+  assert.equal(budgetRader(db), 0);
+
+  // 401 kommer före månadsspärren: en utloggad ska inte kunna se skillnad på en
+  // månad som finns och en som inte gör det.
+  const felManad = await call('PUT', '/api/budget/2026-13', { body: { category: 'other', amountSek: '1000' } });
+  assert.equal(felManad.res.statusCode, 401);
+});
+
+test('DELETE /api/budget/<månad>/<kategori> ger 204, och 404 när taket inte finns', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+  await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'other', amountSek: '1000' } });
+  await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'housing', amountSek: '9000' } });
+
+  const { handled, res } = await call('DELETE', `/api/budget/${MANAD}/other`, { cookie });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 204);
+  assert.equal(res.text, '');
+  assert.equal(budgetRader(db), 1);
+
+  // Ett andra anrop mot samma kategori ger 404 med samma text som för en post som
+  // inte finns.
+  const igen = await call('DELETE', `/api/budget/${MANAD}/other`, { cookie });
+  assert.equal(igen.res.statusCode, 404);
+  assert.deepEqual(igen.res.body, { error: FINNS_INTE });
+
+  // En okänd kategori ger också 404 och aldrig 400: tabellen i ARKITEKTUR.md
+  // räknar upp 204, 401, 404 och 500 för den här vägen.
+  const okänd = await call('DELETE', `/api/budget/${MANAD}/mat`, { cookie });
+  assert.equal(okänd.res.statusCode, 404);
+  assert.deepEqual(okänd.res.body, { error: FINNS_INTE });
+
+  // En annan månad rör inte taket: raden ligger kvar.
+  const annanMånad = await call('DELETE', `/api/budget/2026-11/housing`, { cookie });
+  assert.equal(annanMånad.res.statusCode, 404);
+  assert.equal(budgetRader(db), 1);
+});
+
+test('DELETE /api/budget/<månad>/<kategori> ger 400 vid fel månadsformat', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+  await call('PUT', `/api/budget/${MANAD}`, { cookie, body: { category: 'other', amountSek: '1000' } });
+
+  for (const manad of ['2026-13', '2026-1', '2026-10-01', 'oktober']) {
+    const { res } = await call('DELETE', `/api/budget/${manad}/other`, { cookie });
+    assert.equal(res.statusCode, 400, manad);
+    assert.deepEqual(res.body, { error: FEL_MANAD }, manad);
+  }
+  assert.equal(budgetRader(db), 1);
+});
+
+test('en annan användares tak går inte att se, ändra eller ta bort', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const annas = await loggaIn(db, call);
+  const berits = await loggaIn(db, call, { email: ANNAN_EPOST, kod: ANNAN_KOD });
+
+  await call('PUT', `/api/budget/${MANAD}`, { cookie: annas, body: { category: 'other', amountSek: '1000' } });
+
+  // Berit ser inget tak, och hennes borttagning av Annas kategori ger 404.
+  const beritsMånad = await call('GET', `/api/manad/${MANAD}`, { cookie: berits });
+  assert.deepEqual(beritsMånad.res.body.budgets, []);
+  const beritsDelete = await call('DELETE', `/api/budget/${MANAD}/other`, { cookie: berits });
+  assert.equal(beritsDelete.res.statusCode, 404);
+
+  // Berits eget tak för samma kategori och månad är en egen rad, och Annas är
+  // orörd.
+  const beritsPut = await call('PUT', `/api/budget/${MANAD}`, { cookie: berits, body: { category: 'other', amountSek: '7000' } });
+  assert.equal(beritsPut.res.statusCode, 200);
+  assert.deepEqual(beritsPut.res.body.budgets, [
+    { category: 'other', amountOre: 700000, spentOre: 0, leftOre: 700000 }
+  ]);
+  const annasMånad = await call('GET', `/api/manad/${MANAD}`, { cookie: annas });
+  assert.deepEqual(annasMånad.res.body.budgets, [
+    { category: 'other', amountOre: 100000, spentOre: 0, leftOre: 100000 }
+  ]);
+  assert.equal(budgetRader(db), 2);
+});
+
+test('budgetens vägar svarar 405 på fel metod och 404 på en halv sökväg', async (t) => {
+  const { db, call } = await apiDatabase(t);
+  const cookie = await loggaIn(db, call);
+
+  for (const [method, pathname] of [
+    ['GET', `/api/budget/${MANAD}`],
+    ['POST', `/api/budget/${MANAD}`],
+    ['DELETE', `/api/budget/${MANAD}`],
+    ['PUT', `/api/budget/${MANAD}/other`],
+    ['GET', `/api/budget/${MANAD}/other`]
+  ]) {
+    const { res } = await call(method, pathname, { cookie });
+    assert.equal(res.statusCode, 405, `${method} ${pathname}`);
+    assert.deepEqual(res.body, { error: 'Metoden stöds inte.' }, `${method} ${pathname}`);
+  }
+
+  // Ett tomt led och ett tredje led är ingen budgetväg utan Okänd adress.
+  for (const pathname of ['/api/budget/', `/api/budget/${MANAD}/`, `/api/budget//other`, `/api/budget/${MANAD}/other/mer`]) {
+    const { res } = await call('PUT', pathname, { cookie, body: { category: 'other', amountSek: '1000' } });
+    assert.equal(res.statusCode, 404, pathname);
+    assert.deepEqual(res.body, { error: 'Okänd adress.' }, pathname);
   }
 });

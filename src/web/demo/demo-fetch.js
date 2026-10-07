@@ -165,6 +165,10 @@ function toMonthItem(row) {
     name: row.name,
     amountOre: row.amountOre,
     category: row.category,
+    // Samma två fält som toMonthItem i src/server/months.js [steg 2]: den dag
+    // och den kommentar användaren skrev in, eller null.
+    occurredOn: row.occurredOn ?? null,
+    note: row.note ?? null,
     dueDate: null,
     recurring: false,
     seriesId: null,
@@ -245,6 +249,10 @@ export function readDemoMonth(state, month) {
       name: template.name,
       amountOre: overridden ? override.amountOre : template.amountOre,
       category: template.category,
+      // En mall har ingen enskild dag och ingen enskild kommentar, precis som
+      // readMonth i src/server/months.js ger dem: null i båda [steg 2].
+      occurredOn: null,
+      note: null,
       dueDate,
       recurring: true,
       seriesId: template.seriesId,
@@ -653,7 +661,9 @@ export function createDemoFetch({
         kind: result.value.kind,
         name: result.value.name,
         amountOre: result.value.amountOre,
-        category: result.value.category
+        category: result.value.category,
+        occurredOn: result.value.occurredOn,
+        note: result.value.note
       };
       state.monthItems.push(row);
       return sparaOch(svar(201, { item: toMonthItem(row) }));
@@ -774,6 +784,8 @@ export function createDemoFetch({
         row.name = result.value.name;
         row.amountOre = result.value.amountOre;
         row.category = result.value.category;
+        row.occurredOn = result.value.occurredOn;
+        row.note = result.value.note;
         return sparaOch(svar(200, { item: toMonthItem(row) }));
       }
       if (method === 'DELETE') {

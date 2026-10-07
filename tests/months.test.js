@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { monthTotals } from '../src/core/budget.js';
+import { CATEGORIES } from '../src/core/entry.js';
+import { validateMonthItemDraft, validateTemplateDraft } from '../src/core/item.js';
 import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
 import {
   addMonthItem,
@@ -21,7 +23,9 @@ import {
   endTemplate,
   readMonth,
   readOverview,
+  removeBudget,
   removeMonthItem,
+  setBudget,
   setOverride,
   skipMonth,
   updateMonthItem
@@ -336,6 +340,10 @@ test('addMonthItem skapar posten och svarar med den', () => {
     name: 'Tandläkare',
     amountOre: 95000,
     category: 'other',
+    // Utkastet bär varken occurredOn eller note, så posten får null i båda
+    // [steg 2].
+    occurredOn: null,
+    note: null,
     dueDate: null,
     recurring: false,
     seriesId: null,
@@ -1196,5 +1204,326 @@ test('M31: readOverview avvisar ett antal månader utanför 1 till 36', () => {
   assert.equal(readOverview(ANNA, '2026-10', 1, { db }).months[0].month, '2026-10');
   assert.equal(readOverview(ANNA, '2026-10', 36, { db }).months.length, 36);
   assert.equal(readOverview(ANNA, '2026-10', 36, { db }).months[0].month, '2023-11');
+  db.close();
+});
+
+
+// ---------------------------------------------------------------------------
+// Budget per kategori [steg 2]: kravlistan (B1) till (B9) i ARKITEKTUR.md under
+// "Budget per kategori (bindande)".
+//
+// Numreringen (B1) till (B9) gäller den här filen. tests/budget.test.js har en
+// egen uppsättning (B1) till (B6) för src/core/budget.js, och kravlistan i
+// ARKITEKTUR.md delar ut båda. Varje testnamn nedan börjar därför med "B<N>:
+// budget" så att det går att se vilken av de två en kryssrad hör till.
+// ---------------------------------------------------------------------------
+
+// Taken i en månad, i den ordning readMonth ger dem.
+function budgetsIn(db, userId, month) {
+  return readMonth(userId, month, { db }).budgets;
+}
+
+// (B1) ett tak syns bara i sin månad.
+test('B1: budget — ett tak satt i oktober saknas i september och november', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'housing', 900000, { db, now: NOW, makeId: () => 'b1' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'housing', amountOre: 900000, spentOre: 0, leftOre: 900000 }
+  ]);
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-09'), []);
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-11'), []);
+  db.close();
+});
+
+// (B2) spentOre räknar bara utgifter. En inkomst och ett sparande i samma
+// kategori och samma månad ska inte påverka hur mycket som är kvar av ett
+// utgiftstak. Beloppen är olika så att ett fel inte kan se rätt ut av en
+// slump: hade inkomsten räknats med vore spentOre 2 540 000 och leftOre
+// negativt, hade sparandet räknats med vore spentOre 440 000.
+test('B2: budget — en inkomst och ett sparande i samma kategori påverkar inte spentOre', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'other', 500000, { db, now: NOW, makeId: () => 'b1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other' }, { db, now: NOW, makeId: () => 'm-utgift' });
+  addMonthItem(ANNA, '2026-10', { kind: 'income', name: 'Såld cykel', amountOre: 2100000, category: 'other' }, { db, now: NOW, makeId: () => 'm-inkomst' });
+  addMonthItem(ANNA, '2026-10', { kind: 'saving', name: 'Buffert', amountOre: 345000, category: 'other' }, { db, now: NOW, makeId: () => 'm-sparande' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'other', amountOre: 500000, spentOre: 95000, leftOre: 405000 }
+  ]);
+  // Månadens egna summor ser alla tre posterna: det är bara taket som räknar
+  // enbart utgifter.
+  const totals = readMonth(ANNA, '2026-10', { db }).totals;
+  assert.equal(totals.incomeOre, 2100000);
+  assert.equal(totals.savingOre, 345000);
+  assert.equal(totals.expenseOre, 95000);
+  db.close();
+});
+
+// (B2) fortsättning: en utgift i en ANNAN kategori räknas inte heller. Utan
+// kategorivillkoret hade spentOre blivit summan av båda utgifterna.
+test('B2: budget — en utgift i en annan kategori påverkar inte takets spentOre', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'other', 500000, { db, now: NOW, makeId: () => 'b1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other' }, { db, now: NOW, makeId: () => 'm1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Hyra', amountOre: 1250000, category: 'housing' }, { db, now: NOW, makeId: () => 'm2' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'other', amountOre: 500000, spentOre: 95000, leftOre: 405000 }
+  ]);
+  db.close();
+});
+
+// (B2) fortsättning: en utgift ur en MALL räknas också, och med avvikelsens
+// belopp när månaden har en. Taket gäller månadens utgifter, inte bara de
+// engångsposter användaren skrivit in — utan det hade en användare med bara
+// återkommande poster sett ett tak som alltid var orört.
+test('B2: budget — en mallpost räknas in i spentOre, med månadens avvikelsebelopp', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'housing', 1500000, { db, now: NOW, makeId: () => 'b1' });
+  insertTemplate(db, { id: 't1', interval: 'monthly', start_date: '2026-09-15', from_month: '2026-09', name: 'Hyra', amount_ore: 1250000, category: 'housing' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'housing', amountOre: 1500000, spentOre: 1250000, leftOre: 250000 }
+  ]);
+  // Månaden får ett annat belopp: taket ska följa det, inte mallens.
+  setOverride(ANNA, 't1', '2026-10', 1400000, { db, now: NOW, makeId: () => 'o1' });
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'housing', amountOre: 1500000, spentOre: 1400000, leftOre: 100000 }
+  ]);
+  // Och en överhoppad månad har ingen utgift alls.
+  skipMonth(ANNA, 't1', '2026-10', { db, now: NOW, makeId: () => 'o2' });
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'housing', amountOre: 1500000, spentOre: 0, leftOre: 1500000 }
+  ]);
+  db.close();
+});
+
+// (B3) leftOre får vara negativt: ett överdrag ska synas som ett minusbelopp och
+// aldrig som noll. Ingen spärr mot negativa värden, samma regel som leftOre i
+// src/core/budget.js redan har.
+test('B3: budget — ett överdrag ger ett negativt leftOre, inte noll', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'other', 100000, { db, now: NOW, makeId: () => 'b1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Tandläkare', amountOre: 130000, category: 'other' }, { db, now: NOW, makeId: () => 'm1' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'other', amountOre: 100000, spentOre: 130000, leftOre: -30000 }
+  ]);
+  // Exakt på taket ger 0, och det är ett positivt noll: formatSek(-0) skriver ett
+  // minustecken före noll kronor, så -0 får aldrig nå gränssnittet
+  // (LARDOMAR.md 2026-09-02). Asserteras med Object.is och aldrig med
+  // assert.equal(resultat, 0), som är sant också för -0.
+  setBudget(ANNA, '2026-10', 'other', 130000, { db, now: NOW, makeId: () => 'b2' });
+  const exakt = budgetsIn(db, ANNA, '2026-10')[0];
+  assert.equal(exakt.leftOre, 0);
+  assert.equal(Object.is(exakt.leftOre, -0), false);
+  db.close();
+});
+
+// (B4) PUT ersätter ett befintligt tak: en rad, inte två. Raden räknas i tabellen
+// och inte bara i svaret — ett andra INSERT som läggs bredvid ger samma svar så
+// länge SELECT:en råkar ta den nyaste raden först.
+test('B4: budget — ett andra tak för samma kategori och månad ersätter det första', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'other', 100000, { db, now: NOW, makeId: () => 'b1' });
+  setBudget(ANNA, '2026-10', 'other', 250000, { db, now: NOW, makeId: () => 'b2' });
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal, 1);
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'other', amountOre: 250000, spentOre: 0, leftOre: 250000 }
+  ]);
+  // Samma kategori i en annan månad, och en annan kategori i samma månad, är var
+  // sin egen rad.
+  setBudget(ANNA, '2026-11', 'other', 300000, { db, now: NOW, makeId: () => 'b3' });
+  setBudget(ANNA, '2026-10', 'housing', 900000, { db, now: NOW, makeId: () => 'b4' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal, 3);
+  db.close();
+});
+
+// (B5) en kategori utan tak saknas i budgets: listan bär bara satta tak. Månaden
+// har utgifter i tre kategorier och tak i en.
+test('B5: budget — bara kategorier med ett tak kommer med i listan', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'transport', 200000, { db, now: NOW, makeId: () => 'b1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Buss', amountOre: 95000, category: 'transport' }, { db, now: NOW, makeId: () => 'm1' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Hyra', amountOre: 1250000, category: 'housing' }, { db, now: NOW, makeId: () => 'm2' });
+  addMonthItem(ANNA, '2026-10', { kind: 'expense', name: 'Tandläkare', amountOre: 45000, category: 'other' }, { db, now: NOW, makeId: () => 'm3' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10').map((rad) => rad.category), ['transport']);
+  // En månad utan tak alls ger en tom lista, aldrig en rad per kategori.
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-09'), []);
+  // Ordningen är CATEGORIES ordning och inte den ordning taken skrevs i: med tre
+  // tak skrivna baklänges ska listan ändå komma i ägarens ordning.
+  setBudget(ANNA, '2026-09', 'other', 100000, { db, now: NOW, makeId: () => 'b2' });
+  setBudget(ANNA, '2026-09', 'transport', 200000, { db, now: NOW, makeId: () => 'b3' });
+  setBudget(ANNA, '2026-09', 'housing', 900000, { db, now: NOW, makeId: () => 'b4' });
+  const ordning = budgetsIn(db, ANNA, '2026-09').map((rad) => rad.category);
+  assert.deepEqual(ordning, ['housing', 'transport', 'other']);
+  assert.deepEqual(ordning, CATEGORIES.filter((kategori) => ordning.includes(kategori)));
+  db.close();
+});
+
+// (B6) en annan användares tak syns inte. Berit har ett eget tak i samma månad
+// och samma kategori, med ett annat belopp, och en egen utgift — ingetdera får
+// synas i Annas månad.
+test('B6: budget — en annan användares tak och utgifter syns inte', () => {
+  const db = freshDatabase();
+  setBudget(ANNA, '2026-10', 'other', 100000, { db, now: NOW, makeId: () => 'b-anna' });
+  setBudget(BERIT, '2026-10', 'other', 900000, { db, now: NOW, makeId: () => 'b-berit' });
+  setBudget(BERIT, '2026-10', 'housing', 700000, { db, now: NOW, makeId: () => 'b-berit-2' });
+  addMonthItem(BERIT, '2026-10', { kind: 'expense', name: 'Hennes tandläkare', amountOre: 55000, category: 'other' }, { db, now: NOW, makeId: () => 'm-berit' });
+
+  assert.deepEqual(budgetsIn(db, ANNA, '2026-10'), [
+    { category: 'other', amountOre: 100000, spentOre: 0, leftOre: 100000 }
+  ]);
+  assert.deepEqual(budgetsIn(db, BERIT, '2026-10'), [
+    { category: 'housing', amountOre: 700000, spentOre: 0, leftOre: 700000 },
+    { category: 'other', amountOre: 900000, spentOre: 55000, leftOre: 845000 }
+  ]);
+  // Och en borttagning rör bara den egna raden.
+  assert.equal(removeBudget(ANNA, '2026-10', 'housing', { db }), false);
+  assert.deepEqual(budgetsIn(db, BERIT, '2026-10').map((rad) => rad.category), ['housing', 'other']);
+  db.close();
+});
+
+// (B7) occurred_on och note sparas och läses, och är null när de inte anges.
+// Fälten läses på båda vägarna som ger tillbaka en post — svaret från
+// addMonthItem och listan ur readMonth — eftersom de byggs av var sin fråga.
+test('B7: budget — occurredOn och note sparas, läses och är null när de inte anges', () => {
+  const db = freshDatabase();
+  const skapad = addMonthItem(
+    ANNA,
+    '2026-10',
+    { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other', occurredOn: '2026-10-03', note: 'lagning, halva betalt' },
+    { db, now: NOW, makeId: () => 'm-med' }
+  );
+  assert.equal(skapad.occurredOn, '2026-10-03');
+  assert.equal(skapad.note, 'lagning, halva betalt');
+  // occurredOn är inte dueDate: en engångspost har ingen dragningsdag, och de två
+  // fälten bär därför olika värden på samma post.
+  assert.equal(skapad.dueDate, null);
+
+  const utan = addMonthItem(
+    ANNA,
+    '2026-10',
+    { kind: 'expense', name: 'Buss', amountOre: 5000, category: 'transport' },
+    { db, now: NOW, makeId: () => 'm-utan' }
+  );
+  assert.equal(utan.occurredOn, null);
+  assert.equal(utan.note, null);
+
+  // Samma två värden ur readMonth, som läser med en annan fråga.
+  const poster = readMonth(ANNA, '2026-10', { db }).items;
+  const medId = poster.find((post) => post.id === 'm-med');
+  const utanId = poster.find((post) => post.id === 'm-utan');
+  assert.equal(medId.occurredOn, '2026-10-03');
+  assert.equal(medId.note, 'lagning, halva betalt');
+  assert.equal(utanId.occurredOn, null);
+  assert.equal(utanId.note, null);
+
+  // En ändring skriver om båda fälten, och kan tömma dem igen.
+  const andrad = updateMonthItem(ANNA, 'm-med', { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other', occurredOn: '2026-10-05', note: 'resten betald' }, { db });
+  assert.equal(andrad.occurredOn, '2026-10-05');
+  assert.equal(andrad.note, 'resten betald');
+  const tomd = updateMonthItem(ANNA, 'm-med', { kind: 'expense', name: 'Tandläkare', amountOre: 95000, category: 'other' }, { db });
+  assert.equal(tomd.occurredOn, null);
+  assert.equal(tomd.note, null);
+
+  // En mallpost bär de två fälten som null: båda sorternas poster har exakt samma
+  // fält, så gränssnittet kan läsa listan utan att fråga varifrån raden kom.
+  insertTemplate(db, { id: 't1', interval: 'monthly', start_date: '2026-10-15', from_month: '2026-10', name: 'Hyra' });
+  const mallpost = readMonth(ANNA, '2026-10', { db }).items.find((post) => post.id === 't1');
+  assert.equal(mallpost.occurredOn, null);
+  assert.equal(mallpost.note, null);
+  assert.deepEqual(Object.keys(mallpost).sort(), Object.keys(utanId).sort());
+  db.close();
+});
+
+// (B8) en för lång kommentar avvisas, med texten ordagrant. Valideringen ägs av
+// kärnan och inte av schemat: ett CHECK i tabellen hade gett 500 och "något värde
+// är ogiltigt" i stället för fältets egen svenska text och ett 400
+// (ARKITEKTUR.md, "Två spärrar i två språk").
+//
+// Längden mäts i tecken och inte i kodenheter: 101 emoji är 101 tecken men 202
+// kodenheter, och ska därför gå igenom (LARDOMAR.md 2026-08-18).
+test('B8: budget — en kommentar över 200 tecken avvisas med textens exakta lydelse', () => {
+  const texten = 'Kommentaren får vara högst 200 tecken.';
+  for (const note of ['a'.repeat(201), '\u{1f600}'.repeat(201), 'a'.repeat(1000000)]) {
+    const resultat = validateMonthItemDraft({ kind: 'expense', name: 'Mat', amountSek: '100', category: 'other', note });
+    assert.equal(resultat.ok, false, `${[...note].length} tecken`);
+    assert.deepEqual(resultat.errors, [{ field: 'note', message: texten }], `${[...note].length} tecken`);
+  }
+  // Exakt 200 tecken går igenom, i båda mätsätten: 200 emoji är 400 kodenheter.
+  for (const note of ['a'.repeat(200), '\u{1f600}'.repeat(200)]) {
+    const resultat = validateMonthItemDraft({ kind: 'expense', name: 'Mat', amountSek: '100', category: 'other', note });
+    assert.equal(resultat.ok, true, `${[...note].length} tecken`);
+    assert.equal([...resultat.value.note].length, 200);
+  }
+  // Och den avvisade kommentaren når aldrig disken: en post utan giltig
+  // kommentar skrivs inte.
+  const db = freshDatabase();
+  assert.deepEqual(readMonth(ANNA, '2026-10', { db }).items, []);
+  db.close();
+});
+
+// (B9) en mall får inte de två fälten. Valet: fälten IGNORERAS, de avvisas inte.
+// Ett utkast som bär occurredOn och note ger ok: true, och value bär varken
+// fältet eller ett fel — skälet står i src/core/item.js över
+// validateTemplateDraft och i paketets redovisning.
+//
+// Det prövas i tre led: valideraren tar inte emot fälten, ett ogiltigt värde i
+// dem fäller inte en mall, och en mall som skapas med dem bär dem som null i
+// månadens lista (det är tabellen templates som inte har kolumnerna).
+test('B9: budget — en mall ignorerar occurredOn och note i stället för att avvisas', () => {
+  const utkast = { kind: 'expense', name: 'Hyra', amountSek: '12500', category: 'housing', interval: 'monthly' };
+
+  const med = validateTemplateDraft({ ...utkast, occurredOn: '2026-10-03', note: 'en kommentar' }, '2026-10');
+  assert.equal(med.ok, true);
+  // Fälten står inte i value: inget av dem kan nå en skrivning mot templates.
+  assert.deepEqual(Object.keys(med.value).sort(), ['amountOre', 'category', 'interval', 'kind', 'name', 'toMonth']);
+  // Samma value som ett utkast utan de två fälten ger.
+  assert.deepEqual(med.value, validateTemplateDraft(utkast, '2026-10').value);
+
+  // Ett värde som månadspostens väg hade avvisat fäller inte en mall: fälten
+  // prövas inte, de ignoreras.
+  for (const trasigt of [{ occurredOn: 'i\u00e5r' }, { occurredOn: '2026-02-30' }, { note: 'a'.repeat(201) }, { occurredOn: 42, note: 42 }]) {
+    const resultat = validateTemplateDraft({ ...utkast, ...trasigt }, '2026-10');
+    assert.equal(resultat.ok, true, JSON.stringify(trasigt));
+    assert.equal(Object.hasOwn(resultat.value, 'occurredOn'), false, JSON.stringify(trasigt));
+    assert.equal(Object.hasOwn(resultat.value, 'note'), false, JSON.stringify(trasigt));
+    // Samma utkast genom månadspostens väg avvisas däremot: det är där fälten
+    // finns.
+    assert.equal(validateMonthItemDraft({ ...utkast, ...trasigt }).ok, false, JSON.stringify(trasigt));
+  }
+
+  // Och mallposten i månadens lista bär de två fälten som null, inte som det
+  // utkastet råkade skicka.
+  const db = freshDatabase();
+  addTemplate(ANNA, '2026-10', { ...med.value, occurredOn: '2026-10-03', note: 'en kommentar' }, { db, now: NOW, makeId: () => 't-ny' });
+  const mallpost = readMonth(ANNA, '2026-10', { db }).items.find((post) => post.id === 't-ny');
+  assert.equal(mallpost.occurredOn, null);
+  assert.equal(mallpost.note, null);
+  db.close();
+});
+
+// Spärrarna för de två nya skrivvägarna: en månad som inte är en månad ska aldrig
+// bli en SQL-fråga, och hela meddelandet asserteras — en assert.throws mot enbart
+// feltypen kan inte skilja en spärr från en annan (LARDOMAR.md 2026-09-16).
+test('B1: budget — setBudget och removeBudget avvisar en månad som inte är en månad', () => {
+  const db = freshDatabase();
+  for (const month of ['2026-13', '2026-00', '2026-1', '2026-10-01', '', null, undefined, 202610, 1n, Symbol('x')]) {
+    assert.throws(
+      () => setBudget(ANNA, month, 'other', 100000, { db, now: NOW, makeId: () => 'b1' }),
+      { name: 'RangeError', message: `setBudget kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".` },
+      String(month)
+    );
+    assert.throws(
+      () => removeBudget(ANNA, month, 'other', { db }),
+      { name: 'RangeError', message: `removeBudget kräver en månad på formen ÅÅÅÅ-MM, fick "${String(month)}".` },
+      String(month)
+    );
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal, 0);
   db.close();
 });

@@ -25,6 +25,7 @@ import crypto from 'node:crypto';
 
 import { monthTotals, sumByKind } from '../core/budget.js';
 import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, nowIso, parseIsoDate, shiftMonth } from '../core/dates.js';
+import { CATEGORIES } from '../core/entry.js';
 import { ITEM_KINDS } from '../core/item.js';
 import { nextDueDate } from '../core/schedule.js';
 import { getDatabase, readRows, transaction, write } from './db.js';
@@ -57,26 +58,28 @@ SELECT template_id, amount_ore, skipped
  WHERE user_id = ?
    AND month = ?`;
 
-// Steg 4: månadens engångsposter.
+// Steg 4: månadens engångsposter. occurred_on och note står med sedan steg 2:
+// de är postens egna fält och läses därför på varje väg som läser en post.
 const SQL_MONTH_ITEMS = `
-SELECT id, kind, name, amount_ore, category
+SELECT id, kind, name, amount_ore, category, occurred_on, note
   FROM month_items
  WHERE user_id = ?
    AND month = ?`;
 
 const SQL_MONTH_ITEM_BY_ID = `
-SELECT id, kind, name, amount_ore, category
+SELECT id, kind, name, amount_ore, category, occurred_on, note
   FROM month_items
  WHERE user_id = ?
    AND id = ?`;
 
 const SQL_INSERT_MONTH_ITEM = `
-INSERT INTO month_items (id, user_id, month, kind, name, amount_ore, category, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+INSERT INTO month_items
+  (id, user_id, month, kind, name, amount_ore, category, created_at, occurred_on, note)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 const SQL_UPDATE_MONTH_ITEM = `
 UPDATE month_items
-   SET kind = ?, name = ?, amount_ore = ?, category = ?
+   SET kind = ?, name = ?, amount_ore = ?, category = ?, occurred_on = ?, note = ?
  WHERE user_id = ?
    AND id = ?`;
 
@@ -84,6 +87,31 @@ const SQL_DELETE_MONTH_ITEM = `
 DELETE FROM month_items
  WHERE user_id = ?
    AND id = ?`;
+
+// Månadens tak per kategori [steg 2]. Ingen ORDER BY: ordningen avgörs av
+// CATEGORIES i src/core/entry.js, som är ägaren till kategoriernas ordning, och
+// inte av en alfabetisk sortering av de engelska nycklarna i ett svenskt
+// gränssnitt. Samma skäl som att steg 5 sorterar slag i ITEM_KINDS ordning.
+const SQL_BUDGETS = `
+SELECT category, amount_ore
+  FROM budgets
+ WHERE user_id = ?
+   AND month = ?`;
+
+// ON CONFLICT (user_id, month, category) är schemats UNIQUE: ett andra tak för
+// samma kategori och månad ersätter det första i stället för att falla, så PUT
+// är en enda operation och inte "läs, välj, skriv".
+const SQL_UPSERT_BUDGET = `
+INSERT INTO budgets (id, user_id, month, category, amount_ore, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, month, category)
+    DO UPDATE SET amount_ore = excluded.amount_ore`;
+
+const SQL_DELETE_BUDGET = `
+DELETE FROM budgets
+ WHERE user_id = ?
+   AND month = ?
+   AND category = ?`;
 
 // Gränserna för count i readOverview nedan. Talen står som namn och inte som
 // literaler: var och en läses både av villkoret och av felmeddelandet, alltså i
@@ -104,6 +132,7 @@ export function readMonth(userId, month, { db = getDatabase() } = {}) {
   const templates = readRows(db, SQL_TEMPLATES, [userId, month, month]);
   const overrides = readRows(db, SQL_OVERRIDES, [userId, month]);
   const oneOffItems = readRows(db, SQL_MONTH_ITEMS, [userId, month]);
+  const budgetRows = readRows(db, SQL_BUDGETS, [userId, month]);
 
   // UNIQUE (template_id, month) i schemat gör att en mall har högst en avvikelse
   // den här månaden, så uppslaget kan vara en Map utan att något värde skrivs
@@ -136,6 +165,13 @@ export function readMonth(userId, month, { db = getDatabase() } = {}) {
       name: template.name,
       amountOre: overridden ? override.amount_ore : template.amount_ore,
       category: template.category,
+      // En mall har ingen enskild dag och ingen enskild kommentar [steg 2]. De två
+      // fälten står ändå med, och som null, av samma skäl som interval och
+      // toMonth står med som null på en engångspost: de två sorternas poster ska
+      // ha exakt samma fält, så att en anropare kan läsa listan utan att fråga
+      // varifrån raden kom.
+      occurredOn: null,
+      note: null,
       dueDate,
       // De två fälten som säger att posten kommer från en mall. Gränssnittet
       // behöver dem för ikonen, och "ändra från och med denna månad" behöver
@@ -162,7 +198,44 @@ export function readMonth(userId, month, { db = getDatabase() } = {}) {
   // Steg 5.
   items.sort(compareItems);
   // Steg 6: summorna. budget.js äger räkningen, inklusive "kvar att leva på".
-  return { items, totals: monthTotals(items) };
+  // Steg 7: budgetarna [steg 2], räknade ur items ovan och inte ur en egen fråga:
+  // det som är kvar av ett tak ska vara kvar av exakt de poster månadsvyn visar.
+  return { items, totals: monthTotals(items), budgets: budgetLines(budgetRows, items) };
+}
+
+// Månadens tak med utfallet: { category, amountOre, spentOre, leftOre } per
+// kategori som har ett tak [steg 2]. Bara kategorier med ett tak kommer med — en
+// kategori utan tak har ingen budget att vara kvar av.
+//
+// spentOre räknar bara utgifter. En inkomst eller ett sparande i samma kategori
+// ska inte påverka hur mycket som är kvar av ett utgiftstak, och det är sumByKind
+// i src/core/budget.js som avgör vilka poster som är utgifter — den här filen
+// adderar ingenting själv och ärver därmed också spärren mot en summa som lämnar
+// det säkra heltalsområdet.
+//
+// leftOre = amountOre - spentOre och får vara negativt: har användaren dragit
+// över taket ska det synas som ett minusbelopp, inte som noll. Ingen spärr mot
+// negativa värden, samma regel som leftOre i budget.js redan har. Differensen är
+// den enda räkning den här modulen gör, och den kan inte lämna det säkra
+// heltalsområdet: amount_ore har CHECK (amount_ore > 0) och skrivs genom
+// checkAmountSek, som avvisar belopp över 9 999 999,99 kr, och spentOre är en
+// summa sumByKind redan har prövat. -0 är omöjlig av samma skäl: a - b är -0 bara
+// när båda leden är noll, och amountOre är alltid minst 1.
+//
+// Ordningen är CATEGORIES ordning, alltså kategoriernas ägares ordning. Den är
+// total: UNIQUE (user_id, month, category) gör att en kategori har högst ett tak.
+function budgetLines(budgetRows, items) {
+  const amountByCategory = new Map(budgetRows.map((row) => [row.category, row.amount_ore]));
+  const lines = [];
+  for (const category of CATEGORIES) {
+    if (!amountByCategory.has(category)) {
+      continue;
+    }
+    const amountOre = amountByCategory.get(category);
+    const spentOre = sumByKind(items.filter((item) => item.category === category), 'expense');
+    lines.push({ category, amountOre, spentOre, leftOre: amountOre - spentOre });
+  }
+  return lines;
 }
 
 // Tolv månader bredvid varandra [etapp 5]. Svaret är
@@ -253,7 +326,11 @@ export function addMonthItem(userId, month, draft, { db = getDatabase(), now = n
     draft?.name,
     draft?.amountOre,
     draft?.category,
-    now
+    now,
+    // ?? null av samma skäl som toMonth i addTemplate: ett utkast utan fältet ska
+    // skriva NULL och inte undefined, som node:sqlite inte kan binda.
+    draft?.occurredOn ?? null,
+    draft?.note ?? null
   ]);
   // Läses tillbaka i stället för att sättas samman ur draft: det som svaret
   // beskriver är raden på disk, och den kan bära ett annat värde än draft om
@@ -279,6 +356,8 @@ export function updateMonthItem(userId, itemId, draft, { db = getDatabase() } = 
     draft?.name,
     draft?.amountOre,
     draft?.category,
+    draft?.occurredOn ?? null,
+    draft?.note ?? null,
     userId,
     itemId
   ]);
@@ -311,6 +390,12 @@ function toMonthItem(row) {
     name: row.name,
     amountOre: row.amount_ore,
     category: row.category,
+    // Dagen användaren skrev in, eller null [steg 2]. Den har ingenting att göra
+    // med dueDate på raden under: dueDate räknas fram ur en malls interval och
+    // start_date, occurredOn skrivs in. En engångspost kan ha occurredOn men
+    // aldrig dueDate.
+    occurredOn: row.occurred_on,
+    note: row.note,
     dueDate: null,
     recurring: false,
     seriesId: null,
@@ -666,6 +751,46 @@ export function skipMonth(userId, templateId, month, { db = getDatabase(), now =
 export function clearOverride(userId, templateId, month, { db = getDatabase() } = {}) {
   requireMonth('clearOverride', month);
   const result = write(db, SQL_DELETE_OVERRIDE, [userId, templateId, month]);
+  return result.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Budgetens tak per kategori [steg 2]. readMonth ovan läser dem redan; de två
+// funktionerna här är vägen att sätta och ta bort ett.
+//
+// Ett tak gäller en månad. Vill användaren ha samma tak varje månad sätts det per
+// månad; en återkommande budget är en annan funktion och byggs inte nu
+// (ARKITEKTUR.md under "Tabellen").
+// ---------------------------------------------------------------------------
+
+// Sätter taket för en kategori och en månad, eller ersätter det som finns.
+// ON CONFLICT i SQL_UPSERT_BUDGET gör de två till en operation, så ingen läsning
+// behövs före skrivningen.
+//
+// Inget returvärde. En boolean hade alltid varit true: INSERT:en skriver eller
+// ersätter alltid en rad, så det finns ingen indata som kan göra den false, och
+// ett svar ingen indata kan göra falskt är ingen upplysning utan en gren som
+// aldrig körs (LARDOMAR.md 2026-09-04). Anroparen läser utfallet genom readMonth,
+// som är den enda ägaren till formen { category, amountOre, spentOre, leftOre }.
+//
+// Fälten prövas inte om här, av samma skäl som i addMonthItem: kärnan
+// (checkCategory och checkAmountSek genom api.js) avgör vad användaren får för
+// svar, och schemats CHECK är sista utposten mot ett programmeringsmisstag.
+export function setBudget(userId, month, category, amountOre, { db = getDatabase(), now = nowIso(), makeId = () => crypto.randomUUID() } = {}) {
+  requireMonth('setBudget', month);
+  write(db, SQL_UPSERT_BUDGET, [makeId(), userId, month, category, amountOre, now]);
+}
+
+// Tar bort taket. true om ett fanns, false när det inte finns eller tillhör någon
+// annan — de två fallen ger samma svar med flit, precis som för en post.
+//
+// Kategorin prövas inte: en kategori som inte finns matchar ingen rad, och svaret
+// blir då detsamma som för en kategori utan tak. Vägen svarar därför 404 och
+// aldrig 400 för en okänd kategori, vilket är exakt vad tabellen under
+// "API-vägar" räknar upp för DELETE.
+export function removeBudget(userId, month, category, { db = getDatabase() } = {}) {
+  requireMonth('removeBudget', month);
+  const result = write(db, SQL_DELETE_BUDGET, [userId, month, category]);
   return result.changes > 0;
 }
 

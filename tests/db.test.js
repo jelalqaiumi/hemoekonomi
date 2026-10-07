@@ -1,6 +1,6 @@
-// Prövar att schemat i src/server/db.js gör det ARKITEKTUR.md lovar: att alla
-// sex tabellerna finns, att främmandenycklarna är påslagna, och att varje
-// CHECK-villkor avvisar den rad det finns för.
+// Prövar att schemat i src/server/db.js gör det ARKITEKTUR.md lovar: att varje
+// tabell finns, att främmandenycklarna är påslagna, och att varje CHECK-villkor
+// avvisar den rad det finns för.
 //
 // Varje testfall öppnar sin egen databas i minnet, så att inget fall kan se en
 // rad ett annat fall skrev. DatabaseSync är synkron: ingen rad här har await.
@@ -23,7 +23,7 @@ import {
   openDatabase
 } from '../src/server/db.js';
 
-const TABLES = ['login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
+const TABLES = ['budgets', 'login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
 
 const NOW = '2026-09-25T18:03:00.000Z';
 const USER_ID = 'u1';
@@ -83,7 +83,7 @@ function insertOverride(db, row) {
     });
 }
 
-test('alla sex tabellerna skapas', () => {
+test('varje tabell i schemat skapas', () => {
   const db = openDatabase(MEMORY_PATH);
   const names = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -295,6 +295,173 @@ test('ett konto som tas bort tar sina rader med sig', () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM month_items').get().antal, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM overrides').get().antal, 0);
   db.close();
+});
+
+// --------------------------------------------------------------------------
+// Budgetens tabell och postens två nya kolumner [steg 2].
+// --------------------------------------------------------------------------
+
+function insertBudget(db, overrides = {}) {
+  const values = {
+    id: 'b1',
+    user_id: USER_ID,
+    month: '2026-02',
+    category: 'housing',
+    amount_ore: 900000,
+    created_at: NOW,
+    ...overrides
+  };
+  db.prepare(`INSERT INTO budgets (id, user_id, month, category, amount_ore, created_at)
+      VALUES (:id, :user_id, :month, :category, :amount_ore, :created_at)`)
+    .run(values);
+  return values;
+}
+
+test('UNIQUE (user_id, month, category) i budgets avvisas vid dubblett', () => {
+  const db = freshDatabase();
+  insertBudget(db, { id: 'b1' });
+  assert.throws(
+    () => insertBudget(db, { id: 'b2' }),
+    /UNIQUE constraint failed: budgets.user_id, budgets.month, budgets.category/
+  );
+  // En annan månad och en annan kategori är var sin egen rad.
+  insertBudget(db, { id: 'b3', month: '2026-03' });
+  insertBudget(db, { id: 'b4', category: 'transport' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal, 3);
+  db.close();
+});
+
+test('budgets har CHECK på month och amount_ore, och ingen lista över kategorier', () => {
+  const db = freshDatabase();
+  for (const month of ['2026-2', '202602', '2026-02-01', '', 'februari']) {
+    assert.throws(
+      () => insertBudget(db, { id: `b-${month}`, month }),
+      /CHECK constraint failed: month GLOB/,
+      `month ${JSON.stringify(month)} skulle ha avvisats`
+    );
+  }
+  for (const amount of [0, -1]) {
+    assert.throws(
+      () => insertBudget(db, { id: `b-${amount}`, amount_ore: amount }),
+      /CHECK constraint failed: amount_ore > 0/,
+      `amount_ore ${amount} skulle ha avvisats`
+    );
+  }
+  // Kategorin har med flit inget CHECK: listan ägs av CATEGORIES i
+  // src/core/entry.js och prövas av checkCategory där, så schemat tar emot också
+  // en kategori som inte står i listan (ARKITEKTUR.md under "Tabellen"). Raden
+  // nedan ska alltså gå igenom — faller den finns en andra kopia av
+  // kategorilistan i schemat.
+  insertBudget(db, { id: 'b-okand', category: 'mat' });
+  assert.equal(db.prepare('SELECT category FROM budgets WHERE id = ?').get('b-okand').category, 'mat');
+  const schema = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'budgets'")
+    .get().sql;
+  assert.equal(schema.includes('category IN ('), false, schema);
+  db.close();
+});
+
+test('ett konto som tas bort tar sina budgetar med sig', () => {
+  const db = freshDatabase();
+  insertBudget(db, {});
+  db.prepare('DELETE FROM users WHERE id = ?').run(USER_ID);
+  assert.equal(db.prepare('SELECT COUNT(*) AS antal FROM budgets').get().antal, 0);
+  db.close();
+});
+
+test('occurred_on i fel format avvisas, och båda kolumnerna är null när de inte anges', () => {
+  const db = freshDatabase();
+  for (const occurredOn of ['2026-2-1', '20260201', '2026-02', '', 'igår']) {
+    assert.throws(
+      () => db.prepare(`INSERT INTO month_items
+          (id, user_id, month, kind, name, amount_ore, category, created_at, occurred_on)
+          VALUES (?, ?, '2026-02', 'expense', 'Mat', 10000, 'other', ?, ?)`)
+        .run(`m-${occurredOn}`, USER_ID, NOW, occurredOn),
+      /CHECK constraint failed: occurred_on IS NULL OR occurred_on GLOB/,
+      `occurred_on ${JSON.stringify(occurredOn)} skulle ha avvisats`
+    );
+  }
+  // En rad som inte nämner de två kolumnerna får null i båda.
+  insertMonthItem(db, monthItem());
+  const rad = db.prepare('SELECT occurred_on, note FROM month_items WHERE id = ?').get('m1');
+  assert.equal(rad.occurred_on, null);
+  assert.equal(rad.note, null);
+  db.close();
+});
+
+test('note har ingen längdgräns i schemat: regeln ägs av kärnan', () => {
+  const db = freshDatabase();
+  // 201 tecken är ett fel för användaren, men schemat ska inte vara den som
+  // avgör det: kärnan (checkNote) ger den svenska texten och ett 400, medan ett
+  // CHECK här hade gett 500 och "något värde är ogiltigt" (ARKITEKTUR.md, "Två
+  // spärrar i två språk").
+  db.prepare(`INSERT INTO month_items
+      (id, user_id, month, kind, name, amount_ore, category, created_at, note)
+      VALUES ('m-lang', ?, '2026-02', 'expense', 'Mat', 10000, 'other', ?, ?)`)
+    .run(USER_ID, NOW, 'a'.repeat(201));
+  assert.equal(db.prepare('SELECT note FROM month_items WHERE id = ?').get('m-lang').note.length, 201);
+  db.close();
+});
+
+// Migreringen av de två kolumnerna, samma prov som (P7) gör för plan: en databas
+// som redan finns ska få kolumnerna utan att byggas om, och ett andra öppnande
+// ska inte köra ALTER TABLE igen.
+test('en befintlig month_items får occurred_on och note utan att byggas om', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hemochekonomi-db-'));
+  const filePath = path.join(dir, 'gammal.sqlite');
+  try {
+    // Tabellen som etapp 3 skapade, utan de två kolumnerna, med en rad i den.
+    const gammal = new DatabaseSync(filePath);
+    gammal.exec(`CREATE TABLE month_items (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL,
+      month       TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      amount_ore  INTEGER NOT NULL,
+      category    TEXT NOT NULL,
+      created_at  TEXT NOT NULL
+    );`);
+    gammal.prepare(`INSERT INTO month_items
+        (id, user_id, month, kind, name, amount_ore, category, created_at)
+        VALUES ('m-gammal', ?, '2026-02', 'expense', 'Tandläkare', 95000, 'other', ?)`)
+      .run(USER_ID, NOW);
+    gammal.close();
+
+    const migrerad = openDatabase(filePath);
+    const kolumner = migrerad.prepare('PRAGMA table_info(month_items)').all().map((row) => row.name);
+    assert.equal(kolumner.includes('occurred_on'), true, kolumner.join());
+    assert.equal(kolumner.includes('note'), true, kolumner.join());
+    // Den befintliga raden är orörd och har null i de två nya kolumnerna.
+    const rad = migrerad.prepare('SELECT name, amount_ore, occurred_on, note FROM month_items WHERE id = ?').get('m-gammal');
+    assert.equal(rad.name, 'Tandläkare');
+    assert.equal(rad.amount_ore, 95000);
+    assert.equal(rad.occurred_on, null);
+    assert.equal(rad.note, null);
+    // CHECK:en följde med ALTER TABLE och gäller i den migrerade databasen.
+    assert.throws(
+      () => migrerad.prepare('UPDATE month_items SET occurred_on = ? WHERE id = ?').run('2026-2-1', 'm-gammal'),
+      /CHECK constraint failed: occurred_on IS NULL OR occurred_on GLOB/
+    );
+    // Och den nya tabellen skapades i samma öppnande.
+    assert.equal(
+      migrerad.prepare("SELECT COUNT(*) AS antal FROM sqlite_master WHERE type = 'table' AND name = 'budgets'").get().antal,
+      1
+    );
+    migrerad.prepare('UPDATE month_items SET occurred_on = ?, note = ? WHERE id = ?')
+      .run('2026-02-14', 'betald kontant', 'm-gammal');
+    migrerad.close();
+
+    // Ett andra öppnande kör inte ALTER TABLE igen: ett andra ADD COLUMN med
+    // samma namn är ett fel, och steget körs bara när kolumnen saknas.
+    const igen = openDatabase(filePath);
+    const efter = igen.prepare('SELECT occurred_on, note FROM month_items WHERE id = ?').get('m-gammal');
+    assert.equal(efter.occurred_on, '2026-02-14');
+    assert.equal(efter.note, 'betald kontant');
+    igen.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // (P6) Samma prov som för ITEM_KINDS och INTERVALS ovan, för plan-kolumnen:
