@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { monthLabel } from '../src/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
 import { divideRoundHalfUp, formatSek } from '../src/core/money.js';
+import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
 // Text mot användaren som app.js skriver själv, alltså varken hämtar ur svaret
@@ -2176,4 +2177,366 @@ test('(77) en andra hämtning ersätter tabellen och diagrammet i stället för 
   assert.equal(diagrammet(dom).staplar.length, 2);
   assert.equal(celltext(dom.rader('overview-rows')[0], 'overview-month'), monthLabel('2026-08'));
   assert.equal(dom.falt('overview-saved').textContent, formatSek(0));
+});
+
+// ------------------------------------------------- Min plan [steg 1 i del 5]
+
+const PLANVAG = '/api/plan';
+const PLAN_DEMOTEXT = 'Demo: ingen betalning genomförs.';
+
+// Funktionerna en plan har, räknade ur FEATURES och hasFeature. Samma uttryck
+// som planBody i src/server/api.js använder, så attrappens svar är det svar
+// servern ger.
+function funktionerFor(plan) {
+  return FEATURES.filter((feature) => hasFeature(plan, feature));
+}
+
+function plansvar(plan) {
+  return Object.freeze({ status: 200, json: { plan, features: funktionerFor(plan) } });
+}
+
+// En inloggad session där månadsvägen ger en tom månad och planvägen svarar med
+// planen. Skriven för hand av samma skäl som planOversikt: planInloggad svarar
+// på varje GET med månadssvaret, och planvägen är en annan väg.
+function planPlan(svar = plansvar('bas')) {
+  return (anropet) => {
+    if (anropet.url === '/api/mig') {
+      return MIG_200;
+    }
+    if (anropet.url === PLANVAG) {
+      return typeof svar === 'function' ? svar(anropet) : svar;
+    }
+    if (anropet.method === 'GET') {
+      return manadssvar([]);
+    }
+    return null;
+  };
+}
+
+async function oppnaPlanen(dom) {
+  await flush();
+  dom.falt('show-plan').utlos('click');
+  await flush();
+}
+
+// Knapparna i #plan-buttons, i PLANS ordning.
+function planknappar(dom) {
+  return dom.falt('plan-buttons').children;
+}
+
+test('knappen Min plan hämtar planen och byter vy', async (t) => {
+  const { dom, anrop } = await starta(t, planPlan());
+  await flush();
+
+  // Utgångsläget: månadsvyn syns, Min plan är dold, och ingen plan har hämtats.
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('plan-view').hidden, true);
+  assert.equal(anrop.filter((anropet) => anropet.url === PLANVAG).length, 0);
+
+  dom.falt('show-plan').utlos('click');
+  await flush();
+
+  const planer = anrop.filter((anropet) => anropet.url === PLANVAG);
+  assert.equal(planer.length, 1);
+  assert.equal(planer[0].method, 'GET');
+
+  assert.equal(dom.falt('month-view').hidden, true);
+  assert.equal(dom.falt('overview-view').hidden, true);
+  assert.equal(dom.falt('login-view').hidden, true);
+  assert.equal(dom.falt('plan-view').hidden, false);
+
+  // Planens svenska namn, aldrig nyckeln.
+  assert.equal(dom.falt('plan-current').textContent, 'Bas');
+  assert.equal(dom.falt('plan-current').textContent, PLAN_LABELS.bas);
+  // Funktionerna planen har, med svenska namn ur FEATURE_LABELS.
+  assert.deepEqual(
+    dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
+    funktionerFor('bas').map((feature) => FEATURE_LABELS[feature])
+  );
+  // Knappen är påslagen igen när svaret kommit, och vyns två rutor är tomma.
+  assert.equal(dom.falt('show-plan').disabled, false);
+  assert.equal(dom.falt('plan-note').textContent, '');
+  assert.equal(dom.falt('plan-error').textContent, '');
+});
+
+test('de tre knapparna ritas ur PLANS och antyder ingen betalning', async (t) => {
+  const { dom } = await starta(t, planPlan());
+  await flush();
+
+  const knappar = planknappar(dom);
+  assert.equal(knappar.length, Object.keys(PLANS).length);
+  assert.deepEqual(
+    knappar.map((k) => k.textContent),
+    Object.keys(PLANS).map((plan) => `Välj ${PLAN_LABELS[plan]}`)
+  );
+  // Ingen knapptext antyder att pengar dras: inget ord om betalning, köp, kort
+  // eller pris.
+  for (const k of knappar) {
+    for (const ord of ['betal', 'köp', 'kort', 'kr', 'pris']) {
+      assert.equal(k.textContent.toLowerCase().includes(ord), false, `${k.textContent}: ${ord}`);
+    }
+  }
+});
+
+test('ett klick på en planknapp byter plan, ritar om vyn och visar demotexten', async (t) => {
+  const { dom, anrop } = await starta(t, planPlan((anropet) =>
+    anropet.method === 'PUT' ? plansvar(JSON.parse(anropet.body).plan) : plansvar('bas')
+  ));
+  await oppnaPlanen(dom);
+  assert.equal(dom.falt('plan-current').textContent, 'Bas');
+
+  // Knappen Välj Premium, läst ur PLANS ordning och aldrig ur ett index skrivet
+  // för hand.
+  const planer = Object.keys(PLANS);
+  const premium = planknappar(dom)[planer.indexOf('premium')];
+  premium.utlos('click');
+  await flush();
+
+  const put = anrop.filter((anropet) => anropet.url === PLANVAG && anropet.method === 'PUT');
+  assert.equal(put.length, 1);
+  assert.deepEqual(JSON.parse(put[0].body), { plan: 'premium' });
+
+  // Vyn är omritad ur PUT:ens svar, utan en andra hämtning.
+  assert.equal(
+    anrop.filter((anropet) => anropet.url === PLANVAG && anropet.method === 'GET').length,
+    1
+  );
+  assert.equal(dom.falt('plan-current').textContent, 'Premium');
+  assert.deepEqual(
+    dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
+    [...FEATURES].map((feature) => FEATURE_LABELS[feature])
+  );
+  // Bekräftelsen, ordagrant.
+  assert.equal(dom.falt('plan-note').textContent, PLAN_DEMOTEXT);
+  assert.equal(dom.falt('plan-error').textContent, '');
+  assert.equal(premium.disabled, false);
+  // Vyn är kvar: bytet laddar inte om sidan och byter inte vy.
+  assert.equal(dom.falt('plan-view').hidden, false);
+});
+
+// En andra rendering med en kortare lista: en renderingsfunktion som bygger men
+// aldrig tömmer fälls bara av ett andra anrop vars utgångsläge är det förstas
+// motsats (LARDOMAR.md 2026-09-12).
+test('ett byte nedåt kortar funktionslistan i stället för att bygga på den', async (t) => {
+  const { dom } = await starta(t, planPlan((anropet) =>
+    anropet.method === 'PUT' ? plansvar(JSON.parse(anropet.body).plan) : plansvar('premium')
+  ));
+  await oppnaPlanen(dom);
+  assert.equal(dom.rader('plan-features').length, FEATURES.length);
+
+  const planer = Object.keys(PLANS);
+  planknappar(dom)[planer.indexOf('bas')].utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('plan-current').textContent, 'Bas');
+  assert.equal(dom.rader('plan-features').length, funktionerFor('bas').length);
+  assert.deepEqual(
+    dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
+    funktionerFor('bas').map((feature) => FEATURE_LABELS[feature])
+  );
+});
+
+test('ett misslyckat planbyte visar texten i vyns felruta och tar bort bekräftelsen', async (t) => {
+  const FELTEXT = 'Välj Bas, Plus eller Premium.';
+  const { dom } = await starta(t, planPlan((anropet) =>
+    anropet.method === 'PUT' ? { status: 400, json: { error: FELTEXT } } : plansvar('bas')
+  ));
+  await oppnaPlanen(dom);
+
+  const forsta = planknappar(dom)[0];
+  forsta.utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('plan-error').textContent, FELTEXT);
+  assert.equal(dom.falt('plan-note').textContent, '');
+  // Planen står kvar som den var: vyn ritas bara om ur ett 200.
+  assert.equal(dom.falt('plan-current').textContent, 'Bas');
+  assert.equal(forsta.disabled, false);
+  assert.equal(dom.falt('plan-view').hidden, false);
+});
+
+test('ett avvisat fetch vid ett planbyte visar den allmänna texten', async (t) => {
+  const { dom } = await starta(t, planPlan((anropet) =>
+    anropet.method === 'PUT' ? new Error('nätverket föll') : plansvar('bas')
+  ));
+  await oppnaPlanen(dom);
+
+  planknappar(dom)[1].utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('plan-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('plan-note').textContent, '');
+  assert.equal(dom.falt('plan-view').hidden, false);
+});
+
+test('ett misslyckat GET /api/plan lämnar användaren i månadsvyn med en feltext', async (t) => {
+  const { dom } = await starta(t, planPlan(new Error('nätverket föll')));
+  await flush();
+
+  dom.falt('show-plan').utlos('click');
+  await flush();
+
+  // Vyn byttes inte: en vy med en tom plan och en tom lista är ett tredje
+  // tillstånd som specen inte nämner, och felet skrivs där användaren står
+  // (LARDOMAR.md 2026-09-10).
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('plan-view').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('plan-current').textContent, '');
+  assert.equal(dom.rader('plan-features').length, 0);
+  assert.equal(dom.falt('show-plan').disabled, false);
+});
+
+test('ett 401 från planvägen visar inloggningsvyn', async (t) => {
+  const { dom } = await starta(
+    t,
+    planPlan({ status: 401, json: { error: 'Du är inte inloggad.' } })
+  );
+  await flush();
+
+  dom.falt('show-plan').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('login-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+  assert.equal(dom.falt('plan-view').hidden, true);
+});
+
+test('Tillbaka till månaden i Min plan byter vy utan att hämta något', async (t) => {
+  const { dom, anrop } = await starta(t, planPlan());
+  await oppnaPlanen(dom);
+  const fore = anrop.length;
+
+  dom.falt('back-from-plan').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('plan-view').hidden, true);
+  assert.equal(anrop.length, fore, 'ett anrop gjordes av Tillbaka till månaden');
+});
+
+test('ett planssvar utan läsbar kropp ger en tom plan och en tom lista, aldrig undefined', async (t) => {
+  const { dom } = await starta(t, planPlan({ status: 200 }));
+  await oppnaPlanen(dom);
+
+  assert.equal(dom.falt('plan-current').textContent, '');
+  assert.equal(dom.rader('plan-features').length, 0);
+});
+
+test('en plan och en funktion som inte finns i modulen skrivs inte ut', async (t) => {
+  const { dom } = await starta(
+    t,
+    planPlan({ status: 200, json: { plan: 'guld', features: ['budget', 'raports'] } })
+  );
+  await oppnaPlanen(dom);
+
+  // Användaren ser aldrig en engelsk nyckel: en okänd plan ger en tom rad och en
+  // okänd funktion hoppas över.
+  assert.equal(dom.falt('plan-current').textContent, '');
+  assert.deepEqual(
+    dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
+    [FEATURE_LABELS.budget]
+  );
+});
+
+// De tre raderna som NOLLSTÄLLER en ruta prövas med ett utgångsläge som är det
+// motsatta av det förväntade: en assertion som kräver att ett element är tomt
+// är sann av sig själv när elementet aldrig har skrivits, och skyddar då inte
+// raden som tömmer det (LARDOMAR.md 2026-09-10).
+
+test('vyn nollställer bekräftelsen och felrutan när den öppnas igen', async (t) => {
+  const { dom } = await starta(t, planPlan((anropet) =>
+    anropet.method === 'PUT' ? plansvar(JSON.parse(anropet.body).plan) : plansvar('bas')
+  ));
+  await oppnaPlanen(dom);
+
+  // Utgångsläget för det andra besöket: bekräftelsen står skriven av ett byte.
+  planknappar(dom)[1].utlos('click');
+  await flush();
+  assert.equal(dom.falt('plan-note').textContent, PLAN_DEMOTEXT);
+  // Och felrutan bär en text, satt för hand: en felväg som också sätter
+  // bekräftelsen finns inte, så de två går inte att få skrivna av samma klick.
+  dom.falt('plan-error').textContent = 'ett tidigare fel';
+
+  dom.falt('back-from-plan').utlos('click');
+  dom.falt('show-plan').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('plan-note').textContent, '', 'bekräftelsen stod kvar vid ett nytt besök');
+  assert.equal(dom.falt('plan-error').textContent, '', 'feltexten stod kvar vid ett nytt besök');
+});
+
+test('ett misslyckat byte efter ett lyckat tar bort bekräftelsen', async (t) => {
+  const FELTEXT = 'Välj Bas, Plus eller Premium.';
+  let put = 0;
+  const { dom } = await starta(t, planPlan((anropet) => {
+    if (anropet.method !== 'PUT') {
+      return plansvar('bas');
+    }
+    put += 1;
+    return put === 1
+      ? plansvar(JSON.parse(anropet.body).plan)
+      : { status: 400, json: { error: FELTEXT } };
+  }));
+  await oppnaPlanen(dom);
+
+  // Första bytet lyckas: bekräftelsen står skriven.
+  planknappar(dom)[1].utlos('click');
+  await flush();
+  assert.equal(dom.falt('plan-note').textContent, PLAN_DEMOTEXT);
+
+  // Andra bytet misslyckas: bekräftelsen ska bort, annars står "ingen betalning
+  // genomförs" kvar intill ett fel om ett byte som inte blev av.
+  planknappar(dom)[2].utlos('click');
+  await flush();
+  assert.equal(dom.falt('plan-note').textContent, '', 'bekräftelsen stod kvar efter ett fel');
+  assert.equal(dom.falt('plan-error').textContent, FELTEXT);
+  // Och planen är den från det lyckade bytet, inte den som misslyckades.
+  assert.equal(dom.falt('plan-current').textContent, PLAN_LABELS[Object.keys(PLANS)[1]]);
+});
+
+test('ett lyckat byte efter ett misslyckat tar bort feltexten', async (t) => {
+  let put = 0;
+  const { dom } = await starta(t, planPlan((anropet) => {
+    if (anropet.method !== 'PUT') {
+      return plansvar('bas');
+    }
+    put += 1;
+    return put === 1
+      ? { status: 400, json: { error: 'Välj Bas, Plus eller Premium.' } }
+      : plansvar(JSON.parse(anropet.body).plan);
+  }));
+  await oppnaPlanen(dom);
+
+  planknappar(dom)[1].utlos('click');
+  await flush();
+  assert.notEqual(dom.falt('plan-error').textContent, '');
+
+  planknappar(dom)[2].utlos('click');
+  await flush();
+  assert.equal(dom.falt('plan-error').textContent, '', 'feltexten stod kvar efter ett lyckat byte');
+  assert.equal(dom.falt('plan-note').textContent, PLAN_DEMOTEXT);
+});
+
+test('ett misslyckat GET /api/plan efter ett besök lämnar månadsvyns felruta med texten', async (t) => {
+  let get = 0;
+  const { dom } = await starta(t, planPlan((anropet) => {
+    if (anropet.method !== 'GET') {
+      return null;
+    }
+    get += 1;
+    return get === 1 ? plansvar('bas') : new Error('nätverket föll');
+  }));
+  await oppnaPlanen(dom);
+  assert.equal(dom.falt('plan-view').hidden, false);
+  assert.equal(dom.falt('month-error').textContent, '');
+
+  dom.falt('back-from-plan').utlos('click');
+  dom.falt('show-plan').utlos('click');
+  await flush();
+
+  // Vyn byttes inte den andra gången, och felet står i månadsvyns ruta.
+  assert.equal(dom.falt('month-view').hidden, false);
+  assert.equal(dom.falt('plan-view').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, GENERAL_ERROR);
 });

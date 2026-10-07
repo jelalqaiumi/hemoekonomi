@@ -95,6 +95,10 @@ export function createSeedState(today) {
     // inte ett formulär. Logga ut fungerar, och knappen
     // "Logga in som demoanvändare" tar besökaren tillbaka.
     loggedIn: true,
+    // Demoanvändarens plan [steg 1 i del 5]. Bas, samma förval som kolumnen
+    // users.plan har på servern: besökaren ska kunna växla upp och se
+    // skillnaden, inte börja med allt upplåst.
+    plan: 'bas',
     // Den kod attrappen senast skickade. Ingen kod finns innan besökaren bett om
     // en.
     code: null,

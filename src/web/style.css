@@ -677,3 +677,13 @@ button:disabled:hover {
 .overview-table .overview-left {
   font-weight: 600;
 }
+
+/* Min plan [steg 1 i del 5]. De tre knapparna ligger på en rad och radbryter på
+   en smal skärm, så att ingen av dem hamnar utanför kortet vid 320 bildpunkter.
+   Knapparna bär .secondary och får sin form därifrån — det här blocket sätter
+   bara hur de ligger. */
+.plan-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

@@ -83,6 +83,17 @@
                hidden, samma mönster som inloggningsvyn och månadsvyn redan
                använder. -->
           <button type="button" class="secondary" id="show-overview">Översikt</button>
+          <!-- Vägen till Min plan [steg 1 i del 5]. Samma mönster som Översikt:
+               knappen byter vilken sektion som bär hidden, ingen router och
+               ingen egen sida.
+
+               Ingen låsikon står i menyn. En låsikon ska visa en funktion som
+               planen saknar, och de funktioner planerna skiljer sig i -
+               sparmål, delat hushåll, rapporter, Mina funktioner och
+               prioriterad support - är inte byggda ännu. En ikon för en
+               funktion som inte finns hade varit en knapp som inte leder
+               någonstans. -->
+          <button type="button" class="secondary" id="show-plan">Min plan</button>
           <button type="button" class="secondary" id="log-out">Logga ut</button>
         </aside>
 
@@ -292,6 +303,40 @@
              misslyckat anrop lämnar användaren i månadsvyn och skriver sin text
              i #month-error. En vy som visas utan data skulle annars ha tre tomma
              rutor och en tom tabell (LARDOMAR.md 2026-09-10). -->
+      </section>
+
+      <!-- Min plan [steg 1 i del 5]. Dold från början, precis som översikten.
+           Planen och funktionslistan kommer ur GET /api/plan och räknas aldrig
+           här; de tre knapparna ritas av app.js ur PLANS, så att en knapp inte
+           kan erbjuda en plan som inte finns.
+
+           Ingen betalning sker och ingen betalning antyds: bytet sparas direkt,
+           och bekräftelsen säger att ingen betalning genomförs. -->
+      <section id="plan-view" hidden>
+        <div class="card overview-head">
+          <h2>Min plan</h2>
+          <button type="button" id="back-from-plan">Tillbaka till månaden</button>
+        </div>
+
+        <div class="card">
+          <p class="summary-row">
+            <span class="summary-label">Nuvarande plan</span>
+            <span class="summary-amount" id="plan-current"></span>
+          </p>
+          <!-- Funktionerna planen har, i planordning. Listan kommer ur
+               features i svaret: samma lista servern räknar behörigheten ur,
+               så vyn och spärren kan inte säga olika saker. -->
+          <p class="summary-label">Det här ingår:</p>
+          <ul id="plan-features" class="item-list"></ul>
+        </div>
+
+        <div class="card">
+          <h3>Byt plan</h3>
+          <!-- De tre knapparna ritas av app.js. -->
+          <div id="plan-buttons" class="plan-buttons"></div>
+          <p class="lead" id="plan-note"></p>
+          <p class="form-error" id="plan-error" role="alert"></p>
+        </div>
       </section>
     </main>
 

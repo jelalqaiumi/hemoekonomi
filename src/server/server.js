@@ -54,7 +54,10 @@ const STATIC_ROUTES = Object.freeze(Object.assign(Object.create(null), {
   '/landning.css': { file: 'landning.css', type: CSS_TYPE },
   '/tema.css': { file: 'tema.css', type: CSS_TYPE },
   '/style.css': { file: 'style.css', type: CSS_TYPE },
-  '/app.js': { file: 'app.js', type: JS_TYPE }
+  '/app.js': { file: 'app.js', type: JS_TYPE },
+  // Prissidans kort [steg 1 i del 5]. Hämtas bara av landning.html, på samma
+  // form som /app.js hämtas bara av index.html.
+  '/priser.js': { file: 'priser.js', type: JS_TYPE }
 }));
 
 const CORE_PREFIX = '/core/';

@@ -289,6 +289,9 @@ export function createDom() {
   // testfallet (56) jämför de två listorna, så ett glömt element fäller sviten.
   monthView.append(skapa('button', 'show-overview', { type: 'button', className: 'secondary', textContent: 'Översikt' }));
 
+  // Knappen som byter till Min plan ligger i samma sidomeny [steg 1 i del 5].
+  monthView.append(skapa('button', 'show-plan', { type: 'button', className: 'secondary', textContent: 'Min plan' }));
+
   // Översikten, dold från början precis som index.html skriver attributet.
   const overviewView = skapa('section', 'overview-view', { hidden: true });
   overviewView.append(
@@ -299,6 +302,18 @@ export function createDom() {
     skapa('span', 'overview-best', { className: 'summary-amount' }),
     skapa('div', 'overview-chart', { className: 'chart' }),
     skapa('tbody', 'overview-rows')
+  );
+
+  // Min plan [steg 1 i del 5], dold från början precis som index.html skriver
+  // attributet. Varje nytt id i index.html betyder ett nytt FakeElement här.
+  const planView = skapa('section', 'plan-view', { hidden: true });
+  planView.append(
+    skapa('button', 'back-from-plan', { type: 'button', textContent: 'Tillbaka till månaden' }),
+    skapa('span', 'plan-current', { className: 'summary-amount' }),
+    skapa('ul', 'plan-features', { className: 'item-list' }),
+    skapa('div', 'plan-buttons', { className: 'plan-buttons' }),
+    skapa('p', 'plan-note', { className: 'lead' }),
+    skapa('p', 'plan-error', { className: 'form-error' })
   );
 
   const document = {

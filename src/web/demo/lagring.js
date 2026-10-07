@@ -12,6 +12,14 @@
 // funktionerna: ett testfall kan då skicka in en attrapp som kastar, och det är
 // hela skälet till att spärrarna går att pröva.
 
+// isPlanKey är ägaren till frågan "detta är en känd plan". Filen importerar
+// kärnan bara för den frågan: ett sparat tillstånd bär ett värde som måste
+// finnas i PLANS, och en handskriven lista över plannycklar här hade varit en
+// andra ägare (LARDOMAR.md 2026-09-02). Importen går via ../../core/ av samma
+// skäl som i demo-fetch.js: båda formerna pekar på samma fil i webbläsaren, men
+// bara den relativa fungerar också när ett testfall läser filen från disk.
+import { isPlanKey } from '../../core/plans.js';
+
 // Nyckeln är demons egen och delas inte med något annat. Namnet bär ordet demo,
 // så att den aldrig kan förväxlas med riktig data om appen en dag får något
 // eget i localStorage.
@@ -75,6 +83,11 @@ function isDemoState(value) {
     value.version === 1 &&
     typeof value.email === 'string' &&
     typeof value.loggedIn === 'boolean' &&
+    // Planen prövas mot ägarens lista och inte bara som en sträng: ett sparat
+    // 'guld' hade annars nått hasFeature, som kastar RangeError för en okänd
+    // plan. Ett tillstånd som saknar plan - alltså ett som sparades före
+    // steg 1 i del 5 - kasseras av samma rad, och demon läser om seed-datan.
+    isPlanKey(value.plan) &&
     Array.isArray(value.templates) &&
     Array.isArray(value.overrides) &&
     Array.isArray(value.monthItems)

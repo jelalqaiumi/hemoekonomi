@@ -165,6 +165,7 @@ test('varje rad i STATIC_ROUTES ger 200 med exakt den Content-Type tabellen ange
   await assertFileServed(port, '/tema.css', path.join(getWebDir(), 'tema.css'), CSS_TYPE);
   await assertFileServed(port, '/style.css', path.join(getWebDir(), 'style.css'), CSS_TYPE);
   await assertFileServed(port, '/app.js', path.join(getWebDir(), 'app.js'), JS_TYPE);
+  await assertFileServed(port, '/priser.js', path.join(getWebDir(), 'priser.js'), JS_TYPE);
   await assertFileServed(port, '/core/entry.js', path.join(getCoreDir(), 'entry.js'), JS_TYPE);
 });
 

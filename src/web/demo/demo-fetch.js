@@ -21,6 +21,7 @@
 import { monthTotals, sumByKind } from '../../core/budget.js';
 import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
+import { FEATURES, hasFeature, isPlanKey } from '../../core/plans.js';
 import { nextDueDate } from '../../core/schedule.js';
 import { DEMO } from './demolage.js';
 
@@ -37,13 +38,15 @@ import { DEMO } from './demolage.js';
 //   invalidMonth     MESSAGES.invalidMonth i src/server/api.js
 //   unknownPath      MESSAGES.unknownPath i src/server/api.js
 //   methodNotAllowed MESSAGES.methodNotAllowed i src/server/api.js
+//   invalidPlan      MESSAGES.invalidPlan i src/server/api.js
 export const SERVER_TEXTS = Object.freeze({
   notLoggedIn: 'Du är inte inloggad.',
   unknownCode: 'Koden stämmer inte. Begär en ny kod och försök igen.',
   entryNotFound: 'Posten finns inte.',
   invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.',
   unknownPath: 'Okänd adress.',
-  methodNotAllowed: 'Metoden stöds inte.'
+  methodNotAllowed: 'Metoden stöds inte.',
+  invalidPlan: 'Välj Bas, Plus eller Premium.'
 });
 
 // Vägarna, med samma adresser som src/server/api.js.
@@ -51,6 +54,8 @@ const AUTH_CODE_PATH = '/api/auth/kod';
 const AUTH_LOGIN_PATH = '/api/auth/logga-in';
 const AUTH_LOGOUT_PATH = '/api/auth/logga-ut';
 const ME_PATH = '/api/mig';
+// Planens väg [steg 1 i del 5]. Samma adress som i src/server/api.js.
+const PLAN_PATH = '/api/plan';
 const API_PREFIX = '/api/';
 const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
@@ -314,6 +319,13 @@ function templateVersionForMonth(state, seriesId, month) {
 //
 // Ett svar utan kropp avvisar i json(), precis som i webbläsaren och precis som
 // createFetch i tests/helpers/dom.js gör det.
+// Svarskroppen för planens två vägar: { plan, features }. Samma form och samma
+// upplösning av arvet som planBody i src/server/api.js — hasFeature i
+// src/core/plans.js äger upplösningen, och attrappen räknar inte ut den själv.
+function planBody(plan) {
+  return { plan, features: FEATURES.filter((feature) => hasFeature(plan, feature)) };
+}
+
 function svar(status, json) {
   return {
     status,
@@ -584,6 +596,34 @@ export function createDemoFetch({
         return metodStods();
       }
       return kraverSession() ?? svar(200, { email: state.email });
+    }
+
+    // GET och PUT /api/plan [steg 1 i del 5]. Samma statuskoder och samma kropp
+    // som src/server/api.js: 200 { plan, features }, 400 vid okänd plan, 401
+    // utan session.
+    //
+    // Bytet är hela poängen med demon: besökaren kan växla plan fritt, och
+    // ingen betalning sker och ingen betalning antyds.
+    if (pathname === PLAN_PATH) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method === 'GET') {
+        return svar(200, planBody(state.plan));
+      }
+      if (method !== 'PUT') {
+        return metodStods();
+      }
+      // isPlanKey i src/core/plans.js äger frågan "detta är en känd plan".
+      // Attrappen skriver ingen egen lista över plannycklar, precis som den
+      // inte skriver något eget månadsmönster.
+      const plan = draftFrom(body)?.plan;
+      if (!isPlanKey(plan)) {
+        return svar(400, { error: SERVER_TEXTS.invalidPlan });
+      }
+      state.plan = plan;
+      return sparaOch(svar(200, planBody(plan)));
     }
 
     const month = segmentAfter(pathname, MONTH_PATH_PREFIX);

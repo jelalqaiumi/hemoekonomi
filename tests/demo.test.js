@@ -24,6 +24,7 @@ import { mountBanner } from '../src/web/demo/banner.js';
 import { createDemoFetch, readDemoMonth, readDemoOverview, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
 import { DEMO } from '../src/web/demo/demolage.js';
 import { clearState, getStorage, readState, STORAGE_KEY, writeState } from '../src/web/demo/lagring.js';
+import { FEATURES, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
 import { createSeedState, DEMO_EMAIL, seedMonths } from '../src/web/demo/seed.js';
 import { createDemoDom, createStorage, createThrowingStorage } from './helpers/demo-dom.js';
 import { createDom, flush, loadApp } from './helpers/dom.js';
@@ -134,7 +135,8 @@ test('(D3) varje svensk text attrappen svarar med är ägarens, tecken för teck
     ['entryNotFound', SERVER_TEXTS.entryNotFound],
     ['invalidMonth', SERVER_TEXTS.invalidMonth],
     ['unknownPath', SERVER_TEXTS.unknownPath],
-    ['methodNotAllowed', SERVER_TEXTS.methodNotAllowed]
+    ['methodNotAllowed', SERVER_TEXTS.methodNotAllowed],
+    ['invalidPlan', SERVER_TEXTS.invalidPlan]
   ]) {
     assert.equal(api.includes(`${nyckel}: '${text}'`), true, `${nyckel} i src/server/api.js`);
   }
@@ -914,4 +916,97 @@ test('attrappens översiktsväg kräver session, rätt metod och en riktig måna
   const utan = await utloggad.fetch('/api/oversikt/2026-13');
   assert.equal(utan.status, 401);
   assert.deepEqual(await json(utan), { error: SERVER_TEXTS.notLoggedIn });
+});
+
+// --------------------------------------------- Planens två vägar i demoläget
+
+// Demon ska kunna växla plan, så att en besökare ser funktioner låsas och låsas
+// upp (ARKITEKTUR.md, "Del 5: planer och behörighet"). Attrappen svarar därför
+// på samma två vägar som servern, med samma statuskoder och samma kropp.
+test('demoläget svarar på GET och PUT /api/plan som servern', async () => {
+  const { fetch, state } = riggning();
+
+  const funktionerFor = (plan) => FEATURES.filter((feature) => hasFeature(plan, feature));
+
+  // GET: demoanvändaren börjar på Bas, samma förval som kolumnen users.plan.
+  const forst = await fetch('/api/plan');
+  assert.equal(forst.status, 200);
+  assert.deepEqual(await json(forst), { plan: 'bas', features: funktionerFor('bas') });
+
+  // PUT: varje plan i PLANS, i ordning. Listan kommer ur modulen och skrivs
+  // inte av här.
+  for (const plan of Object.keys(PLANS)) {
+    const bytt = await fetch('/api/plan', { method: 'PUT', body: JSON.stringify({ plan }) });
+    assert.equal(bytt.status, 200, plan);
+    assert.deepEqual(await json(bytt), { plan, features: funktionerFor(plan) }, plan);
+    // Tillståndet bär värdet, och en GET efteråt ger samma svar.
+    assert.equal(state.plan, plan, plan);
+    const igen = await fetch('/api/plan');
+    assert.deepEqual(await json(igen), { plan, features: funktionerFor(plan) }, plan);
+  }
+
+  // Premium har varje lägre plans funktioner: listan växer med arvet.
+  assert.deepEqual((await json(await fetch('/api/plan'))).features, [...FEATURES]);
+
+  // 400 med serverns text för en okänd plan, och tillståndet är orört.
+  for (const plan of ['guld', 'Bas', '', null, 42, ['bas'], undefined]) {
+    const fel = await fetch('/api/plan', { method: 'PUT', body: JSON.stringify({ plan }) });
+    assert.equal(fel.status, 400, JSON.stringify(plan));
+    assert.deepEqual(await json(fel), { error: SERVER_TEXTS.invalidPlan }, JSON.stringify(plan));
+    assert.equal(state.plan, 'premium', JSON.stringify(plan));
+  }
+
+  // 405 för en metod vägen inte har.
+  const metod = await fetch('/api/plan', { method: 'DELETE' });
+  assert.equal(metod.status, 405);
+  assert.deepEqual(await json(metod), { error: SERVER_TEXTS.methodNotAllowed });
+
+  // 401 utan session, och sessionsspärren står före valideringen: en okänd plan
+  // utan session ger 401 och inte 400.
+  state.loggedIn = false;
+  const utan = await fetch('/api/plan');
+  assert.equal(utan.status, 401);
+  assert.deepEqual(await json(utan), { error: SERVER_TEXTS.notLoggedIn });
+  const utanPut = await fetch('/api/plan', { method: 'PUT', body: JSON.stringify({ plan: 'guld' }) });
+  assert.equal(utanPut.status, 401);
+  assert.deepEqual(await json(utanPut), { error: SERVER_TEXTS.notLoggedIn });
+});
+
+test('ett planbyte i demoläget sparas i lagringen och överlever en omladdning', async () => {
+  const storage = createStorage();
+  const forst = riggning({ storage });
+  assert.equal(forst.state.plan, 'bas');
+
+  const bytt = await forst.fetch('/api/plan', { method: 'PUT', body: JSON.stringify({ plan: 'plus' }) });
+  assert.equal(bytt.status, 200);
+
+  // En ny riggning läser tillståndet ur lagringen, precis som en omladdning av
+  // sidan gör.
+  const efter = riggning({ storage });
+  assert.equal(efter.state.plan, 'plus');
+  assert.deepEqual(await json(await efter.fetch('/api/plan')), {
+    plan: 'plus',
+    features: FEATURES.filter((feature) => hasFeature('plus', feature))
+  });
+
+  // Ett sparat tillstånd utan plan - alltså ett som sparades före det här
+  // steget - kasseras av readState, och demon läser om seed-datan i stället
+  // för att halvt använda det.
+  const utanPlan = { ...efter.state };
+  delete utanPlan.plan;
+  storage.setItem(STORAGE_KEY, JSON.stringify(utanPlan));
+  assert.equal(readState(storage), null);
+  // Och ett sparat tillstånd med en plan som inte finns kasseras också: utan
+  // raden hade värdet nått hasFeature, som kastar RangeError.
+  storage.setItem(STORAGE_KEY, JSON.stringify({ ...efter.state, plan: 'guld' }));
+  assert.equal(readState(storage), null);
+  assert.equal(riggning({ storage }).state.plan, 'bas');
+});
+
+test('PLAN_LABELS och seed-datans plan hör ihop med PLANS', () => {
+  // Seed-datans plan är en nyckel i PLANS, och den har ett svenskt namn: utan
+  // det hade vyn Min plan visat en tom rad för demoanvändaren.
+  const state = createSeedState(IDAG);
+  assert.equal(Object.hasOwn(PLANS, state.plan), true, state.plan);
+  assert.equal(PLAN_LABELS[state.plan], 'Bas');
 });

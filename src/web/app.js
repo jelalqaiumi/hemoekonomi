@@ -8,6 +8,7 @@
 import { monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS } from '/core/item.js';
+import { FEATURE_LABELS, PLANS, PLAN_LABELS } from '/core/plans.js';
 import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
 
 // Text mot användaren som varken kommer från servern eller från src/core/ står
@@ -28,6 +29,16 @@ const CHART_TITLE = 'Utgifter per kategori';
 // genomläsning (LARDOMAR.md 2026-09-14).
 const RECURRING_MARK = '\u21bb';
 const RECURRING_TITLE = 'Återkommande varje månad';
+// Min plan [steg 1 i del 5]. Bekräftelsen efter ett byte, ordagrant ur
+// ARKITEKTUR.md under "Byta plan". Ingen knapp och ingen text antyder att
+// pengar dras: planbytet är en UPDATE av en kolumn, och texten säger det.
+const PLAN_DEMO_NOTE = 'Demo: ingen betalning genomförs.';
+// Knappens text på de tre planknapparna. Samma form som prissidans kort:
+// Välj Bas, Välj Plus, Välj Premium.
+function choosePlanLabel(plan) {
+  return `Välj ${PLAN_LABELS[plan]}`;
+}
+
 const SAVE_LABEL = 'Spara';
 const SAVE_CHANGE_LABEL = 'Spara ändring';
 const EDIT_LABEL = 'Ändra';
@@ -151,6 +162,17 @@ const OVERVIEW_AVERAGE = document.querySelector('#overview-average');
 const OVERVIEW_BEST = document.querySelector('#overview-best');
 const OVERVIEW_CHART = document.querySelector('#overview-chart');
 const OVERVIEW_ROWS = document.querySelector('#overview-rows');
+
+// Min plan [steg 1 i del 5]. Knappen Min plan ligger i sidomenyn, alltså i
+// månadsvyn; Tillbaka till månaden ligger i vyn.
+const PLAN_VIEW = document.querySelector('#plan-view');
+const SHOW_PLAN = document.querySelector('#show-plan');
+const BACK_FROM_PLAN = document.querySelector('#back-from-plan');
+const PLAN_CURRENT = document.querySelector('#plan-current');
+const PLAN_FEATURES = document.querySelector('#plan-features');
+const PLAN_BUTTONS = document.querySelector('#plan-buttons');
+const PLAN_NOTE = document.querySelector('#plan-note');
+const PLAN_ERROR = document.querySelector('#plan-error');
 
 const FORM_CARD = document.querySelector('#item-form-card');
 const FORM = document.querySelector('#item-form');
@@ -284,6 +306,7 @@ function showLoginView() {
   LOGIN_VIEW.hidden = false;
   MONTH_VIEW.hidden = true;
   OVERVIEW_VIEW.hidden = true;
+  PLAN_VIEW.hidden = true;
   LOGIN_STEP_EMAIL.hidden = false;
   LOGIN_STEP_CODE.hidden = true;
   CODE_SENT.textContent = '';
@@ -294,6 +317,7 @@ function showMonthView() {
   LOGIN_VIEW.hidden = true;
   MONTH_VIEW.hidden = false;
   OVERVIEW_VIEW.hidden = true;
+  PLAN_VIEW.hidden = true;
 }
 
 // Översikten är en vy och ingen egen sida: samma tre rader som ovan, med ett
@@ -302,6 +326,16 @@ function showOverviewView() {
   LOGIN_VIEW.hidden = true;
   MONTH_VIEW.hidden = true;
   OVERVIEW_VIEW.hidden = false;
+  PLAN_VIEW.hidden = true;
+}
+
+// Min plan är en vy och ingen egen sida: samma fyra rader som ovan, med ett
+// annat element synligt. Ingen router.
+function showPlanView() {
+  LOGIN_VIEW.hidden = true;
+  MONTH_VIEW.hidden = true;
+  OVERVIEW_VIEW.hidden = true;
+  PLAN_VIEW.hidden = false;
 }
 
 // Ett 401 betyder att sessionen gått ut medan sidan var öppen. Vyn byts, och
@@ -1115,6 +1149,124 @@ async function showOverview(button) {
   }
 }
 
+// Min plan [steg 1 i del 5] ---------------------------------------------------
+
+// Planens namn och de funktioner planen har. Båda kommer ur svaret och räknas
+// aldrig här: features är samma lista servern räknar behörigheten ur, så vyn och
+// spärren kan inte säga olika saker.
+//
+// En plannyckel som inte står i PLAN_LABELS skrivs inte alls, av samma skäl som
+// renderUser inte skriver "undefined": ett 200 utan läsbar kropp ska ge en tom
+// rad och inte en engelsk nyckel.
+function renderPlan(body) {
+  const plan = body.plan;
+  PLAN_CURRENT.textContent = Object.hasOwn(PLAN_LABELS, plan) ? PLAN_LABELS[plan] : '';
+
+  const features = Array.isArray(body.features) ? body.features : [];
+  PLAN_FEATURES.replaceChildren(
+    ...features
+      // Ett okänt namn hoppas över i stället för att visas som sin engelska
+      // nyckel - användaren ser aldrig nycklarna.
+      .filter((feature) => Object.hasOwn(FEATURE_LABELS, feature))
+      .map((feature) => {
+        const row = document.createElement('li');
+        row.className = 'item';
+        row.append(cell('item-name', FEATURE_LABELS[feature]));
+        return row;
+      })
+  );
+}
+
+// Hämtar planen och byter vy först när svaret är läst. Samma ordning och samma
+// skäl som showOverview: byttes vyn först skulle ett misslyckat anrop lämna
+// användaren i en vy med en tom plan och en tom lista, alltså ett tillstånd som
+// varken är "en plan" eller "månadsvyn" (LARDOMAR.md 2026-09-10). Felet skrivs
+// därför i månadsvyns felruta, där användaren fortfarande står.
+async function showPlan(button) {
+  button.disabled = true;
+  try {
+    let response;
+    try {
+      response = await fetch('/api/plan');
+    } catch {
+      MONTH_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    const body = await readJson(response);
+    if (response.status !== 200) {
+      MONTH_ERROR.textContent = generalText(body);
+      return;
+    }
+
+    MONTH_ERROR.textContent = '';
+    renderPlan(body);
+    // Vyns egna rutor nollställs när vyn öppnas: bekräftelsen hör till ett byte
+    // och inte till ett besök, och ett fel från ett tidigare byte ska inte stå
+    // kvar.
+    PLAN_NOTE.textContent = '';
+    PLAN_ERROR.textContent = '';
+    showPlanView();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// Byter plan. Vyn ritas om ur PUT:ens svar och utan en andra hämtning: svaret
+// bär samma { plan, features } som GET ger, så en omladdning behövs inte.
+//
+// Knappen spärras under anropet, så att två snabba klick inte blir två anrop.
+async function changePlan(plan, button) {
+  button.disabled = true;
+  try {
+    let response;
+    try {
+      response = await fetch('/api/plan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan })
+      });
+    } catch {
+      PLAN_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    const body = await readJson(response);
+    if (response.status !== 200) {
+      PLAN_NOTE.textContent = '';
+      PLAN_ERROR.textContent = generalText(body);
+      return;
+    }
+
+    PLAN_ERROR.textContent = '';
+    renderPlan(body);
+    PLAN_NOTE.textContent = PLAN_DEMO_NOTE;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// De tre knapparna, ritade ur PLANS. Ingen plannyckel står skriven i filen: en
+// knapp kan därför inte erbjuda en plan som inte finns, och ett tillägg i
+// modulen ger en fjärde knapp av sig själv.
+function renderPlanButtons() {
+  PLAN_BUTTONS.replaceChildren(
+    ...Object.keys(PLANS).map((plan) =>
+      actionButton('secondary', choosePlanLabel(plan), (button) => {
+        void changePlan(plan, button);
+      })
+    )
+  );
+}
+
 async function loadMe() {
   let response;
   try {
@@ -1174,6 +1326,16 @@ SHOW_OVERVIEW.addEventListener('click', () => {
   void showOverview(SHOW_OVERVIEW);
 });
 
+SHOW_PLAN.addEventListener('click', () => {
+  void showPlan(SHOW_PLAN);
+});
+
+// Tillbaka till månaden byter bara vy, av samma skäl som i översikten:
+// månadsvyn är kvar som den var, och ingen omhämtning kan misslyckas.
+BACK_FROM_PLAN.addEventListener('click', () => {
+  showMonthView();
+});
+
 // Tillbaka till månaden byter bara vy: månadsvyn är kvar som den var, och
 // currentMonth har inte rörts, så användaren kommer tillbaka till samma månad.
 // Ingen ny hämtning — en omhämtning som misslyckas hade kunnat lämna månadsvyn
@@ -1207,5 +1369,9 @@ FORM.addEventListener('submit', (event) => {
   }
   void submitForm(SUBMIT_BUTTON);
 });
+
+// De tre planknapparna ritas en gång, innan den första hämtningen: de beror
+// bara på PLANS och inte på vilken plan användaren har.
+renderPlanButtons();
 
 await loadMe();

@@ -266,45 +266,15 @@
           <p class="block-ingress">
             Tre planer. Samma app, olika mycket av den.
           </p>
-          <ul class="pris-lista">
-            <li class="pris-kort">
-              <h3>Bas</h3>
-              <p class="pris-belopp"><span class="pris-tal">99 kr</span>/mån</p>
-              <ul class="pris-punkter">
-                <li>Budget och utgiftsregistrering</li>
-                <li>Räkningspåminnelser</li>
-                <li>Grundläggande översikt</li>
-              </ul>
-              <a class="knapp knapp-kontur" href="/app">Välj Bas</a>
-            </li>
-
-            <li class="pris-kort pris-kort-upphojd">
-              <p class="pris-badge">Populärast</p>
-              <h3>Plus</h3>
-              <p class="pris-belopp"><span class="pris-tal">149 kr</span>/mån</p>
-              <ul class="pris-punkter">
-                <li>Allt i Bas</li>
-                <li>Sparmål</li>
-                <li>Delat hushåll</li>
-                <li>Diagram och rapporter</li>
-              </ul>
-              <a class="knapp knapp-guld" href="/app">Välj Plus</a>
-            </li>
-
-            <li class="pris-kort">
-              <h3>Premium</h3>
-              <p class="pris-belopp"><span class="pris-tal">179 kr</span>/mån</p>
-              <ul class="pris-punkter">
-                <li>Allt i Plus</li>
-                <li>Mina funktioner</li>
-                <li>Prioriterad support</li>
-              </ul>
-              <a class="knapp knapp-kontur" href="/app">Välj Premium</a>
-            </li>
-          </ul>
+          <!-- Tom i HTML med flit: korten ritas av /priser.js ur PLANS i
+               src/core/plans.js. Priset och innehållet har en enda källa, som
+               servern och appen läser samma rad ur
+               (ARKITEKTUR.md, "Prissidan renderas ur PLANS"). Står texten
+               också här blir den ett andra facit som kan säga något annat än
+               behörigheten. -->
+          <ul class="pris-lista" id="pris-lista"></ul>
           <p class="pris-not">
-            Planvalet byggs i ett senare steg. Knapparna ovan tar dig till appen,
-            och ingen betalning dras.
+            Detta är en demo - du kan byta plan fritt och ingen betalning dras.
           </p>
         </div>
       </section>
@@ -409,5 +379,9 @@
          den ingenting, och landningssidan fungerar fortfarande helt utan
          JavaScript. Är flaggan sann ritar den bannern högst upp. -->
     <script type="module" src="/demo/demo-fetch.js"></script>
+
+    <!-- Prissidans tre kort. Ligger sist, som varje annat skript på sidan: det
+         enda den rör är listan i avsnittet Priser. -->
+    <script type="module" src="/priser.js"></script>
   </body>
 </html>

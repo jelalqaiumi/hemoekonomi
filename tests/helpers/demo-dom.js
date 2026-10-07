@@ -1,6 +1,7 @@
 // DOM- och lagringsattrapper för src/web/demo/.
 //
-// Filen är mätapparaten för tests/demo.test.js och är därför incheckad, aldrig
+// Filen är mätapparaten för tests/demo.test.js och för tests/priser.test.js
+// genom tests/helpers/landning-dom.js, och är därför incheckad, aldrig
 // en engångskörning: en attrapp som kastas bort gör mätningen omöjlig att göra
 // om (LARDOMAR.md 2026-09-07).
 //
@@ -11,7 +12,10 @@
 // — det är allt banner.js rör.
 import assert from 'node:assert/strict';
 
-class DemoElement {
+// Elementattrappen. Exporterad därför att tests/helpers/landning-dom.js bygger
+// prissidans dokument på samma klass: ett andra, nästan likadant element är två
+// ägare till samma rader (LARDOMAR.md 2026-09-02).
+export class DemoElement {
   constructor(tagName) {
     this.tagName = tagName;
     this.id = '';
@@ -31,6 +35,12 @@ class DemoElement {
 
   prepend(...nodes) {
     this.children.unshift(...nodes);
+  }
+
+  // Samma semantik som i webbläsaren: de gamla barnen ersätts, inte utökas. En
+  // renderingsfunktion som anropas två gånger ska inte dubblera sin lista.
+  replaceChildren(...nodes) {
+    this.children = [...nodes];
   }
 
   addEventListener(type, listener) {

@@ -65,6 +65,25 @@ export const PLAN_LABELS = Object.freeze({
   premium: 'Premium'
 });
 
+// Funktionernas svenska namn. Texterna är de som står i tabellen "Priskorten" i
+// ARKITEKTUR.md och som stod inskrivna i src/web/landning.html fram till det här
+// steget; de flyttades hit när prissidan började renderas ur PLANS, så att
+// kortet och behörigheten inte kan säga olika saker.
+//
+// Nycklarna är FEATURES nycklar, och ett testfall kräver att de två listorna är
+// desamma: en funktion utan namn hade visats som sin engelska nyckel, och
+// användaren ser aldrig dem.
+export const FEATURE_LABELS = Object.freeze({
+  budget: 'Budget och utgiftsregistrering',
+  billReminders: 'Räkningspåminnelser',
+  overview: 'Grundläggande översikt',
+  savingsGoals: 'Sparmål',
+  sharedHousehold: 'Delat hushåll',
+  reports: 'Diagram och rapporter',
+  customFeatures: 'Mina funktioner',
+  prioritySupport: 'Prioriterad support'
+});
+
 // De två meddelandena modulen äger. Båda är programmeringsfel och når aldrig
 // användaren: planen kommer ur databasens plan-kolumn, som har ett CHECK, och
 // funktionsnyckeln står i koden. Texterna är därför skrivna för den som läser

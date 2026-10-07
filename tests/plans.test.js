@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { FEATURES, PLANS, PLAN_LABELS, hasFeature, planFor } from '../src/core/plans.js';
+import { FEATURES, FEATURE_LABELS, PLANS, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../src/core/plans.js';
 
 // Varje funktion som står i någon plans lista, i planordning. Används av (P5)
 // och av det prov som binder PLAN_LABELS till PLANS.
@@ -204,4 +204,67 @@ test('FEATURES och planernas funktionslistor innehåller exakt samma nycklar', (
   // texten undefined.
   assert.deepEqual(Object.keys(PLAN_LABELS), Object.keys(PLANS));
   assert.deepEqual(Object.keys(PLANS), ['bas', 'plus', 'premium']);
+});
+
+// isPlanKey är ägaren till villkoret "detta är en känd plan" och har två
+// anropare: hasFeature ovan och PUT /api/plan i src/server/api.js. Fallet prövar
+// exporten direkt, eftersom en modul inte får lämnas vidare med bara indirekt
+// täckning (LARDOMAR.md 2026-08-18).
+test('isPlanKey svarar true för exakt de tre plannycklarna', () => {
+  for (const plan of Object.keys(PLANS)) {
+    assert.equal(isPlanKey(plan), true, plan);
+  }
+  assert.equal(Object.keys(PLANS).filter((key) => isPlanKey(key)).length, 3);
+
+  // typeof-raden i isPlanKey är inte överflödig: en nyckel i ett uppslag tvingas
+  // till en sträng, så utan raden är ['bas'] och { toString: () => 'bas' } båda
+  // kända planer — och PUT /api/plan svarade då 500 från databasens CHECK i
+  // stället för 400 med den svenska texten.
+  for (const värde of [
+    ['bas'],
+    ['plus'],
+    { toString: () => 'bas' },
+    new String('bas'),
+    'guld',
+    'Bas',
+    'bas ',
+    ' bas',
+    '',
+    'constructor',
+    'toString',
+    'hasOwnProperty',
+    '__proto__',
+    undefined,
+    null,
+    42,
+    true,
+    {},
+    [],
+    new Date(),
+    1n,
+    Symbol('x')
+  ]) {
+    assert.equal(isPlanKey(värde), false, String(typeof värde === 'symbol' ? 'Symbol' : värde));
+  }
+});
+
+// FEATURE_LABELS bär funktionernas svenska namn och läses av prissidan och av
+// vyn Min plan. En nyckel som saknas hade visats som sin engelska nyckel, och
+// användaren ser aldrig dem.
+test('FEATURE_LABELS har ett svenskt namn för varje nyckel i FEATURES', () => {
+  assert.equal(Object.isFrozen(FEATURE_LABELS), true);
+  assert.deepEqual(Object.keys(FEATURE_LABELS), [...FEATURES]);
+  for (const feature of FEATURES) {
+    const namn = FEATURE_LABELS[feature];
+    assert.equal(typeof namn, 'string', feature);
+    assert.notEqual(namn, '', feature);
+    // Namnet är inte nyckeln: ett namn som råkat bli nyckeln är ett namn på
+    // engelska.
+    assert.notEqual(namn, feature, feature);
+  }
+  // De texter prissidan visade som inskriven text innan korten renderades ur
+  // PLANS, tecken för tecken.
+  assert.equal(FEATURE_LABELS.budget, 'Budget och utgiftsregistrering');
+  assert.equal(FEATURE_LABELS.reports, 'Diagram och rapporter');
+  assert.equal(FEATURE_LABELS.prioritySupport, 'Prioriterad support');
 });
