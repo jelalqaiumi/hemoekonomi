@@ -179,6 +179,16 @@ const ATERKOMMANDE_FALT = Object.freeze([
   { name: 'toMonth', id: 'item-to-month', tagName: 'input' }
 ]);
 
+// De två fält bara en engångspost har [steg 2]. De ligger i #single-fields, som
+// app.js döljer när kryssrutan Återkommande är ikryssad och i läget Bara
+// <månad>, och är registrerade i formulärets elements precis som de tre ovan —
+// FORM.reset() nollställer dem. Felrutans id följer fältnamnet och inte
+// element-id:t, precis som index.html skriver det.
+const ENGANGSFALT = Object.freeze([
+  { name: 'occurredOn', id: 'item-occurred-on', tagName: 'input' },
+  { name: 'note', id: 'item-note', tagName: 'input' }
+]);
+
 // De tre listorna, i index.html:s ordning. Varje slag ger tre id:n: knappen som
 // öppnar formuläret, listan och tomtexten.
 const LISTOR = Object.freeze(['income', 'expense', 'saving']);
@@ -249,6 +259,16 @@ export function createDom() {
     }
     form.registrera(name, falt);
   }
+  // Datum och Kommentar [steg 2], i ett block med eget id: app.js döljer blocket
+  // och inte de två fälten var för sig.
+  const singleFields = skapa('div', 'single-fields');
+  for (const { name, id, tagName } of ENGANGSFALT) {
+    const falt = skapa(tagName, id);
+    const fel = skapa('p', `error-${name}`, { className: 'field-error' });
+    singleFields.append(falt, fel);
+    form.registrera(name, falt);
+  }
+  form.append(singleFields);
   // Kryssrutan Återkommande och de två fälten den öppnar. Rutan ligger utanför
   // #recurring-fields: den syns alltid, och det är den som öppnar blocket.
   const recurringField = skapa('div', 'recurring-field', { className: 'field field-checkbox' });
@@ -277,6 +297,32 @@ export function createDom() {
       skapa('p', `${slag}-empty`, { className: 'empty-state' })
     );
   }
+
+  // Budgetkortet [steg 2]: knappen som öppnar det lilla formuläret, formuläret
+  // självt och listan med en rad per kategori som har ett tak. Formuläret är ett
+  // FakeForm av samma skäl som postformuläret: app.js lyssnar på submit och
+  // anropar reset.
+  const budgetCard = skapa('section', 'budget-card', { className: 'card' });
+  const budgetForm = new FakeForm('budget-form');
+  budgetForm.hidden = true;
+  registry.set('budget-form', budgetForm);
+  const budgetCategory = skapa('select', 'budget-category');
+  const budgetAmount = skapa('input', 'budget-amount');
+  budgetForm.registrera('category', budgetCategory);
+  budgetForm.registrera('amountSek', budgetAmount);
+  budgetForm.append(
+    budgetCategory,
+    budgetAmount,
+    skapa('p', 'budget-form-error', { className: 'form-error' }),
+    skapa('button', 'budget-submit', { type: 'submit', textContent: 'Spara' }),
+    skapa('button', 'budget-cancel', { type: 'button', textContent: 'Avbryt' })
+  );
+  budgetCard.append(
+    skapa('button', 'add-budget', { type: 'button', className: 'add' }),
+    budgetForm,
+    skapa('ul', 'budget-list', { className: 'item-list' })
+  );
+  monthView.append(budgetCard);
 
   monthView.append(
     skapa('div', 'chart', { className: 'chart' }),

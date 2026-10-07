@@ -90,7 +90,12 @@ function isDemoState(value) {
     isPlanKey(value.plan) &&
     Array.isArray(value.templates) &&
     Array.isArray(value.overrides) &&
-    Array.isArray(value.monthItems)
+    Array.isArray(value.monthItems) &&
+    // Taken [steg 2]. Ett tillstånd som saknar budgets - alltså ett som sparades
+    // före steg 2 - kasseras av raden, och demon läser om seed-datan. Utan den
+    // skulle readDemoMonth läsa state.budgets på ett tillstånd som inte har
+    // fältet, och kortet Budget vore ett kast i stället för en lista.
+    Array.isArray(value.budgets)
   );
 }
 

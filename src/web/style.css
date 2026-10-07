@@ -538,6 +538,23 @@ button:disabled:hover {
   margin: 0;
 }
 
+/* Budgetkortets rader [steg 2]. Raden är en .item, så flexlayouten ovan gäller
+   oförändrad; här står bara de tre cellernas egna mått. Kvar-beloppet bär
+   dessutom left-positive eller left-negative, alltså summeringens två klasser —
+   ingen ny färgklass, och därmed ingen andra ägare till de två tonerna. */
+.budget-category {
+  flex: 1 1 7rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.budget-amount,
+.budget-left {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Frågan en mallrad ställer [etapp 4]: texten och de två valen. Rutan är ett
    eget barn i .item, som radbryter, och flex-basis 100 procent lägger den därför
    på en egen rad under knapparna i stället för att tränga ihop dem. */

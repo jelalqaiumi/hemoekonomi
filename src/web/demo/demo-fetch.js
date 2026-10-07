@@ -19,8 +19,9 @@
 // ger /core/x.js, men bara den relativa formen pekar på src/core/ också när ett
 // testfall importerar den här filen från disk.
 import { monthTotals, sumByKind } from '../../core/budget.js';
+import { CATEGORIES } from '../../core/entry.js';
 import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
-import { ITEM_KINDS, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
+import { ITEM_KINDS, validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
 import { FEATURES, hasFeature, isPlanKey } from '../../core/plans.js';
 import { nextDueDate } from '../../core/schedule.js';
 import { DEMO } from './demolage.js';
@@ -61,6 +62,8 @@ const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
 const TEMPLATE_PATH_PREFIX = '/api/mallar/';
 const OVERVIEW_PATH_PREFIX = '/api/oversikt/';
+// Budgetens två vägar [steg 2]. Samma adresser som src/server/api.js.
+const BUDGET_PATH_PREFIX = '/api/budget/';
 const ITEM_MONTH_SEGMENT = 'manad';
 
 // Antalet månader i översikten. Samma tolv som OVERVIEW_MONTHS i
@@ -116,6 +119,21 @@ function seriesMonthFromPath(pathname) {
     return null;
   }
   return { seriesId: parts[0], month: parts[1] };
+}
+
+// De två leden i /api/budget/<ÅÅÅÅ-MM>/<kategori> [steg 2]. Samma regler som
+// budgetCategoryFromPath i src/server/api.js: kategorin prövas inte mot
+// CATEGORIES här. En kategori som inte finns matchar ingen rad och ger samma 404
+// som en kategori utan tak.
+function budgetCategoryFromPath(pathname) {
+  if (!pathname.startsWith(BUDGET_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(BUDGET_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
+    return null;
+  }
+  return { month: parts[0], category: parts[1] };
 }
 
 // Sökvägen ur det app.js skickade. Adressen är alltid absolut-från-roten i
@@ -274,7 +292,45 @@ export function readDemoMonth(state, month) {
   items.sort(compareItems);
   // Steg 6: summorna. budget.js äger räkningen, inklusive "kvar att leva på" —
   // attrappen adderar ingenting själv.
-  return { items, totals: monthTotals(items) };
+  // Steg 7: taken [steg 2], räknade ur items ovan och inte ur en egen lista:
+  // det som är kvar av ett tak ska vara kvar av exakt de poster månadsvyn visar.
+  return { items, totals: monthTotals(items), budgets: budgetLines(state, month, items) };
+}
+
+// Månadens tak med utfallet [steg 2]. Stegen är budgetLines i
+// src/server/months.js, i samma ordning och med samma regler — ingen egen
+// variant av regeln.
+//
+// Bara kategorier med ett tak kommer med: en kategori utan tak har ingen budget
+// att vara kvar av. spentOre räknar bara utgifter, och det är sumByKind i
+// src/core/budget.js som avgör vilka poster som är utgifter — attrappen adderar
+// ingenting själv och ärver därmed också spärren mot en summa som lämnar det
+// säkra heltalsområdet.
+//
+// leftOre = amountOre - spentOre och får vara negativt: har besökaren dragit
+// över taket ska det synas som ett minusbelopp, inte som noll. Differensen är den
+// enda räkning funktionen gör.
+//
+// Ordningen är CATEGORIES ordning, alltså kategoriernas ägares, precis som på
+// servern. Den är total: en kategori har högst ett tak per månad, vilket
+// PUT-vägen nedan håller på samma sätt som schemats
+// UNIQUE (user_id, month, category).
+function budgetLines(state, month, items) {
+  const amountByCategory = new Map(
+    state.budgets
+      .filter((row) => row.month === month)
+      .map((row) => [row.category, row.amountOre])
+  );
+  const lines = [];
+  for (const category of CATEGORIES) {
+    if (!amountByCategory.has(category)) {
+      continue;
+    }
+    const amountOre = amountByCategory.get(category);
+    const spentOre = sumByKind(items.filter((item) => item.category === category), 'expense');
+    lines.push({ category, amountOre, spentOre, leftOre: amountOre - spentOre });
+  }
+  return lines;
 }
 
 // Tolv månader bredvid varandra, i minnet. Stegen är readOverview i
@@ -649,7 +705,9 @@ export function createDemoFetch({
       }
       if (method === 'GET') {
         const result = readDemoMonth(state, month);
-        return svar(200, { items: result.items, totals: result.totals });
+        // budgets står med sedan steg 2: kortet Budget i månadsvyn ritas ur
+        // samma svar, utan en andra hämtning.
+        return svar(200, { items: result.items, totals: result.totals, budgets: result.budgets });
       }
       const result = validateMonthItemDraft(draftFrom(body));
       if (!result.ok) {
@@ -667,6 +725,81 @@ export function createDemoFetch({
       };
       state.monthItems.push(row);
       return sparaOch(svar(201, { item: toMonthItem(row) }));
+    }
+
+    // DELETE /api/budget/<ÅÅÅÅ-MM>/<kategori> [steg 2]. Prövas före den enkla
+    // /api/budget/<månad>, precis som i api.js: den längre vägen är den mer
+    // specifika.
+    //
+    // Behörighetsspärren saknas i båda de här vägarna, och det är avsiktligt:
+    // api.js kör requireFeature med 'budget', och budget står i alla tre
+    // planerna, så spärren svarar null för varje plan demon kan ha. En kopia av
+    // den hade inte kunnat ge något annat svar än det som ges här.
+    const budgetCategory = budgetCategoryFromPath(pathname);
+    if (budgetCategory !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'DELETE') {
+        return metodStods();
+      }
+      const felManad = kraverManad(budgetCategory.month);
+      if (felManad !== null) {
+        return felManad;
+      }
+      const kvar = state.budgets.filter(
+        (row) => row.month !== budgetCategory.month || row.category !== budgetCategory.category
+      );
+      if (kvar.length === state.budgets.length) {
+        // Samma text och samma statuskod som för en kategori som aldrig haft
+        // ett tak.
+        return svar(404, { error: SERVER_TEXTS.entryNotFound });
+      }
+      state.budgets = kvar;
+      return sparaOch(svar(204));
+    }
+
+    // PUT /api/budget/<ÅÅÅÅ-MM> [steg 2]. Skapar taket eller ersätter det som
+    // finns — schemats UNIQUE (user_id, month, category) gör de två till en
+    // operation på servern, och raderna nedan håller samma invariant i minnet:
+    // den gamla raden för månaden och kategorin tas bort, och en ny läggs sist.
+    //
+    // Svaret är månadens budgetar och inte den enda raden som skrevs, precis som
+    // handleSetBudget i src/server/api.js: spentOre och leftOre kommer ur
+    // readDemoMonth, som är den enda ägaren till formen.
+    const budgetMonth = segmentAfter(pathname, BUDGET_PATH_PREFIX);
+    if (budgetMonth !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'PUT') {
+        return metodStods();
+      }
+      const felManad = kraverManad(budgetMonth);
+      if (felManad !== null) {
+        return felManad;
+      }
+      // Kroppens två fält ägs av validateBudgetDraft i src/core/item.js.
+      // Attrappen läser varken category eller amountSek själv och har ingen egen
+      // lista över kategorier.
+      const result = validateBudgetDraft(draftFrom(body));
+      if (!result.ok) {
+        return fieldErrorSvar(result.errors);
+      }
+      state.budgets = [
+        ...state.budgets.filter(
+          (row) => row.month !== budgetMonth || row.category !== result.value.category
+        ),
+        {
+          id: makeId(),
+          month: budgetMonth,
+          category: result.value.category,
+          amountOre: result.value.amountOre
+        }
+      ];
+      return sparaOch(svar(200, { budgets: readDemoMonth(state, budgetMonth).budgets }));
     }
 
     // GET /api/oversikt/<ÅÅÅÅ-MM>. Samma ordning som api.js: sessionen först,

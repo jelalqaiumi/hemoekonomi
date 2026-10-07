@@ -39,6 +39,16 @@ function choosePlanLabel(plan) {
   return `Välj ${PLAN_LABELS[plan]}`;
 }
 
+// Kvar-beloppets ledtext i budgetkortet [steg 2], ur raden
+// "Mat        4 000,00 kr    kvar 1 240,00 kr" i ARKITEKTUR.md. Beloppet kommer
+// ur svarets leftOre och skrivs av formatSek — ordet är det enda app.js lägger
+// till.
+const BUDGET_LEFT_PREFIX = 'kvar ';
+
+function budgetLeftText(leftOre) {
+  return `${BUDGET_LEFT_PREFIX}${formatSek(leftOre)}`;
+}
+
 const SAVE_LABEL = 'Spara';
 const SAVE_CHANGE_LABEL = 'Spara ändring';
 const EDIT_LABEL = 'Ändra';
@@ -197,14 +207,35 @@ const CATEGORY_FIELD_BLOCK = document.querySelector('#category-field');
 const RECURRING_FIELD_BLOCK = document.querySelector('#recurring-field');
 const MONTH_ONLY_NOTE = document.querySelector('#month-only-note');
 
+// Datum och Kommentar [steg 2], de två fält bara en engångspost har. Blocket
+// döljs i två lägen, båda av samma skäl: en mall har varken en enskild dag eller
+// en enskild kommentar, och en avvikelse bär bara ett belopp. Se
+// updateSingleFields nedan.
+const SINGLE_FIELDS = document.querySelector('#single-fields');
+const OCCURRED_ON_FIELD = document.querySelector('#item-occurred-on');
+const NOTE_FIELD = document.querySelector('#item-note');
+
+// Budgetkortet [steg 2]. Listan ritas ur fältet budgets i månadens svar, och
+// formuläret knappen öppnar skickar PUT /api/budget/<ÅÅÅÅ-MM>.
+const BUDGET_LIST = document.querySelector('#budget-list');
+const ADD_BUDGET = document.querySelector('#add-budget');
+const BUDGET_FORM = document.querySelector('#budget-form');
+const BUDGET_CATEGORY_FIELD = document.querySelector('#budget-category');
+const BUDGET_AMOUNT_FIELD = document.querySelector('#budget-amount');
+const BUDGET_FORM_ERROR = document.querySelector('#budget-form-error');
+const BUDGET_SUBMIT = document.querySelector('#budget-submit');
+const BUDGET_CANCEL = document.querySelector('#budget-cancel');
+
 // Fälten i formuläret, i samma ordning som validateMonthItemDraft rapporterar
 // dem. Fältet kind står inte här: slaget kommer från vilken lista knappen satt i
 // och är inget fält, så ett fieldError för kind har inget element att skrivas
 // vid och hamnar i den allmänna rutan — samma väg som varje annat svar utan
 // fältfel.
+// occurredOn och note står efter de tre första därför att de står där i
+// formuläret, samma ordning som validateMonthItemDraft rapporterar dem [steg 2].
 // interval och toMonth står sist därför att kryssrutan Återkommande öppnar dem
-// under de fyra andra, samma ordning som validateTemplateDraft rapporterar dem.
-const FORM_FIELDS = ['name', 'amountSek', 'category', 'interval', 'toMonth'];
+// under de andra, samma ordning som validateTemplateDraft rapporterar dem.
+const FORM_FIELDS = ['name', 'amountSek', 'category', 'occurredOn', 'note', 'interval', 'toMonth'];
 
 // Formulärets fyra lägen [etapp 4]. Vilken väg en sparning går avgörs av läget,
 // aldrig av kryssrutan — utom i MODE_NEW, där kryssrutan väljer mellan månadens
@@ -241,6 +272,14 @@ let openQuestion = null;
 // Formulärets eget pågående-läge. Knappens disabled duger inte som enda spärr:
 // den stoppar bara klick, och en submit-händelse behöver inte komma från knappen.
 let submitInProgress = false;
+// Budgetformulärets eget pågående-läge, av samma skäl: Enter i beloppsfältet
+// skickar formuläret direkt, förbi den avstängda knappen.
+let budgetSubmitInProgress = false;
+// Om formuläret står i läget Bara <månad>. Satt av setMonthOnlyLayout och läst av
+// updateSingleFields, som behöver både det här läget och kryssrutans: blocket med
+// Datum och Kommentar döljs av vilket som helst av de två, och ett villkor som
+// läste bara det ena hade visat fälten igen så snart det andra ändrades.
+let monthOnlyLayout = false;
 
 function fieldErrorElement(field) {
   return document.querySelector(`#error-${field}`);
@@ -610,11 +649,50 @@ function renderChart(items) {
   CHART.append(svg);
 }
 
+// En rad i budgetkortet [steg 2]: kategorin, taket och vad som är kvar av det.
+//
+// Varje tal kommer ur svarets egna fält — line.amountOre och line.leftOre — och
+// räknas aldrig här. spentOre står inte i raden: kortet visar taket och vad som
+// är kvar, och det utgivna beloppet är differensen mellan de två. Textspärren
+// (78) i tests/app.test.js förbjuder en loop eller en reduce i samma sats som
+// någon av de två beloppscellerna.
+//
+// Kategorinamnet kommer ur CATEGORY_LABELS i src/core/entry.js, precis som i en
+// postrad: ingen svensk kategorietikett skrivs i den här filen.
+function budgetRow(line) {
+  const row = document.createElement('li');
+  row.className = 'item';
+
+  const left = oreFromResponse(line.leftOre);
+  row.append(
+    cell('budget-category', CATEGORY_LABELS[line.category]),
+    cell('budget-amount', formatSek(oreFromResponse(line.amountOre))),
+    // Noll räknas som positivt, samma regel som raden Kvar att leva på, och de
+    // två klasserna är summeringens egna — inga nya färgklasser.
+    cell(left < 0 ? 'budget-left left-negative' : 'budget-left left-positive', budgetLeftText(left))
+  );
+  return row;
+}
+
+// Kortet ritas om vid varje lyckad hämtning. replaceChildren och inte append: en
+// lista som byggs men aldrig töms visar kvar av ett tak som tagits bort, och en
+// andra hämtning skulle då dubblera varje rad.
+//
+// En tom lista ger ett kort med bara knappen. Det är inget tredje tillstånd: en
+// kategori utan tak har ingen rad, och har ingen kategori ett tak finns ingen rad
+// alls att visa.
+function renderBudgets(budgets) {
+  BUDGET_LIST.replaceChildren(...budgets.map(budgetRow));
+}
+
 function renderMonth(body) {
   const items = Array.isArray(body.items) ? body.items : [];
   renderTotals(body.totals ?? {});
   renderLists(items);
   renderChart(items);
+  // budgets står i svaret sedan steg 2. Ett 200 utan fältet ger ett tomt kort i
+  // stället för ett kast, samma regel som items ovan.
+  renderBudgets(Array.isArray(body.budgets) ? body.budgets : []);
 }
 
 // Hämtar månaden och renderar om listorna, summeringen och diagrammet. Varje
@@ -663,6 +741,16 @@ async function changeMonth(month, button) {
 function setRecurring(checked) {
   RECURRING_CHECKBOX.checked = checked;
   RECURRING_FIELDS.hidden = !checked;
+  updateSingleFields();
+}
+
+// Datum och Kommentar [steg 2]. Blocket döljs i två lägen, och båda villkoren
+// står här i stället för hos var sin ägare: en mall har varken en enskild dag
+// eller en enskild kommentar, och i läget Bara <månad> bär kroppen bara
+// amountSek. Att dölja och inte spärra, av samma skäl som namn och kategori i
+// det läget — ett fält vars ändring försvinner tyst är sämre än inget fält.
+function updateSingleFields() {
+  SINGLE_FIELDS.hidden = RECURRING_CHECKBOX.checked || monthOnlyLayout;
 }
 
 // Vilka fält formuläret visar. Bara i läget Bara <månad> skiljer sig vyn: då är
@@ -670,6 +758,8 @@ function setRecurring(checked) {
 // stället för att spärras — ett utgråat fält ser ut som något som kan låsas upp,
 // medan ett fält som inte finns inte väcker frågan.
 function setMonthOnlyLayout(monthOnly) {
+  monthOnlyLayout = monthOnly;
+  updateSingleFields();
   NAME_FIELD_BLOCK.hidden = monthOnly;
   CATEGORY_FIELD_BLOCK.hidden = monthOnly;
   RECURRING_FIELD_BLOCK.hidden = monthOnly;
@@ -705,6 +795,12 @@ function openForm(kind, item, mode) {
     // dolda i varje läge utom MODE_SERIES.
     INTERVAL_FIELD.value = item.interval === null ? '' : item.interval;
     TO_MONTH_FIELD.value = item.toMonth === null ? '' : item.toMonth;
+    // Datum och Kommentar [steg 2]. Båda är null på en post utan dem, och
+    // villkoret prövar typen och inte bara null: ett 200 med en kropp som saknar
+    // fälten ska ge tomma fält och aldrig strängen "undefined" i ett
+    // inmatningsfält, samma regel som renderUser följer.
+    OCCURRED_ON_FIELD.value = typeof item.occurredOn === 'string' ? item.occurredOn : '';
+    NOTE_FIELD.value = typeof item.note === 'string' ? item.note : '';
   }
 
   // Kryssrutan sätts av läget och inte av FORM.reset(): en ändring från och med
@@ -728,10 +824,14 @@ function closeForm() {
   clearFormErrors();
 }
 
-// Månadspostens fyra fält, ur formuläret. Beloppet är den råa strängen ur
-// fältet, orörd: beloppet tolkas på exakt ett ställe i projektet —
-// checkAmountSek, som valideringen anropar på servern.
-function itemDraft() {
+// De fyra fält en månadspost och en mall har gemensamt, ur formuläret. Beloppet
+// är den råa strängen ur fältet, orörd: beloppet tolkas på exakt ett ställe i
+// projektet — checkAmountSek, som valideringen anropar på servern.
+//
+// Funktionen bröts ut i steg 2, av samma skäl som checkSharedFields i
+// src/core/item.js: en månadspost har två fält en mall inte har, så de två
+// utkasten kan inte längre vara det ena plus två fält.
+function sharedDraft() {
   return {
     kind: formKind,
     name: FORM.elements.name.value,
@@ -740,11 +840,21 @@ function itemDraft() {
   };
 }
 
-// Mallens sex fält: månadspostens fyra plus de två kryssrutan öppnar. Ett tomt
+// Månadspostens sex fält: de fyra gemensamma plus Datum och Kommentar [steg 2].
+// Båda skickas som den råa strängen ur fältet; checkOccurredOn och checkNote i
+// src/core/item.js äger frågan vad en tom sträng betyder.
+function itemDraft() {
+  return { ...sharedDraft(), occurredOn: OCCURRED_ON_FIELD.value, note: NOTE_FIELD.value };
+}
+
+// Mallens sex fält: de fyra gemensamma plus de två kryssrutan öppnar. Ett tomt
 // toMonth betyder tills vidare, och checkToMonth i src/core/item.js äger den
 // frågan — strängen skickas orörd, precis som beloppet.
+//
+// Utkastet bär inte occurredOn och note: en mall har dem inte, och kroppen ska
+// inte lova ett fält servern ignorerar.
 function templateDraft() {
-  return { ...itemDraft(), interval: INTERVAL_FIELD.value, toMonth: TO_MONTH_FIELD.value };
+  return { ...sharedDraft(), interval: INTERVAL_FIELD.value, toMonth: TO_MONTH_FIELD.value };
 }
 
 // Vägen, metoden, kroppen och det svar som räknas som lyckat, för formulärets
@@ -814,6 +924,71 @@ async function submitForm(button) {
   } finally {
     button.disabled = false;
     submitInProgress = false;
+  }
+}
+
+// Budgetformuläret [steg 2]: kategori och belopp. Egna funktioner och inte
+// postformulärets lägen — de två formulären har inga fält gemensamt, och ett
+// femte läge i openForm hade gjort varje fält beroende av vilket av korten som
+// öppnade det.
+function openBudgetForm() {
+  BUDGET_FORM.reset();
+  BUDGET_FORM_ERROR.textContent = '';
+  BUDGET_FORM.hidden = false;
+}
+
+function closeBudgetForm() {
+  BUDGET_FORM.hidden = true;
+  BUDGET_FORM.reset();
+  BUDGET_FORM_ERROR.textContent = '';
+}
+
+// Sätter eller ersätter månadens tak för en kategori. Vägen gör de två till en
+// operation, så kroppen behöver inget fält som säger vilket av dem som avses.
+//
+// Svaret bär månadens budgetar, men vyn ritas ändå om ur en hämtning: spentOre
+// och leftOre beror på månadens poster, och kortet och listorna ska aldrig kunna
+// visa två olika månadstillstånd. Samma regel som varje annan ändring i filen.
+//
+// Fältfelen visas i formulärets enda felruta. Svarets error är det första felets
+// text, och de två fälten står bredvid varandra — en egen felruta per fält hade
+// krävt två id:n som inte kan heta error-category och error-amountSek, eftersom
+// postformuläret redan äger dem.
+async function submitBudget(button) {
+  BUDGET_FORM_ERROR.textContent = '';
+
+  button.disabled = true;
+  budgetSubmitInProgress = true;
+  try {
+    let response;
+    try {
+      response = await fetch(`/api/budget/${currentMonth}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: BUDGET_CATEGORY_FIELD.value,
+          amountSek: BUDGET_AMOUNT_FIELD.value
+        })
+      });
+    } catch {
+      BUDGET_FORM_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (response.status === 200) {
+      closeBudgetForm();
+      await loadMonth();
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    BUDGET_FORM_ERROR.textContent = generalText(await readJson(response));
+  } finally {
+    button.disabled = false;
+    budgetSubmitInProgress = false;
   }
 }
 
@@ -1294,12 +1469,21 @@ fillOptions('#item-category', CATEGORY_LABELS);
 // Intervallets fyra alternativ [etapp 4]. Etiketterna ägs av INTERVAL_LABELS i
 // src/core/entry.js, och nycklarna är samma nycklar checkInterval godkänner.
 fillOptions('#item-interval', INTERVAL_LABELS);
+// Budgetformulärets kategorier [steg 2], ur samma CATEGORY_LABELS som
+// postformulärets: ett tak kan därmed bara gälla en kategori valideringen
+// godkänner.
+fillOptions('#budget-category', CATEGORY_LABELS);
 
-// Kryssrutan öppnar och stänger de två fälten. Den skickar inget anrop och rör
+// Kryssrutan öppnar och stänger de två fälten, och döljer samtidigt Datum och
+// Kommentar [steg 2] — en mall har dem inte. Den skickar inget anrop och rör
 // inget annat: vilken väg en sparning går avgörs av formulärets läge, och
 // kryssrutan väljer bara i läget för en ny post.
+//
+// Anropet går genom setRecurring och inte genom en egen rad, så att de tre
+// elementen har en enda ägare. Att sätta checked till det värde rutan redan har
+// ändrar ingenting.
 RECURRING_CHECKBOX.addEventListener('change', () => {
-  RECURRING_FIELDS.hidden = !RECURRING_CHECKBOX.checked;
+  setRecurring(RECURRING_CHECKBOX.checked);
 });
 
 SEND_CODE.addEventListener('click', () => {
@@ -1358,6 +1542,26 @@ for (const kind of ITEM_KINDS) {
     openForm(kind, null, MODE_NEW);
   });
 }
+
+// Budgetkortets knappar [steg 2]. + Sätt tak öppnar formuläret, Avbryt stänger
+// det utan att skicka något anrop.
+ADD_BUDGET.addEventListener('click', () => {
+  openBudgetForm();
+});
+
+BUDGET_CANCEL.addEventListener('click', () => {
+  closeBudgetForm();
+});
+
+BUDGET_FORM.addEventListener('submit', (event) => {
+  event.preventDefault();
+  // Samma spärr och samma skäl som postformulärets: Enter i beloppsfältet
+  // skickar formuläret direkt, förbi den avstängda knappen.
+  if (budgetSubmitInProgress) {
+    return;
+  }
+  void submitBudget(BUDGET_SUBMIT);
+});
 
 FORM.addEventListener('submit', (event) => {
   event.preventDefault();

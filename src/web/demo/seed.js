@@ -52,6 +52,30 @@ const WINTER_ELECTRICITY_ORE = 124000;
 // framåt.
 const SEED_MONTHS_BACK = 1;
 
+// Månadens tak per kategori [steg 2]. Taken ligger i den AKTUELLA månaden, den
+// besökaren möter först: ett tak gäller en månad, så grannmånaderna har inga —
+// precis som en riktig användare som ännu bara satt tak för den månad hen håller
+// på med.
+//
+// Beloppen är valda mot seed-datans utgifter i varje kategori, så att kortet
+// visar båda varianterna utan att besökaren behöver göra något:
+//
+//   housing       Hyra 8 900,00 + El 760,00 = 9 660,00 kr mot taket 9 000,00 kr
+//                 ger ett ÖVERDRAG, alltså ett negativt kvar och left-negative.
+//   other         Mat 6 200,00 kr mot taket 8 000,00 kr ger 1 800,00 kr kvar.
+//                 Lön, Barnbidrag, Buffert och Pension ligger också i other men
+//                 är inkomst och sparande, och spentOre räknar bara utgifter.
+//   subscription  Mobil och bredband 598,00 kr mot taket 700,00 kr ger
+//                 102,00 kr kvar.
+//
+// Är ingen rad negativ syns den röda varianten aldrig i demon, och då visar
+// demon inte det kortet finns för.
+const SEED_BUDGETS = Object.freeze([
+  { category: 'housing', amountOre: 900000 },
+  { category: 'other', amountOre: 800000 },
+  { category: 'subscription', amountOre: 70000 }
+]);
+
 // Demons hela tillstånd, som det ser ut innan besökaren rört något.
 //
 // today är dagens datum på formen ÅÅÅÅ-MM-DD och kommer in som parameter:
@@ -114,7 +138,16 @@ export function createSeedState(today) {
     ],
     // Inga engångsposter i seed-datan: de tio posterna i tabellen är alla
     // återkommande, så en engångspost är det första besökaren själv skapar.
-    monthItems: []
+    monthItems: [],
+    // Månadens tak [steg 2]. Raden bär samma fält som tabellen budgets, utan
+    // created_at: demon har ingen databas, och ingenting i demon läser tiden ett
+    // tak skapades.
+    budgets: SEED_BUDGETS.map((seed) => ({
+      id: `demo-budget-${seed.category}`,
+      month: currentMonth,
+      category: seed.category,
+      amountOre: seed.amountOre
+    }))
   };
 }
 

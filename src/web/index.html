@@ -165,6 +165,32 @@
                 <p class="field-error" id="error-category" role="alert"></p>
               </div>
 
+              <!-- Datum och Kommentar [steg 2], båda valfria. De ligger i ett
+                   eget block med eget id, därför att app.js döljer dem när
+                   kryssrutan Återkommande är ikryssad: en mall har varken en
+                   enskild dag eller en enskild kommentar, och de två fälten
+                   finns inte på en mall. Samma skäl som i läget Bara <månad> —
+                   ett fält vars ändring försvinner tyst är sämre än inget
+                   fält. -->
+              <div id="single-fields">
+                <div class="field">
+                  <label for="item-occurred-on">Datum</label>
+                  <!-- Valfritt: tomt betyder att ingen dag är angiven. Formen
+                       prövas av checkOccurredOn i src/core/item.js, som äger
+                       texten — inget mönster skrivs här. -->
+                  <input id="item-occurred-on" name="occurredOn" type="text" inputmode="numeric" autocomplete="off" />
+                  <p class="field-error" id="error-occurredOn" role="alert"></p>
+                </div>
+
+                <div class="field">
+                  <label for="item-note">Kommentar</label>
+                  <!-- Valfritt. Längden ägs av checkNote i src/core/item.js —
+                       ingen maxlength här, som vore en andra kopia av gränsen. -->
+                  <input id="item-note" name="note" type="text" autocomplete="off" />
+                  <p class="field-error" id="error-note" role="alert"></p>
+                </div>
+              </div>
+
               <!-- Återkommande [etapp 4]. Kryssrutan hör till DET HÄR formuläret
                    och inte till ett andra: samma formulär gäller en engångspost,
                    en mall och en ändring av en enda månad. De två fälten är
@@ -228,6 +254,43 @@
               <p class="empty-state" id="saving-empty"></p>
             </section>
           </div>
+
+          <!-- Budget [steg 2]: en rad per kategori som har ett tak, under
+               utgiftslistan. Raderna kommer ur fältet budgets i
+               GET /api/manad/<ÅÅÅÅ-MM>, där varje rad bär category, amountOre,
+               spentOre och leftOre — app.js räknar ingenting av det själv.
+               En kategori utan tak har ingen rad: den har ingenting att vara
+               kvar av. -->
+          <section class="card" id="budget-card">
+            <h3>Budget</h3>
+            <button type="button" class="add" id="add-budget">+ Sätt tak</button>
+
+            <!-- Det lilla formuläret knappen öppnar: kategori och belopp.
+                 Dolt från början; app.js sätter hidden. Fältfelen från
+                 PUT /api/budget/<ÅÅÅÅ-MM> visas i den enda felrutan — svarets
+                 error är det första felets text, och de två fälten står bredvid
+                 varandra. -->
+            <form id="budget-form" novalidate hidden>
+              <div class="field">
+                <label for="budget-category">Kategori</label>
+                <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
+                     svensk kategorietikett skrivs för hand här. -->
+                <select id="budget-category" name="category"></select>
+              </div>
+
+              <div class="field">
+                <label for="budget-amount">Tak (kr)</label>
+                <input id="budget-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+              </div>
+
+              <p class="form-error" id="budget-form-error" role="alert"></p>
+
+              <button type="submit" class="primary" id="budget-submit">Spara</button>
+              <button type="button" class="secondary" id="budget-cancel">Avbryt</button>
+            </form>
+
+            <ul id="budget-list" class="item-list"></ul>
+          </section>
 
           <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
                utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär

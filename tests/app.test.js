@@ -95,8 +95,11 @@ function post(id, kind, name, amountOre, category, extra = {}) {
   };
 }
 
-function manadssvar(items, totals = NOLLOR) {
-  return { status: 200, json: { items, totals } };
+// budgets står med sedan steg 2, som ett eget argument med den tomma listan som
+// förval: en månad utan satta tak har inga rader, och kortet Budget är då bara
+// sin knapp.
+function manadssvar(items, totals = NOLLOR, budgets = []) {
+  return { status: 200, json: { items, totals, budgets } };
 }
 
 // Startar app.js med en plan för fetch-attrappen och lämnar tillbaka attrappen,
@@ -502,11 +505,17 @@ test('(49) en ny utgift skickas som POST och hämtar om månaden', async (t) => 
   assert.equal(anrop[2].url, MANADSVAG);
   // Slaget kommer från vilken lista knappen satt i och är inget fält. Beloppet
   // skickas som den råa strängen ur formuläret — ingen egen tolkning i app.js.
+  // occurredOn och note står med sedan steg 2 och är tomma strängar när
+  // användaren inte fyllt i dem: checkOccurredOn och checkNote i
+  // src/core/item.js läser en tom sträng som "ingen dag" respektive "ingen
+  // kommentar", precis som checkToMonth läser sitt tomma fält.
   assert.deepEqual(kropp(anrop[2]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
-    category: 'housing'
+    category: 'housing',
+    occurredOn: '',
+    note: ''
   });
 
   // Direktuppdateringen: ett GET för samma månad, och listan växer.
@@ -642,7 +651,9 @@ test('(52) Ändra fyller formuläret och sparar posten med PUT', async (t) => {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
-    category: 'subscription'
+    category: 'subscription',
+    occurredOn: '',
+    note: ''
   });
   // Direktuppdateringen sker också efter en ändring.
   assert.equal(anrop[3].method, 'GET');
@@ -1421,7 +1432,9 @@ test('(66) en engångsposts Ändra öppnar formuläret direkt och raden har inge
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
-    category: 'subscription'
+    category: 'subscription',
+    occurredOn: '',
+    note: ''
   });
 });
 
@@ -2539,4 +2552,425 @@ test('ett misslyckat GET /api/plan efter ett besök lämnar månadsvyns felruta 
   assert.equal(dom.falt('month-view').hidden, false);
   assert.equal(dom.falt('plan-view').hidden, true);
   assert.equal(dom.falt('month-error').textContent, GENERAL_ERROR);
+});
+
+// --------------------------------- (78) till (80) budget och de två nya fälten
+
+// Månadens tak med utfallet, på samma form som budgetLines i
+// src/server/months.js lämnar dem: ören, en rad per kategori som HAR ett tak,
+// och leftOre som får vara negativt. Talen är skrivna och inte uträknade här —
+// app.js ska visa svarets tal och inte en egen differens.
+const BUDGETRADER = Object.freeze([
+  Object.freeze({ category: 'housing', amountOre: 900000, spentOre: 930000, leftOre: -30000 }),
+  Object.freeze({ category: 'transport', amountOre: 150000, spentOre: 42000, leftOre: 108000 }),
+  Object.freeze({ category: 'subscription', amountOre: 40000, spentOre: 0, leftOre: 40000 })
+]);
+
+const BUDGETVAG = `/api/budget/${MANAD}`;
+
+// Ledtexten före kvar-beloppet, skriven tecken för tecken som ägaren i
+// src/web/app.js skriver den (LARDOMAR.md 2026-09-14).
+const BUDGET_LEFT_PREFIX = 'kvar ';
+
+function budgetrader(dom) {
+  return dom.rader('budget-list');
+}
+
+// Cellen Kvar i en budgetrad. Den bär TVÅ klasser — budget-left plus
+// left-positive eller left-negative — så celltext, som jämför hela className,
+// hittar den inte.
+function budgetKvarcell(rad) {
+  const cell = rad.children.find((barn) => barn.className.startsWith('budget-left'));
+  assert.notEqual(cell, undefined, 'budgetraden saknar cellen Kvar');
+  return cell;
+}
+
+function skickaBudgetformularet(dom) {
+  let forhindrad = false;
+  dom.falt('budget-form').utlos('submit', {
+    preventDefault() {
+      forhindrad = true;
+    }
+  });
+  return forhindrad;
+}
+
+test('(78) budgetkortet visar kategorin, taket och vad som är kvar, en rad per satt tak', async (t) => {
+  const { dom } = await starta(t, planInloggad(() => manadssvar([], NOLLOR, BUDGETRADER)));
+
+  const rader = budgetrader(dom);
+  assert.equal(rader.length, 3);
+
+  // Kategorinamnen kommer ur CATEGORY_LABELS i src/core/entry.js. Ingen svensk
+  // kategorietikett står skriven i app.js, och ordningen är svarets: den ägs av
+  // CATEGORIES i src/server/months.js, och app.js sorterar aldrig om.
+  assert.deepEqual(
+    rader.map((rad) => celltext(rad, 'budget-category')),
+    [CATEGORY_LABELS.housing, CATEGORY_LABELS.transport, CATEGORY_LABELS.subscription]
+  );
+
+  // Taket, ur amountOre, skrivet av formatSek.
+  assert.deepEqual(
+    rader.map((rad) => celltext(rad, 'budget-amount')),
+    [formatSek(900000), formatSek(150000), formatSek(40000)]
+  );
+
+  // Kvar, ur leftOre och med ledtexten före beloppet. Överdraget är ett
+  // minusbelopp och inte noll.
+  assert.deepEqual(
+    rader.map((rad) => budgetKvarcell(rad).textContent),
+    [
+      `${BUDGET_LEFT_PREFIX}${formatSek(-30000)}`,
+      `${BUDGET_LEFT_PREFIX}${formatSek(108000)}`,
+      `${BUDGET_LEFT_PREFIX}${formatSek(40000)}`
+    ]
+  );
+});
+
+test('(78) en kategori utan tak har ingen rad, och en månad utan tak visar inga rader', async (t) => {
+  // Två hämtningar: först tre tak, sedan inga. En lista som byggs men aldrig töms
+  // fälls bara av den andra renderingen, vars utgångsläge är den förstas motsats
+  // (LARDOMAR.md 2026-09-12).
+  const svar = ikoordning([
+    manadssvar([], NOLLOR, BUDGETRADER),
+    manadssvar([], NOLLOR, [])
+  ]);
+  const { dom } = await starta(t, planInloggad(svar));
+
+  assert.equal(budgetrader(dom).length, 3);
+  assert.equal(dom.falt('month-next').utlos('click'), true);
+  await flush();
+  assert.equal(budgetrader(dom).length, 0);
+});
+
+const BUDGETCELLER = Object.freeze(['budget-amount', 'budget-left']);
+
+test('(78) app.js räknar aldrig fram budgetkortets tal själv', async () => {
+  const kalla = await fs.readFile(APP_KALLA_PATH, 'utf8');
+
+  // Ingen sats som rör en av budgetradens två beloppsceller får innehålla en
+  // loop, en reduce eller en map: alla tre är sätt att skriva om svarets tal till
+  // en egen summa. Satsen som lägger raderna i listan rör inget av de två
+  // klassnamnen och får därför använda map — den bygger ett element per rad och
+  // kan inte summera något.
+  for (const sats of kalla.split(';')) {
+    const traffar = BUDGETCELLER.filter((namn) => sats.includes(namn));
+    if (traffar.length === 0) {
+      continue;
+    }
+    for (const forbjudet of ['reduce', 'for (', 'for(', '.map(']) {
+      assert.equal(
+        sats.includes(forbjudet),
+        false,
+        `satsen med ${traffar.join(', ')} innehåller ${forbjudet}: ${sats.trim()}`
+      );
+    }
+  }
+
+  // Och båda talen läses ur svarets egna fält.
+  for (const falt of ['amountOre', 'leftOre']) {
+    assert.equal(
+      kalla.includes(`line.${falt}`),
+      true,
+      `app.js läser inte line.${falt} ur svaret`
+    );
+  }
+});
+
+test('(79) ett överdraget tak får left-negative, ett med pengar kvar left-positive', async (t) => {
+  // Tre hämtningar med samma kategori och tre olika utfall. Den andra och tredje
+  // renderingen har den förstas motsats som utgångsläge, så en rad som sätter
+  // klassen men inte räknar om den fälls (LARDOMAR.md 2026-09-12).
+  const tak = (spentOre, leftOre) => [{ category: 'housing', amountOre: 900000, spentOre, leftOre }];
+  const svar = ikoordning([
+    manadssvar([], NOLLOR, tak(930000, -30000)),
+    manadssvar([], NOLLOR, tak(100000, 800000)),
+    // Noll räknas som positivt, samma regel som raden Kvar att leva på: ett tak
+    // som går jämnt upp är inget problem.
+    manadssvar([], NOLLOR, tak(900000, 0))
+  ]);
+  const { dom } = await starta(t, planInloggad(svar));
+
+  assert.equal(budgetKvarcell(budgetrader(dom)[0]).className, 'budget-left left-negative');
+  assert.equal(
+    budgetKvarcell(budgetrader(dom)[0]).textContent,
+    `${BUDGET_LEFT_PREFIX}${formatSek(-30000)}`
+  );
+
+  assert.equal(dom.falt('month-next').utlos('click'), true);
+  await flush();
+  assert.equal(budgetKvarcell(budgetrader(dom)[0]).className, 'budget-left left-positive');
+
+  assert.equal(dom.falt('month-next').utlos('click'), true);
+  await flush();
+  assert.equal(budgetKvarcell(budgetrader(dom)[0]).className, 'budget-left left-positive');
+  assert.equal(
+    budgetKvarcell(budgetrader(dom)[0]).textContent,
+    `${BUDGET_LEFT_PREFIX}${formatSek(0)}`
+  );
+});
+
+test('+ Sätt tak sparar taket med PUT och ritar om kortet ur en hämtning', async (t) => {
+  const svar = ikoordning([
+    manadssvar([], NOLLOR, []),
+    manadssvar([], NOLLOR, BUDGETRADER)
+  ]);
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(svar, () => ({ status: 200, json: { budgets: BUDGETRADER } }))
+  );
+
+  // Formuläret är dolt tills knappen öppnar det, och kortet har inga rader.
+  assert.equal(dom.falt('budget-form').hidden, true);
+  assert.equal(budgetrader(dom).length, 0);
+  assert.equal(dom.falt('add-budget').utlos('click'), true);
+  assert.equal(dom.falt('budget-form').hidden, false);
+
+  dom.falt('budget-category').value = 'housing';
+  dom.falt('budget-amount').value = '9000';
+  assert.equal(skickaBudgetformularet(dom), true);
+  await flush();
+
+  // anrop: 0 GET /api/mig, 1 GET månaden, 2 PUT taket, 3 GET månaden igen.
+  assert.equal(anrop.length, 4);
+  assert.equal(anrop[2].method, 'PUT');
+  assert.equal(anrop[2].url, BUDGETVAG);
+  // Beloppet skickas som den råa strängen ur fältet — ingen egen tolkning i
+  // app.js, precis som för en post.
+  assert.deepEqual(kropp(anrop[2]), { category: 'housing', amountSek: '9000' });
+
+  // Vyn ritas ur hämtningen och aldrig ur svaret på ändringen: spentOre och
+  // leftOre beror på månadens poster, och kortet och listorna ska aldrig visa två
+  // olika månadstillstånd.
+  assert.equal(anrop[3].method, 'GET');
+  assert.equal(anrop[3].url, MANADSVAG);
+  assert.equal(budgetrader(dom).length, 3);
+
+  // Och formuläret är stängt och tömt.
+  assert.equal(dom.falt('budget-form').hidden, true);
+  assert.equal(dom.falt('budget-amount').value, '');
+});
+
+test('ett 400 från budgetvägen visar serverns text och lämnar formuläret öppet', async (t) => {
+  // Texten är ägarens: beloppets står i src/core/entry.js. app.js skriver
+  // svarets text och aldrig en egen.
+  const beloppstext = 'Beloppet måste vara större än 0 kr.';
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({
+      status: 400,
+      json: { error: beloppstext, fieldErrors: [{ field: 'amountSek', message: beloppstext }] }
+    }))
+  );
+
+  dom.falt('add-budget').utlos('click');
+  dom.falt('budget-category').value = 'housing';
+  dom.falt('budget-amount').value = '0';
+  skickaBudgetformularet(dom);
+  await flush();
+
+  assert.equal(dom.falt('budget-form-error').textContent, beloppstext);
+  // Formuläret står kvar med sitt värde: användaren ska kunna rätta beloppet.
+  assert.equal(dom.falt('budget-form').hidden, false);
+  assert.equal(dom.falt('budget-amount').value, '0');
+  // Ingen omhämtning: inget tak skrevs.
+  assert.equal(anrop.length, 3);
+});
+
+test('ett avvisat fetch vid en sparning av ett tak visar den allmänna texten', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => new Error('nätverket svarar inte'))
+  );
+
+  dom.falt('add-budget').utlos('click');
+  dom.falt('budget-amount').value = '9000';
+  skickaBudgetformularet(dom);
+  await flush();
+
+  assert.equal(dom.falt('budget-form-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('budget-form').hidden, false);
+});
+
+test('Avbryt i budgetformuläret stänger det utan att skicka något anrop', async (t) => {
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([])));
+
+  dom.falt('add-budget').utlos('click');
+  dom.falt('budget-amount').value = '9000';
+  assert.equal(dom.falt('budget-cancel').utlos('click'), true);
+
+  assert.equal(dom.falt('budget-form').hidden, true);
+  assert.equal(dom.falt('budget-amount').value, '');
+  assert.equal(anrop.length, 2);
+});
+
+test('budgetknappen är låst tills svaret kommit, så att två snabba klick inte ger två tak', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null)
+  );
+
+  dom.falt('add-budget').utlos('click');
+  dom.falt('budget-category').value = 'housing';
+  dom.falt('budget-amount').value = '9000';
+  skickaBudgetformularet(dom);
+  await flush();
+
+  assert.equal(anrop.length, 3);
+  assert.equal(dom.falt('budget-submit').disabled, true);
+  // Enter i beloppsfältet går förbi den avstängda knappen, så formulärets eget
+  // pågående-läge är spärren.
+  skickaBudgetformularet(dom);
+  await flush();
+  assert.equal(anrop.length, 3);
+
+  anrop[2].svara({ status: 200, json: { budgets: [] } });
+  await flush();
+  assert.equal(dom.falt('budget-submit').disabled, false);
+});
+
+test('(80) kryssrutan Återkommande döljer Datum och Kommentar och visar dem igen', async (t) => {
+  const { dom } = await starta(t, planInloggad(() => manadssvar([])));
+
+  assert.equal(dom.falt('add-expense').utlos('click'), true);
+  // Utgångsläget: en ny engångspost har de två fälten, och mallens två är dolda.
+  assert.equal(dom.falt('single-fields').hidden, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+
+  // Ikryssad: en mall har varken en enskild dag eller en enskild kommentar.
+  kryssaAterkommande(dom, true);
+  assert.equal(dom.falt('single-fields').hidden, true);
+  assert.equal(dom.falt('recurring-fields').hidden, false);
+
+  // Avmarkerad: de två fälten kommer tillbaka.
+  kryssaAterkommande(dom, false);
+  assert.equal(dom.falt('single-fields').hidden, false);
+  assert.equal(dom.falt('recurring-fields').hidden, true);
+});
+
+test('(80) läget Bara månaden döljer också Datum och Kommentar', async (t) => {
+  // En avvikelse bär bara ett belopp, så en inskriven dag och en kommentar går
+  // inte att ändra den vägen — samma skäl som för namn och kategori i (72).
+  const { dom } = await starta(t, planInloggad(() => manadssvar([mallpost()])));
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[1].utlos('click');
+  // Från och med månaden ger en mall: kryssrutan är kryssad, så blocket är dolt
+  // redan av den.
+  assert.equal(dom.falt('single-fields').hidden, true);
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  valen(dom.rader('expense-list')[0])[0].utlos('click');
+  // Bara månaden: kryssrutan är inte kryssad, och blocket är ändå dolt.
+  assert.equal(dom.falt('item-recurring').checked, false);
+  assert.equal(dom.falt('single-fields').hidden, true);
+
+  // Avbryt lägger tillbaka den vanliga vyn: nästa post ska inte öppnas utan de
+  // två fälten.
+  assert.equal(dom.falt('item-cancel').utlos('click'), true);
+  assert.equal(dom.falt('single-fields').hidden, false);
+});
+
+test('Datum och Kommentar fylls i av Ändra och skickas med posten', async (t) => {
+  const kvitto = post('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'expense', 'Bio', 19950, 'subscription', {
+    occurredOn: '2026-09-04',
+    note: 'Kvittot ligger i lådan'
+  });
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([kvitto]), () => ({ status: 200, json: { item: kvitto } }))
+  );
+
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(dom.falt('item-occurred-on').value, '2026-09-04');
+  assert.equal(dom.falt('item-note').value, 'Kvittot ligger i lådan');
+
+  dom.falt('item-note').value = 'Kvittot är bortkastat';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[2].method, 'PUT');
+  assert.deepEqual(kropp(anrop[2]), {
+    kind: 'expense',
+    name: 'Bio',
+    amountSek: '199.5',
+    category: 'subscription',
+    occurredOn: '2026-09-04',
+    note: 'Kvittot är bortkastat'
+  });
+});
+
+test('en post utan de två fälten ger tomma fält, aldrig strängen null eller undefined', async (t) => {
+  // En mallgenererad post bär null på båda, och en post ur ett 200 med en kropp
+  // som saknar fälten bär undefined. Båda ska ge ett tomt fält.
+  const utan = post('ffffffff-ffff-4fff-8fff-ffffffffffff', 'expense', 'Bio', 19950, 'subscription', {
+    occurredOn: null,
+    note: null
+  });
+  const { dom } = await starta(t, planInloggad(() => manadssvar([utan])));
+
+  dom.falt('item-occurred-on').value = '2026-09-04';
+  dom.falt('item-note').value = 'står kvar';
+  knapp(dom.rader('expense-list')[0], 'edit').utlos('click');
+  assert.equal(dom.falt('item-occurred-on').value, '');
+  assert.equal(dom.falt('item-note').value, '');
+});
+
+test('ett 400 med fältfel på Datum och Kommentar visas vid de två fälten', async (t) => {
+  // Texterna är ägarens: båda står i src/core/item.js.
+  const datumtext = 'Datum måste vara ett giltigt datum på formen ÅÅÅÅ-MM-DD, eller lämnas tomt.';
+  const kommentarstext = 'Kommentaren får vara högst 200 tecken.';
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({
+      status: 400,
+      json: {
+        error: datumtext,
+        fieldErrors: [
+          { field: 'occurredOn', message: datumtext },
+          { field: 'note', message: kommentarstext }
+        ]
+      }
+    }))
+  );
+
+  dom.falt('add-expense').utlos('click');
+  fyllFormularet(dom);
+  dom.falt('item-occurred-on').value = '2026-02-30';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(dom.faltfel('occurredOn'), datumtext);
+  assert.equal(dom.faltfel('note'), kommentarstext);
+  // Fältfelen står vid sina fält och inte i den allmänna rutan.
+  assert.equal(dom.falt('item-form-error').textContent, '');
+  assert.equal(dom.falt('item-form-card').hidden, false);
+});
+
+test('en mall skickas utan Datum och Kommentar, också när fälten har värden', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({ status: 201, json: { template: {} } }))
+  );
+
+  dom.falt('add-expense').utlos('click');
+  fyllFormularet(dom);
+  // Fälten fylls i innan rutan kryssas: de döljs då, och deras värden får inte
+  // följa med in i mallens kropp — en mall har inte de två fälten.
+  dom.falt('item-occurred-on').value = '2026-09-04';
+  dom.falt('item-note').value = 'ska inte med';
+  kryssaAterkommande(dom, true);
+  dom.falt('item-interval').value = 'monthly';
+  skickaFormularet(dom);
+  await flush();
+
+  assert.equal(anrop[2].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[2]), {
+    kind: 'expense',
+    name: 'Hyra',
+    amountSek: '1234,50',
+    category: 'housing',
+    interval: 'monthly',
+    toMonth: ''
+  });
 });

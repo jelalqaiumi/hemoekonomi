@@ -9889,3 +9889,60 @@ inte går att ändra.
 | (78) | budgetkortet visar kvar per kategori | tre rader, rätt belopp |
 | (79) | ett överdrag får `left-negative` | klassen finns |
 | (80) | `Återkommande` döljer datum och kommentar | och visar dem igen när rutan avmarkeras |
+
+---
+
+### Rättelser till steg 2 (bindande)
+
+Tre saker byggaren hittade, alla fel i det jag skrev.
+
+#### De två texter som saknades
+
+Avsnittet skrev ut `Kommentaren får vara högst 200 tecken.` men ingen text för
+ett ogiltigt datum och ingen för en kommentar som inte är text. Byggaren fick
+välja dem, byggda på formen hos `toMonthFormat`. De godkänns ordagrant:
+
+| Nyckel | Text |
+|---|---|
+| `occurredOnFormat` | `Datum måste vara ett giltigt datum på formen ÅÅÅÅ-MM-DD, eller lämnas tomt.` |
+| `noteType` | `Kommentaren måste vara text.` |
+
+Datumtexten täcker tre fel i ett — fel form, ogiltigt datum och fel typ —
+eftersom `isValidIsoDate` avgör alla tre i samma fråga. Det är avsiktligt: tre
+texter för samma fält hade gett användaren tre sätt att få veta samma sak.
+
+#### Kravlistans nummer byter prefix
+
+Kravlistan för steg 2 använde `(B1)` till `(B9)`, men `tests/budget.test.js` har
+redan `(B1)` till `(B6)` för `src/core/budget.js`. Två uppsättningar med samma
+nummer i samma projekt gör att nästa läsare slår upp fel punkt.
+
+**Steg 2:s fall heter `(BU1)` till `(BU9)`** — `BU` för budget. Byggaren följde
+den ursprungliga listan och märkte varje testnamn så att de går att skilja åt;
+numren skrivs om i testfilen när någon ändå rör den, inte som en egen ändring.
+
+De sex äldre `(B1)` till `(B6)` behåller sina nummer, eftersom de är äldst och
+ligger i den fil namnet pekar ut.
+
+#### `requireFeature` fanns inte när jag sa att den gjorde det
+
+Min lägesbeskrivning till steg 2:s byggare sade att `requireFeature` var spärren
+varje skyddad väg går genom. Det var falskt: steg 1 stallade innan den byggdes,
+och jag kontrollerade aldrig före jag skrev. Byggaren byggde den enligt
+specifikationen.
+
+Följden står kvar: **(P8) och (P9) är fortfarande obyggbara.** De kräver en väg
+som Bas saknar behörighet till, och `budget` finns i alla tre planerna. De blir
+byggbara i steg 3, när den första Plus-funktionen finns.
+
+Lärdomen är densamma som filen redan bär på nio ställen: ett påstående om vad
+koden innehåller ska köras, inte antas — också när det är jag som skriver det.
+
+#### Två beslut byggaren fattade och som godkänns
+
+**`budgets`-listans ordning** följer `CATEGORIES`, av samma skäl som en månads
+poster sorteras i `ITEM_KINDS` ordning: en lista som byter ordning mellan två
+hämtningar är svår att läsa.
+
+**`validateBudgetDraft` ligger i `src/core/item.js`**, där projektets övriga
+utkastvaliderare bor.

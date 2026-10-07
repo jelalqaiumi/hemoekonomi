@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { monthTotals } from '../src/core/budget.js';
 import { monthOfIsoDate, shiftMonth } from '../src/core/dates.js';
+import { CATEGORY_LABELS } from '../src/core/entry.js';
 import { formatSek } from '../src/core/money.js';
 import { AUTH_MESSAGES, NOT_LOGGED_IN_MESSAGE } from '../src/server/auth.js';
 import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
@@ -196,11 +197,13 @@ test('(D3) de fyra inloggningsvägarna svarar som servern', async () => {
 test('(D3) månadens och postens vägar svarar som servern', async () => {
   const { fetch } = riggning();
 
-  // GET /api/manad/<ÅÅÅÅ-MM>: 200 med items och totals.
+  // GET /api/manad/<ÅÅÅÅ-MM>: 200 med items, totals och budgets. Det tredje
+  // fältet står med sedan steg 2, samma tre fält som handleReadMonth i
+  // src/server/api.js svarar med.
   const manad = await fetch(`/api/manad/${MANAD}`);
   assert.equal(manad.status, 200);
   const kropp = await json(manad);
-  assert.deepEqual(Object.keys(kropp).sort(), ['items', 'totals']);
+  assert.deepEqual(Object.keys(kropp).sort(), ['budgets', 'items', 'totals']);
   assert.deepEqual(Object.keys(kropp.totals).sort(), [
     'expenseOre',
     'incomeOre',
@@ -789,6 +792,24 @@ test('src/web/app.js körd mot attrappen visar demons månad, summor och kategor
   assert.equal(dom.falt('total-saving').textContent, formatSek(totals.savingOre));
   assert.equal(dom.falt('total-left').textContent, formatSek(totals.leftOre));
 
+  // Kortet Budget [steg 2]: en rad per satt tak, ritad ur samma svar. Kedjan är
+  // hel här — seed.js sätter taken, demo-fetch.js svarar med dem och app.js
+  // ritar dem — och housing-raden bär left-negative, eftersom seed-datan har ett
+  // överdrag just där.
+  const budgets = readDemoMonth(state, MANAD).budgets;
+  const budgetrader = dom.rader('budget-list');
+  assert.equal(budgetrader.length, budgets.length);
+  assert.deepEqual(
+    budgetrader.map((rad) => rad.children.map((cell) => cell.textContent)),
+    budgets.map((rad) => [
+      CATEGORY_LABELS[rad.category],
+      formatSek(rad.amountOre),
+      `kvar ${formatSek(rad.leftOre)}`
+    ])
+  );
+  assert.equal(budgetrader[0].children[2].className, 'budget-left left-negative');
+  assert.equal(budgetrader[1].children[2].className, 'budget-left left-positive');
+
   // Raderna: namn, kategori, belopp och märket för en återkommande post.
   const utgifter = dom
     .rader('expense-list')
@@ -1011,4 +1032,230 @@ test('PLAN_LABELS och seed-datans plan hör ihop med PLANS', () => {
   const state = createSeedState(IDAG);
   assert.equal(Object.hasOwn(PLANS, state.plan), true, state.plan);
   assert.equal(PLAN_LABELS[state.plan], 'Bas');
+});
+
+// -------------------------------------------------- budgetvägarna i demon [steg 2]
+
+// Taken i seed-datan, i heltal ören. De skrivs av här för att jämföras mot det
+// attrappen svarar — en seed-fil som tappar en nolla ska fälla ett testfall och
+// inte bara se fel ut på skärmen, samma skäl som beloppen högst upp i filen.
+const TAK_HOUSING_ORE = 900000;
+const TAK_OTHER_ORE = 800000;
+const TAK_SUBSCRIPTION_ORE = 70000;
+// Mat, den enda utgiften i kategorin other i den aktuella månaden.
+const MAT_ORE = 620000;
+// Mobil och bredband, den enda utgiften i subscription.
+const MOBIL_ORE = 59800;
+
+test('seed-datan har tak i den aktuella månaden, och ett av dem är överdraget', async () => {
+  const { state } = riggning();
+
+  // Raderna kommer ur readDemoMonth, alltså ur samma kedja GET-vägen svarar med.
+  const budgets = readDemoMonth(state, MANAD).budgets;
+
+  // Ordningen är CATEGORIES ordning och inte seed-filens: housing, subscription,
+  // other.
+  assert.deepEqual(budgets.map((rad) => rad.category), ['housing', 'subscription', 'other']);
+
+  // Hyra plus El i housing, mot taket: ett överdrag, alltså ett negativt kvar.
+  // Utan det syns den röda varianten aldrig i demon.
+  assert.deepEqual(budgets[0], {
+    category: 'housing',
+    amountOre: TAK_HOUSING_ORE,
+    spentOre: HYRA_ORE + EL_ORE,
+    leftOre: TAK_HOUSING_ORE - (HYRA_ORE + EL_ORE)
+  });
+  assert.equal(budgets[0].leftOre < 0, true, 'housing är överdraget i den aktuella månaden');
+
+  assert.deepEqual(budgets[1], {
+    category: 'subscription',
+    amountOre: TAK_SUBSCRIPTION_ORE,
+    spentOre: MOBIL_ORE,
+    leftOre: TAK_SUBSCRIPTION_ORE - MOBIL_ORE
+  });
+
+  // Lön, Barnbidrag, Buffert och Pension ligger också i other, men spentOre
+  // räknar bara utgifter: bara Mat är med.
+  assert.deepEqual(budgets[2], {
+    category: 'other',
+    amountOre: TAK_OTHER_ORE,
+    spentOre: MAT_ORE,
+    leftOre: TAK_OTHER_ORE - MAT_ORE
+  });
+});
+
+test('ett tak gäller sin månad: grannmånaderna har inga rader', async () => {
+  const { state } = riggning();
+
+  assert.equal(readDemoMonth(state, MANAD).budgets.length, 3);
+  assert.deepEqual(readDemoMonth(state, FOREGAENDE).budgets, []);
+  assert.deepEqual(readDemoMonth(state, NASTA).budgets, []);
+});
+
+test('PUT /api/budget/<månad> svarar med månadens tak och ersätter det som finns', async () => {
+  const { fetch, state } = riggning();
+
+  // Ett nytt tak i en kategori som inte har något: transport. Bilskatten är
+  // halvårsvis och träffar inte den aktuella månaden, så kategorin har noll
+  // utgifter — kvar är då hela taket.
+  const satt = await fetch(`/api/budget/${MANAD}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'transport', amountSek: '1500' })
+  });
+  assert.equal(satt.status, 200);
+  const kropp = await json(satt);
+  // Svaret är månadens budgetar och inte den enda raden som skrevs, precis som
+  // handleSetBudget i src/server/api.js.
+  assert.deepEqual(Object.keys(kropp), ['budgets']);
+  assert.deepEqual(kropp.budgets.map((rad) => rad.category), [
+    'housing',
+    'subscription',
+    'transport',
+    'other'
+  ]);
+  assert.deepEqual(kropp.budgets[2], {
+    category: 'transport',
+    amountOre: 150000,
+    spentOre: 0,
+    leftOre: 150000
+  });
+
+  // Ett andra tak för samma kategori ERSÄTTER det första: en rad, inte två.
+  const igen = await fetch(`/api/budget/${MANAD}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'transport', amountSek: '2000' })
+  });
+  assert.equal(igen.status, 200);
+  const efter = (await json(igen)).budgets.filter((rad) => rad.category === 'transport');
+  assert.equal(efter.length, 1);
+  assert.equal(efter[0].amountOre, 200000);
+  assert.equal(state.budgets.filter((rad) => rad.category === 'transport').length, 1);
+});
+
+test('ett ogiltigt tak ger 400 med fieldErrors, och texterna är fältens ägares', async () => {
+  const { fetch, state } = riggning();
+
+  const svar = await fetch(`/api/budget/${MANAD}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'mat', amountSek: '12 000' })
+  });
+  assert.equal(svar.status, 400);
+  const kropp = await json(svar);
+  // Fältordningen är validateBudgetDraft:s: category, amountSek. Beloppstexten
+  // är checkAmountSek:s vägledande text, ägd av src/core/entry.js.
+  assert.deepEqual(kropp.fieldErrors.map((fel) => fel.field), ['category', 'amountSek']);
+  assert.equal(kropp.fieldErrors[1].message, BELOPPSTEXT);
+  assert.equal(kropp.error, kropp.fieldErrors[0].message);
+  // Inget skrevs: de tre taken ur seed-datan står kvar.
+  assert.equal(state.budgets.length, 3);
+});
+
+test('DELETE /api/budget/<månad>/<kategori> tar bort taket och svarar 404 när det inte finns', async () => {
+  const { fetch, state } = riggning();
+
+  // Samma kategori får ett tak i NÄSTA månad också, innan borttagningen. Utan
+  // det kan inget svar skilja ett filter som läser både månaden och kategorin
+  // från ett som bara läser kategorin — båda tar bort exakt en rad.
+  const grannen = await fetch(`/api/budget/${NASTA}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'housing', amountSek: '9000' })
+  });
+  assert.equal(grannen.status, 200);
+
+  const bort = await fetch(`/api/budget/${MANAD}/housing`, { method: 'DELETE' });
+  assert.equal(bort.status, 204);
+  assert.deepEqual(readDemoMonth(state, MANAD).budgets.map((rad) => rad.category), [
+    'subscription',
+    'other'
+  ]);
+  // Grannmånadens tak för samma kategori är orört: en borttagning gäller en
+  // månad, precis som ett tak gör.
+  assert.deepEqual(readDemoMonth(state, NASTA).budgets.map((rad) => rad.category), ['housing']);
+
+  // En andra borttagning av samma kategori, och en kategori som aldrig haft ett
+  // tak, ger samma svar: 404 med serverns text för något som inte finns.
+  for (const vag of [`/api/budget/${MANAD}/housing`, `/api/budget/${MANAD}/loan`]) {
+    const igen = await fetch(vag, { method: 'DELETE' });
+    assert.equal(igen.status, 404);
+    assert.equal((await json(igen)).error, SERVER_TEXTS.entryNotFound);
+  }
+});
+
+test('budgetvägarna kräver session, rätt månad och rätt metod', async () => {
+  const { fetch, state } = riggning();
+  state.loggedIn = false;
+
+  for (const anrop of [
+    [`/api/budget/${MANAD}`, { method: 'PUT', body: JSON.stringify({ category: 'housing', amountSek: '9000' }) }],
+    [`/api/budget/${MANAD}/housing`, { method: 'DELETE' }]
+  ]) {
+    const utan = await fetch(anrop[0], anrop[1]);
+    assert.equal(utan.status, 401);
+    assert.equal((await json(utan)).error, SERVER_TEXTS.notLoggedIn);
+  }
+
+  state.loggedIn = true;
+
+  // Fel månadsform: 400 med serverns månadstext. Spärren står efter sessionen
+  // och före valideringen, samma ordning som api.js.
+  const felManad = await fetch('/api/budget/2026-13', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'housing', amountSek: '9000' })
+  });
+  assert.equal(felManad.status, 400);
+  assert.equal((await json(felManad)).error, SERVER_TEXTS.invalidMonth);
+
+  const felManadBort = await fetch('/api/budget/2026-13/housing', { method: 'DELETE' });
+  assert.equal(felManadBort.status, 400);
+  assert.equal((await json(felManadBort)).error, SERVER_TEXTS.invalidMonth);
+
+  // Fel metod: 405 med serverns text. GET finns inte på någon av de två vägarna
+  // — månadens svar bär redan budgets.
+  for (const vag of [`/api/budget/${MANAD}`, `/api/budget/${MANAD}/housing`]) {
+    const felMetod = await fetch(vag);
+    assert.equal(felMetod.status, 405);
+    assert.equal((await json(felMetod)).error, SERVER_TEXTS.methodNotAllowed);
+  }
+
+  // En väg med ett tredje led är ingen budgetväg: den faller till 404 med
+  // serverns text för en okänd sökväg, precis som på servern, och blir aldrig en
+  // borttagning av kategorin i mitten.
+  const treLed = await fetch(`/api/budget/${MANAD}/housing/extra`, { method: 'DELETE' });
+  assert.equal(treLed.status, 404);
+  assert.equal((await json(treLed)).error, SERVER_TEXTS.unknownPath);
+  assert.equal(state.budgets.length, 3);
+});
+
+test('ett sparat tillstånd utan budgets kasseras, och demon läser om seed-datan', async () => {
+  const storage = createStorage();
+  const utanBudgets = createSeedState(IDAG);
+  delete utanBudgets.budgets;
+  storage.setItem(STORAGE_KEY, JSON.stringify(utanBudgets));
+
+  // Ett tillstånd som sparades före steg 2 har inget budgets, och ett halvt
+  // använt tillstånd vore ett kast i stället för en lista.
+  assert.equal(readState(storage), null);
+  // Och riggningen faller tillbaka på seed-datan, som har sina tre tak.
+  assert.equal(riggning({ storage }).state.budgets.length, 3);
+});
+
+test('ett tak besökaren satt finns kvar efter en omladdning', async () => {
+  const storage = createStorage();
+  const { fetch } = riggning({ storage });
+
+  await fetch(`/api/budget/${MANAD}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: 'transport', amountSek: '1500' })
+  });
+
+  // En ny riggning med samma lagring är samma sak som en omladdning av sidan.
+  const efter = riggning({ storage }).state.budgets.filter((rad) => rad.category === 'transport');
+  assert.equal(efter.length, 1);
+  assert.equal(efter[0].amountOre, 150000);
 });
