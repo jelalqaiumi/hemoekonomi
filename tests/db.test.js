@@ -23,7 +23,7 @@ import {
   openDatabase
 } from '../src/server/db.js';
 
-const TABLES = ['budgets', 'login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
+const TABLES = ['bills', 'budgets', 'login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
 
 const NOW = '2026-09-25T18:03:00.000Z';
 const USER_ID = 'u1';
@@ -443,9 +443,21 @@ test('en befintlig month_items får occurred_on och note utan att byggas om', ()
       () => migrerad.prepare('UPDATE month_items SET occurred_on = ? WHERE id = ?').run('2026-2-1', 'm-gammal'),
       /CHECK constraint failed: occurred_on IS NULL OR occurred_on GLOB/
     );
-    // Och den nya tabellen skapades i samma öppnande.
+    // Och de tabeller som tillkommit sedan den gamla databasen skapades finns med
+    // i samma öppnande: budgets [steg 2] och bills [steg 3]. CREATE TABLE
+    // IF NOT EXISTS är hela migreringen för en ny TABELL — steget körs bara när
+    // tabellen saknas, och en databas som redan har den rörs inte. Det är skillnaden
+    // mot en ny KOLUMN, som behöver ett eget ALTER TABLE i COLUMN_MIGRATIONS.
+    //
+    // Två skilda frågor med tabellnamnet i SQL-texten och inte en loop med en
+    // parameter: en parametriserad fråga per varv lämnade WAL-filen öppen, och
+    // städningen i finally föll då med EPERM, Permission denied på katalogen (körd).
     assert.equal(
       migrerad.prepare("SELECT COUNT(*) AS antal FROM sqlite_master WHERE type = 'table' AND name = 'budgets'").get().antal,
+      1
+    );
+    assert.equal(
+      migrerad.prepare("SELECT COUNT(*) AS antal FROM sqlite_master WHERE type = 'table' AND name = 'bills'").get().antal,
       1
     );
     migrerad.prepare('UPDATE month_items SET occurred_on = ?, note = ? WHERE id = ?')
@@ -569,7 +581,9 @@ test('att köra schemaskapandet två gånger är ofarligt', () => {
     first.close();
 
     // Samma fil öppnad en andra gång: schemat skapas om, raden finns kvar och
-    // tabellerna är fortfarande de sex.
+    // tabellerna är fortfarande de i TABLES. Ingen siffra i meningen: ett antal i
+    // en mening som inleder en uppräkning blir falskt av nästa tabell
+    // (LARDOMAR.md 2026-09-12).
     const second = openDatabase(filePath);
     assert.equal(second.prepare('SELECT COUNT(*) AS antal FROM users').get().antal, 1);
     const names = second

@@ -187,6 +187,43 @@ CREATE TABLE IF NOT EXISTS budgets (
   created_at  TEXT NOT NULL,
   UNIQUE (user_id, month, category)
 );
+
+-- En räkning: något som ska betalas, och när [steg 3]. En egen tabell och inte
+-- ett fält till på month_items: en månadspost svarar på "vad kostade den här
+-- månaden?" och bär occurred_on, en räkning svarar på "vad ska betalas, och
+-- när?" och bär due_date plus ett tillstånd (ARKITEKTUR.md, tabellen under "En
+-- räkning är inte en månadspost").
+--
+-- interval är NULL för en engångsräkning. Därav IS NULL i CHECK:en: värdelistan
+-- gäller bara när ett värde står där. Listan skrivs för hand i SQL och härleds
+-- inte ur INTERVALS i src/core/entry.js, av samma skäl som plan-kolumnens lista
+-- inte härleds ur PLANS: ett CHECK är text SQLite tolkar. Kopplingen hålls av
+-- (R9) i tests/bills.test.js, som läser villkoret ur sqlite_master.
+--
+-- remind_days är hur många dagar innan förfallodagen påminnelsen visas; 0
+-- betyder på dagen. Gränsen står både här och i kärnan (REMIND_DAYS_MIN och
+-- REMIND_DAYS_MAX i src/core/bill.js) — samma två spärrar i två språk som för
+-- kind och interval: kärnan ger användaren en svensk text och ett 400, schemat
+-- är sista utposten mot ett programmeringsmisstag.
+--
+-- paid_at är tidpunkten räkningen markerades betald, NULL när den är obetald. En
+-- återkommande räkning som betalas får den nollställd igen och ett nytt due_date:
+-- raden är alltså alltid den nästa obetalda, och historiken över betalda
+-- räkningar lagras inte (PLAN.md beslut 4).
+--
+-- Inget eget idx_: ARKITEKTUR.md:s SQL-block är bindande ordagrant och har
+-- ingen indexrad, till skillnad från login_codes, sessions och templates ovan.
+CREATE TABLE IF NOT EXISTS bills (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  amount_ore    INTEGER NOT NULL CHECK (amount_ore > 0),
+  due_date      TEXT NOT NULL CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  interval      TEXT CHECK (interval IS NULL OR interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
+  remind_days   INTEGER NOT NULL DEFAULT 3 CHECK (remind_days >= 0 AND remind_days <= 30),
+  paid_at       TEXT,
+  created_at    TEXT NOT NULL
+);
 `;
 
 // Kolumnen users.plan [steg 1 i del 5]. Står ordagrant som i ARKITEKTUR.md under

@@ -9946,3 +9946,151 @@ hämtningar är svår att läsa.
 
 **`validateBudgetDraft` ligger i `src/core/item.js`**, där projektets övriga
 utkastvaliderare bor.
+
+---
+
+### Räkningar och påminnelser (bindande) [steg 3]
+
+Priskortet lovar `Räkningspåminnelser` på Bas. Ingenting av det finns.
+
+**Datumlogiken ska inte skrivas om.** `src/core/schedule.js` äger sedan paket 7
+`nextDueDate` med klampning för den 29 till 31 och hopp över flera perioder, och
+den är fullt testad. En räkning som återkommer använder den.
+
+#### En räkning är inte en månadspost
+
+De skiljer sig i vad de svarar på:
+
+| | Månadspost | Räkning |
+|---|---|---|
+| Frågan | Vad kostade den här månaden? | Vad ska betalas, och när? |
+| Datum | `occurred_on`, dagen det hände | `due_date`, dagen det förfaller |
+| Tillstånd | inget | betald eller obetald |
+| Hör till | en månad | ett datum |
+
+Därför en egen tabell, inte ett fält till på `month_items`.
+
+```sql
+CREATE TABLE IF NOT EXISTS bills (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  amount_ore    INTEGER NOT NULL CHECK (amount_ore > 0),
+  due_date      TEXT NOT NULL CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  interval      TEXT CHECK (interval IS NULL OR interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
+  remind_days   INTEGER NOT NULL DEFAULT 3 CHECK (remind_days >= 0 AND remind_days <= 30),
+  paid_at       TEXT,
+  created_at    TEXT NOT NULL
+);
+```
+
+`interval` är `NULL` för en engångsräkning. `remind_days` är hur många dagar
+innan förfallodagen påminnelsen visas; `0` betyder på dagen.
+
+`CHECK`-listan för `interval` ska jämföras mot `INTERVALS` i ett testfall, som
+`kind` redan jämförs mot `ITEM_KINDS`.
+
+#### Betald, och vad som händer sedan
+
+`paid_at` är tidpunkten räkningen markerades betald, `NULL` när den är obetald.
+
+**En återkommande räkning som betalas flyttas fram.** `due_date` sätts till nästa
+dragning genom `nextDueDate`, och `paid_at` nollställs. Raden är alltså alltid
+den **nästa** obetalda, och historiken över betalda räkningar lagras inte — det
+är `PLAN.md` beslut 4, som står kvar: appen håller reda på vad som ska dras, inte
+vad som har dragits.
+
+**En engångsräkning som betalas behåller sitt `paid_at`** och faller ur listan
+över kommande.
+
+#### Vad `readBills` svarar
+
+```
+readBills(userId, today) -> [ { id, name, amountOre, dueDate, interval, remindDays, paidAt, daysUntil, status } ]
+```
+
+`daysUntil` räknas med `daysBetween` i `dates.js` — ingen egen räkning.
+
+`status` är ett av tre värden, och **ordningen är bindande, första träff vinner**:
+
+| # | Villkor | `status` |
+|---|---|---|
+| 1 | `paid_at` är satt | `betald` |
+| 2 | `due_date` är före `today` | `forfallen` |
+| 3 | `daysUntil <= remind_days` | `paminnelse` |
+| 4 | annars | `kommande` |
+
+Listan sorteras på `due_date`, därefter namn i svensk ordning, därefter `id` —
+samma kedja som `upcoming` i `schedule.js` redan använder.
+
+`today` är ett argument. **Ingen funktion i datalagret läser klockan.**
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `GET /api/rakningar/<ÅÅÅÅ-MM-DD>` | ingen | `200` med listan. `400` vid fel datumformat. `401`. `500`. |
+| `POST /api/rakningar` | `{ name, amountSek, dueDate, interval, remindDays }` | `201`. `400` med `fieldErrors`. `401`. `500`. |
+| `PUT /api/rakningar/<id>` | samma | `200`. `400`. `401`. `404`. `500`. |
+| `POST /api/rakningar/<id>/betald` | `{ today }` | `200` med räkningen efter flytten. `401`. `404`. `500`. |
+| `DELETE /api/rakningar/<id>` | ingen | `204`. `401`. `404`. `500`. |
+
+Dagens datum står i sökvägen respektive kroppen i stället för att läsas på
+servern, av samma skäl som månaden gör det: en funktion som läser klockan går
+inte att testa.
+
+Alla fem går genom `requireFeature` med `billReminders`, som finns i alla tre
+planerna.
+
+#### Gränssnittet
+
+**Ett kort `Räkningar` i månadsvyn**, över budgetkortet. En rad per räkning som
+inte är betald, med namn, belopp, förfallodag och dagtext:
+
+| `status` | Utseende |
+|---|---|
+| `forfallen` | Röd text, `Förföll <N> dagar sedan` |
+| `paminnelse` | Guldram, `Förfaller om <N> dagar` eller `Förfaller idag` |
+| `kommande` | Vanlig, `Förfaller <datum>` |
+
+Varje rad har knappen `Betald`. En återkommande räkning som markeras betald
+visas direkt med sin nya förfallodag — användaren ska se att den kommer igen.
+
+En knapp `+ Ny räkning` öppnar ett formulär med namn, belopp, förfallodag,
+intervall (eller `Engångs`) och `Påminn mig <N> dagar innan`.
+
+**Dagtexterna ägs av en funktion i `src/core/`**, inte av `app.js`, eftersom de
+är användarvänd text som räknas fram ur ett tal — samma skäl som gav `daysText`
+sin plats.
+
+#### Kravlista [steg 3]
+
+`tests/bills.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (R1) | de fyra statusvärdena | ett fall per rad i tabellen, i rätt ordning |
+| (R2) | `betald` vinner över `forfallen` | en betald räkning som förfallit är `betald` |
+| (R3) | en återkommande räkning flyttas fram | `due_date` till nästa dragning, `paid_at` nollställd |
+| (R4) | klampningen följer med | en räkning den 31 januari, månadsvis, ger 28 eller 29 februari |
+| (R5) | en engångsräkning blir kvar betald | `paid_at` satt, faller ur kommande |
+| (R6) | sorteringen | datum, namn i svensk ordning, id |
+| (R7) | `remind_days` styr `paminnelse` | gränsen prövad på båda sidor |
+| (R8) | en annan användares räkningar syns inte | |
+| (R9) | `CHECK`-listan är `INTERVALS` | läst ur `sqlite_master` |
+
+`tests/bill-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (R10) | de fem vägarna | statuskoderna i tabellen |
+| (R11) | fel datumformat ger `400` | och når aldrig datalagret |
+| (R12) | `betald` på någon annans räkning ger `404` | samma svar som för ett okänt id |
+
+`tests/app.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (81) | kortet visar de tre utseendena | förfallen, påminnelse, kommande |
+| (82) | `Betald` flyttar fram en återkommande | den nya förfallodagen syns |
+| (83) | en betald engångsräkning försvinner ur listan | |

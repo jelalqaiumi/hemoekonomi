@@ -4,7 +4,8 @@
 // Beloppet tolkas på exakt ett ställe i projektet: createEntry i src/core/entry.js.
 // Den här filen gör ingen parseFloat, ingen Number() och ingen trimning av ett
 // belopp — råvärdet ur anropets JSON skickas vidare orört.
-import { isValidIsoMonth, nowIso } from '../core/dates.js';
+import { validateBillDraft } from '../core/bill.js';
+import { isValidIsoDate, isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
 import { validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
 import { FEATURES, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../core/plans.js';
@@ -20,6 +21,7 @@ import {
   setPlan,
   verifyCode
 } from './auth.js';
+import { addBill, markBillPaid, readBills, removeBill, updateBill } from './bills.js';
 import { getDatabase } from './db.js';
 import {
   addMonthItem,
@@ -56,7 +58,15 @@ const MESSAGES = Object.freeze({
   // Texten för en plan som inte står i PLANS [steg 1 i del 5]. Står under
   // "Byta plan" i ARKITEKTUR.md och nämner de tre svenska namnen, aldrig de
   // engelska nycklarna bas, plus och premium — användaren ser aldrig dem.
-  invalidPlan: 'Välj Bas, Plus eller Premium.'
+  invalidPlan: 'Välj Bas, Plus eller Premium.',
+  // De två texterna för räkningarnas vägar [steg 3]. invalidToday gäller både
+  // dagens datum i sökvägen (GET) och i kroppen (POST .../betald): det är samma
+  // fält med samma regel, och två texter för samma fråga vore två facit.
+  invalidToday: 'Dagens datum måste anges som ÅÅÅÅ-MM-DD.',
+  // Egen text och inte entryNotFound: det är en räkning som inte finns, inte en
+  // post. Samma text för "finns inte" och "tillhör någon annan", med flit —
+  // användaren ska inte kunna se skillnad på de två, och det är (R12).
+  billNotFound: 'Räkningen finns inte.'
 });
 
 const API_PREFIX = '/api/';
@@ -93,6 +103,20 @@ const PLAN_PATH = '/api/plan';
 // /api/budget/<ÅÅÅÅ-MM>/<kategori>. Ordet budget är detsamma på svenska och
 // engelska, precis som plan, så adressen behöver ingen översättning.
 const BUDGET_PATH_PREFIX = '/api/budget/';
+
+// Räkningarnas vägar [steg 3]: /api/rakningar och /api/rakningar/<led>.
+// Adressen är svensk, precis som månadens och inloggningens.
+//
+// Det enda ledet efter prefixet betyder olika saker för olika metoder, och det
+// är avsiktligt: GET läser listan och ledet är då dagens datum, medan PUT och
+// DELETE gäller en enskild räkning och ledet är dess id. De två kan inte
+// förväxlas, eftersom metoden avgör vilken av dem som gäller innan ledet läses.
+const BILLS_PATH = '/api/rakningar';
+const BILL_PATH_PREFIX = '/api/rakningar/';
+// Sista ledet i /api/rakningar/<id>/betald. Står som en konstant och inte som en
+// literal i matchningen, av samma skäl som ITEM_MONTH_SEGMENT: två stavningar av
+// samma svenska ord hade kunnat glida isär.
+const BILL_PAID_SEGMENT = 'betald';
 
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
@@ -220,6 +244,24 @@ function budgetCategoryFromPath(pathname) {
   return { month: parts[0], category: parts[1] };
 }
 
+// Id:t i /api/rakningar/<id>/betald, eller null när sökvägen inte har den formen
+// [steg 3]. Samma regler som segmentAfter och itemMonthFromPath: ingen trimning,
+// ingen avkodning, och ett tomt led är ingen väg alls.
+//
+// Vägen går inte att matcha med segmentAfter, som avvisar varje led som innehåller
+// ett snedstreck — det är just det som gör att /api/rakningar/<id> och den här
+// vägen inte kan förväxlas med varandra.
+function billPaidFromPath(pathname) {
+  if (!pathname.startsWith(BILL_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(BILL_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] !== BILL_PAID_SEGMENT) {
+    return null;
+  }
+  return parts[0];
+}
+
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
 //
 // now är tidsstämpeln anropet ska räknas mot, injicerad av samma skäl som
@@ -275,6 +317,49 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     }
     if (req.method === 'PUT') {
       await handleChangePlan(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === BILLS_PATH) {
+    if (req.method === 'POST') {
+      await handleCreateBill(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Prövas före den enkla /api/rakningar/<led>, fastän ordningen inte avgör
+  // något: segmentAfter svarar null för en sökväg med fler än ett led, så de två
+  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
+  // den är den mer specifika — samma ordning som för postens två vägar nedan.
+  const paidBillId = billPaidFromPath(pathname);
+  if (paidBillId !== null) {
+    if (req.method === 'POST') {
+      await handleMarkBillPaid(req, res, now, paidBillId);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Ett led, tre metoder. Ledet är dagens datum för GET och räkningens id för
+  // PUT och DELETE; se kommentaren vid BILL_PATH_PREFIX.
+  const billSegment = segmentAfter(pathname, BILL_PATH_PREFIX);
+  if (billSegment !== null) {
+    if (req.method === 'GET') {
+      handleReadBills(req, res, now, billSegment);
+      return true;
+    }
+    if (req.method === 'PUT') {
+      await handleUpdateBill(req, res, now, billSegment);
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      handleDeleteBill(req, res, now, billSegment);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -972,6 +1057,214 @@ async function handleSetMonthOverride(req, res, now, templateId, month) {
 // ska inte skickas tillbaka vid nästa anrop. Ägaren till svaret: det stod
 // skrivet för hand i handleMe fram till etapp 3, och månadens vägar behöver
 // samma svar.
+// ---------------------------------------------------------------------------
+// Räkningarnas fem vägar [steg 3]. Tabellen under "API-vägar" i ARKITEKTUR.md är
+// facit för statuskoderna.
+//
+// Alla fem går genom requireFeature med 'billReminders'. Funktionen står i alla
+// tre planerna, så 403-grenen har ingen nåbar indata — precis som för budgetens
+// vägar, och av samma skäl skriven ändå: vägen går genom spärren så att den dagen
+// något ändras finns kontrollen på plats. Se kommentaren vid requireFeature.
+//
+// Ordningen är den bindande: sessionsspärren, behörigheten, datumspärren,
+// valideringen, sedan datalagret. En utan session ska få 401 och inte 403, och
+// ett ogiltigt datum ska aldrig bli en SQL-fråga.
+//
+// Dagens datum står i sökvägen respektive i kroppen och läses aldrig på servern,
+// av samma skäl som månaden gör det: en funktion som läser klockan går inte att
+// testa. now är sessionens tidsstämpel och inte dagens datum — de två hålls isär.
+// ---------------------------------------------------------------------------
+
+// Sessions- och behörighetsspärren, gemensam för räkningarnas fem vägar. Svaret är
+// sessionen, eller null när funktionen redan har svarat klienten.
+//
+// Byggd som en funktion varje väg går genom och aldrig som en kontroll upprepad
+// per väg: en upprepad kontroll är en som glöms på en väg (ARKITEKTUR.md under
+// "Behörigheten på servern").
+function billSessionOrNull(req, res, now) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return null;
+  }
+  const denied = requireFeature(session, 'billReminders');
+  if (denied !== null) {
+    sendJson(res, 403, denied);
+    return null;
+  }
+  return session;
+}
+
+// GET /api/rakningar/<ÅÅÅÅ-MM-DD>. 200 med listan, 400 vid fel datumformat, 401
+// utan session, 403 utan behörighet, 500 vid DatabaseError.
+//
+// Datumet prövas här fastän readBills prövar det igen — ett ogiltigt datum ska bli
+// ett 400 med den svenska texten ur MESSAGES och aldrig ett 500 med ett
+// RangeError-meddelande som namnger en funktion i datalagret. Samma förhållande
+// som mellan handleReadOverview och readOverview.
+//
+// isValidIsoDate i src/core/dates.js äger frågan, och det här lagret skriver inget
+// eget datummönster.
+function handleReadBills(req, res, now, today) {
+  const session = billSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  if (!isValidIsoDate(today)) {
+    sendJson(res, 400, { error: MESSAGES.invalidToday });
+    return;
+  }
+  let bills;
+  try {
+    bills = readBills(session.userId, today);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { bills });
+}
+
+// POST /api/rakningar. 201 med räkningen, 400 med fieldErrors, 401, 403, 500.
+//
+// Kroppens fem fält ägs av validateBillDraft i src/core/bill.js. Det här lagret
+// läser varken beloppet, förfallodagen eller intervallet självt, och har ingen
+// egen lista över intervall.
+//
+// Svaret bär ingen status och inget daysUntil: de två kräver ett dagens datum, och
+// kroppen har inget. Gränssnittet hämtar listan om efter en sparning, precis som
+// det gör för en månadspost.
+async function handleCreateBill(req, res, now) {
+  const session = billSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
+  // array, en sträng — hanteras av validateBillDraft och ger fältfel.
+  const result = validateBillDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let bill;
+  try {
+    bill = addBill(session.userId, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 201, { bill });
+}
+
+// PUT /api/rakningar/<id>. 200 med räkningen, 400 med fieldErrors, 401, 403,
+// 404 när räkningen inte finns eller tillhör någon annan, 500. Samma kropp och
+// samma ordning som POST.
+async function handleUpdateBill(req, res, now, billId) {
+  const session = billSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const result = validateBillDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let bill;
+  try {
+    bill = updateBill(session.userId, billId, result.value);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (bill === null) {
+    sendJson(res, 404, { error: MESSAGES.billNotFound });
+    return;
+  }
+  sendJson(res, 200, { bill });
+}
+
+// POST /api/rakningar/<id>/betald. 200 med räkningen efter flytten, 400 vid en
+// kropp som inte går att tolka eller ett today som inte är ett datum, 401, 403,
+// 404, 500.
+//
+// Dagens datum står i kroppen och läses aldrig på servern. Det behövs för att en
+// återkommande räkning som betalas sent ska flyttas till den första dragningen
+// framåt i stället för till en som redan har passerat.
+//
+// Svaret bär räkningen efter flytten: för en återkommande den nya förfallodagen
+// med paidAt = null, för en engångsräkning samma förfallodag med en tidsstämpel.
+// Användaren ska se att en återkommande räkning kommer igen.
+async function handleMarkBillPaid(req, res, now, billId) {
+  const session = billSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // Samma spärr och samma text som för datumet i GET:ens sökväg: det är samma
+  // fält med samma regel. Valfri kedjning och inte en objektkontroll — en kropp
+  // som är null, en sträng eller en array ger undefined, och undefined är inget
+  // datum.
+  const today = body?.today;
+  if (!isValidIsoDate(today)) {
+    sendJson(res, 400, { error: MESSAGES.invalidToday });
+    return;
+  }
+  let bill;
+  try {
+    bill = markBillPaid(session.userId, billId, today, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (bill === null) {
+    // (R12): samma statuskod och samma text som för ett id som aldrig funnits.
+    sendJson(res, 404, { error: MESSAGES.billNotFound });
+    return;
+  }
+  sendJson(res, 200, { bill });
+}
+
+// DELETE /api/rakningar/<id>. 204, 401, 403, 404 när räkningen inte finns eller
+// tillhör någon annan, 500.
+//
+// Vägen har ingen kropp och därför ingen 400 — vad som ska hända står i metoden
+// och i sökvägen. Funktionen är inte async av just det skälet: den väntar inte på
+// readBody.
+function handleDeleteBill(req, res, now, billId) {
+  const session = billSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  let removed;
+  try {
+    // Beslutet "finns räkningen?" fattas av SQL:s WHERE med user_id = ?, inte av
+    // en läsning före: en räkning som tillhör någon annan matchar då ingen rad,
+    // och svaret blir detsamma som för ett id som aldrig funnits.
+    removed = removeBill(session.userId, billId);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!removed) {
+    sendJson(res, 404, { error: MESSAGES.billNotFound });
+    return;
+  }
+  res.writeHead(204);
+  res.end();
+}
+
 function sendUnauthorized(res, message) {
   const text = JSON.stringify({ error: message });
   res.writeHead(401, {
