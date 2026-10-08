@@ -23,7 +23,11 @@ import {
   openDatabase
 } from '../src/server/db.js';
 
-const TABLES = ['bills', 'budgets', 'login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
+// Alfabetisk ordning, som frågan mot sqlite_master sorterar i. goal_deposits och
+// goals tillkom i steg 4. Inget antal i någon mening om listan: ett antal i en
+// mening som inleder en uppräkning blir falskt av nästa tabell
+// (LARDOMAR.md 2026-09-12).
+const TABLES = ['bills', 'budgets', 'goal_deposits', 'goals', 'login_codes', 'month_items', 'overrides', 'sessions', 'templates', 'users'];
 
 const NOW = '2026-09-25T18:03:00.000Z';
 const USER_ID = 'u1';

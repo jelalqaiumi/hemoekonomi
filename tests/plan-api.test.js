@@ -4,11 +4,20 @@
 //
 // Kravlistan i ARKITEKTUR.md under "Del 5: planer och behörighet" har sex punkter
 // för den här filen, (P8) till (P13). Tre av dem är byggda här: (P11), (P12) och
-// (P13). (P8), (P9) och (P10):s 403-hälft kräver en väg som är skyddad av en
-// Plus-funktion, och ARKITEKTUR.md namnger ingen sådan väg — ingen av de
-// befintliga vägarna står i filen med en funktionsnyckel. De tre punkterna är
-// därför lämnade tillbaka till arkitekten i stället för byggda mot en gissad
-// koppling mellan väg och funktion. Se paketets redovisning.
+// (P13).
+//
+// (P8), (P9) och (P10):s 403-hälft krävde en väg som är skyddad av en
+// Plus-funktion, och när den här filen skrevs namngav ARKITEKTUR.md ingen sådan
+// väg — ingen av de då befintliga vägarna stod i filen med en funktionsnyckel Bas
+// saknar. De tre punkterna lämnades därför tillbaka till arkitekten i stället för
+// byggda mot en gissad koppling mellan väg och funktion.
+//
+// Steg 4 gav dem en väg: savingsGoals står i PLANS.plus, och sparmålens fem vägar
+// går genom requireFeature med den nyckeln. (P8) och (P9) är byggda i
+// tests/goal-api.test.js, där 403-grenen prövas med en riktig Bas-session och
+// 200-grenen med en Plus-session. (P10):s 403-hälft prövas av samma fil, genom
+// fallet "(P8) en utan session får 401 och inte 403, också på en Plus-väg", som
+// visar att sessionsspärren står före behörigheten.
 //
 // Ingen tid läses ur klockan: now skickas in i varje anrop.
 import assert from 'node:assert/strict';

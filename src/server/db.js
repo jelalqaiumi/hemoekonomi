@@ -234,6 +234,54 @@ CREATE TABLE IF NOT EXISTS bills (
   paid_at       TEXT,
   created_at    TEXT NOT NULL
 );
+
+-- Ett sparmål [steg 4]. Den första funktionen Bas saknar: sparmålens fem vägar i
+-- api.js går genom requireFeature med 'savingsGoals', som står i PLANS.plus och
+-- inte i PLANS.bas. Därmed får 403-grenen i requireFeature sin första nåbara
+-- indata, och (P8) och (P9) blir byggbara.
+--
+-- target_date är valfritt. Utan det finns ingen slutmånad att räkna mot, och
+-- readGoals svarar null för både monthsLeft och perMonthOre — ett mål utan
+-- slutdatum har ingen månadstakt och kan inte vara försenat.
+--
+-- Mönstret står som ett GLOB, precis som för due_date i bills och occurred_on i
+-- month_items. Formatets ägare i kärnan är ISO_DATE_PATTERN i src/core/dates.js;
+-- GLOB:en här är samma två spärrar i två språk som för kind och interval —
+-- kärnan ger användaren en svensk text och ett 400, schemat är sista utposten
+-- mot ett programmeringsmisstag. Ett GLOB avgör bara formen och aldrig att
+-- datumet finns i kalendern; den frågan ägs av isValidIsoDate.
+--
+-- Inget eget idx_: ARKITEKTUR.md:s SQL-block är bindande ordagrant och har ingen
+-- indexrad, precis som för bills och budgets.
+CREATE TABLE IF NOT EXISTS goals (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  target_ore  INTEGER NOT NULL CHECK (target_ore > 0),
+  target_date TEXT CHECK (target_date IS NULL OR target_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  created_at  TEXT NOT NULL
+);
+
+-- En insättning på ett sparmål [steg 4].
+--
+-- CHECK (amount_ore <> 0) och inte > 0: en insättning kan vara negativ. Den som
+-- tar ut pengar ur sitt sparande ska kunna registrera det, annars visar målet
+-- mer än som finns. Noll är däremot meningslöst och avvisas — av kärnan med en
+-- svensk text, och här som sista utpost. Det är (S9).
+--
+-- Två främmandenycklar och inte en: goal_id knyter raden till målet, user_id till
+-- kontot. Den andra är inte överflödig — varje WHERE i goals.js bär user_id = ?,
+-- och utan kolumnen hade en insättning bara gått att knyta till en användare
+-- genom en join. ON DELETE CASCADE på goal_id är (S10): ett borttaget mål tar
+-- sina insättningar med sig.
+CREATE TABLE IF NOT EXISTS goal_deposits (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id     TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore <> 0),
+  made_on     TEXT NOT NULL CHECK (made_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  created_at  TEXT NOT NULL
+);
 `;
 
 // Kolumnen users.plan [steg 1 i del 5]. Står ordagrant som i ARKITEKTUR.md under

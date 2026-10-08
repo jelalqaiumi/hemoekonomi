@@ -7,6 +7,7 @@
 import { validateBillDraft } from '../core/bill.js';
 import { isValidIsoDate, isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
+import { validateDepositDraft, validateGoalDraft } from '../core/goal.js';
 import { validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
 import { FEATURES, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../core/plans.js';
 import {
@@ -23,6 +24,7 @@ import {
 } from './auth.js';
 import { addBill, markBillPaid, readBills, removeBill, updateBill } from './bills.js';
 import { getDatabase } from './db.js';
+import { addDeposit, addGoal, readGoals, removeGoal, updateGoal } from './goals.js';
 import {
   addMonthItem,
   addTemplate,
@@ -66,7 +68,12 @@ const MESSAGES = Object.freeze({
   // Egen text och inte entryNotFound: det är en räkning som inte finns, inte en
   // post. Samma text för "finns inte" och "tillhör någon annan", med flit —
   // användaren ska inte kunna se skillnad på de två, och det är (R12).
-  billNotFound: 'Räkningen finns inte.'
+  billNotFound: 'Räkningen finns inte.',
+  // Sparmålens egen text [steg 4]. Egen och inte billNotFound av samma skäl som
+  // den inte är entryNotFound: det är ett sparmål som inte finns. Samma text för
+  // "finns inte" och "tillhör någon annan", med flit — och samma text för ett
+  // okänt mål på insättningsvägen, eftersom det är samma fråga.
+  goalNotFound: 'Sparmålet finns inte.'
 });
 
 const API_PREFIX = '/api/';
@@ -117,6 +124,20 @@ const BILL_PATH_PREFIX = '/api/rakningar/';
 // literal i matchningen, av samma skäl som ITEM_MONTH_SEGMENT: två stavningar av
 // samma svenska ord hade kunnat glida isär.
 const BILL_PAID_SEGMENT = 'betald';
+
+// Sparmålens vägar [steg 4]: /api/sparmal, /api/sparmal/<led> och
+// /api/sparmal/<id>/insattning. Adressen är svensk, precis som räkningarnas.
+//
+// Det enda ledet efter prefixet betyder olika saker för olika metoder, precis som
+// för räkningarna: GET läser listan och ledet är då dagens datum, medan PUT och
+// DELETE gäller ett enskilt sparmål och ledet är dess id. De två kan inte
+// förväxlas, eftersom metoden avgör vilken av dem som gäller innan ledet läses.
+const GOALS_PATH = '/api/sparmal';
+const GOAL_PATH_PREFIX = '/api/sparmal/';
+// Sista ledet i /api/sparmal/<id>/insattning. Står som en konstant och inte som en
+// literal i matchningen, av samma skäl som BILL_PAID_SEGMENT: två stavningar av
+// samma svenska ord hade kunnat glida isär.
+const GOAL_DEPOSIT_SEGMENT = 'insattning';
 
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
@@ -262,6 +283,24 @@ function billPaidFromPath(pathname) {
   return parts[0];
 }
 
+// Id:t i /api/sparmal/<id>/insattning, eller null när sökvägen inte har den formen
+// [steg 4]. Samma regler och samma skäl som billPaidFromPath ovan: ingen trimning,
+// ingen avkodning, och ett tomt led är ingen väg alls.
+//
+// Vägen går inte att matcha med segmentAfter, som avvisar varje led som innehåller
+// ett snedstreck — det är just det som gör att /api/sparmal/<id> och den här vägen
+// inte kan förväxlas med varandra.
+function goalDepositFromPath(pathname) {
+  if (!pathname.startsWith(GOAL_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(GOAL_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] !== GOAL_DEPOSIT_SEGMENT) {
+    return null;
+  }
+  return parts[0];
+}
+
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
 //
 // now är tidsstämpeln anropet ska räknas mot, injicerad av samma skäl som
@@ -360,6 +399,49 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     }
     if (req.method === 'DELETE') {
       handleDeleteBill(req, res, now, billSegment);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === GOALS_PATH) {
+    if (req.method === 'POST') {
+      await handleCreateGoal(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Prövas före den enkla /api/sparmal/<led>, av samma skäl och i samma ordning
+  // som räkningarnas två vägar: segmentAfter svarar null för en sökväg med fler än
+  // ett led, så de två matchningarna kan inte båda vara sanna, och den mer
+  // specifika vägen står först.
+  const depositGoalId = goalDepositFromPath(pathname);
+  if (depositGoalId !== null) {
+    if (req.method === 'POST') {
+      await handleCreateDeposit(req, res, now, depositGoalId);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Ett led, tre metoder. Ledet är dagens datum för GET och sparmålets id för PUT
+  // och DELETE; se kommentaren vid GOAL_PATH_PREFIX.
+  const goalSegment = segmentAfter(pathname, GOAL_PATH_PREFIX);
+  if (goalSegment !== null) {
+    if (req.method === 'GET') {
+      handleReadGoals(req, res, now, goalSegment);
+      return true;
+    }
+    if (req.method === 'PUT') {
+      await handleUpdateGoal(req, res, now, goalSegment);
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      handleDeleteGoal(req, res, now, goalSegment);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -546,16 +628,22 @@ function sessionUserId(req, res, now) {
 // 401 och inte 403 — annars avslöjar svaret vilka funktioner som finns för den
 // som inte är inloggad.
 //
-// Grenen som ger ett 403 har i dag ingen nåbar indata: den enda skyddade vägen är
-// budgetens, och budget står i alla tre planerna, så hasFeature är true för varje
-// plan en session kan bära (körd: bas, plus och premium ger alla true). Mutation
-// "ta bort if-satsen" överlever därför hela sviten, och det är väntat —
-// ARKITEKTUR.md skriver ut skälet: vägen går ändå genom spärren "så att den dagen
-// något ändras finns kontrollen på plats". Samma form som user_id = ? i
-// SQL_TEMPLATE_BY_ID i months.js, som också står för en regel och inte för ett
-// nåbart fall. Raden går inte att pröva med en riktig session förrän en väg
-// skyddas av en funktion som inte finns i Bas; (P8) och (P9) i ARKITEKTUR.md är
-// kvar hos arkitekten av exakt det skälet.
+// Grenen som ger ett 403 har en nåbar indata sedan steg 4. Fram till dess var den
+// enda skyddade vägen budgetens och räkningarnas, och båda funktionerna står i alla
+// tre planerna, så hasFeature var true för varje plan en session kan bära — mutation
+// "ta bort if-satsen" överlevde hela sviten, och ARKITEKTUR.md skrev ut skälet:
+// vägen gick ändå genom spärren "så att den dagen något ändras finns kontrollen på
+// plats".
+//
+// Den dagen är steg 4. savingsGoals står i PLANS.plus och inte i PLANS.bas, så
+// sparmålens fem vägar ger 403 för en Bas-användare och 200 för en Plus-användare.
+// Mutation: if (hasFeature(session.plan, feature)) -> if (true) ger
+// node --test "tests/goal-api.test.js" med EXIT=1, fail 3, och kryssraderna
+// ✖ (P8) Bas får 403 på varje sparmålsväg, med feature och requiredPlan i svaret
+// ✖ (P9) Plus får 200 på samma sparmålsväg där Bas fick 403
+// ✖ (S12) ett sparmål skapat på Plus är kvar efter ned- och uppgradering
+// (körd i en kopia av trädet, aldrig i src/). (P8) och (P9), som stod som
+// obyggbara i steg 1, är byggda i den filen.
 function requireFeature(session, feature) {
   if (hasFeature(session.plan, feature)) {
     return null;
@@ -1263,6 +1351,218 @@ function handleDeleteBill(req, res, now, billId) {
   }
   res.writeHead(204);
   res.end();
+}
+
+// ---------------------------------------------------------------------------
+// Sparmålens fem vägar [steg 4]. Tabellen under "API-vägar" i ARKITEKTUR.md är
+// facit för statuskoderna.
+//
+// Alla fem går genom requireFeature med 'savingsGoals'. Till skillnad från varje
+// tidigare skyddad väg är 403-grenen NÅBAR här: savingsGoals står i PLANS.plus och
+// inte i PLANS.bas, så en Bas-användare får 403 och en Plus-användare 200. Det är
+// (P8) och (P9) i ARKITEKTUR.md, som lämnades som obyggbara i steg 1 just därför
+// att ingen väg då skyddades av en funktion Bas saknar.
+//
+// Ordningen är den bindande: sessionsspärren, behörigheten, datumspärren,
+// valideringen, sedan datalagret. En utan session ska få 401 och inte 403 — annars
+// avslöjar svaret vilka funktioner som finns för den som inte är inloggad — och
+// ett ogiltigt datum ska aldrig bli en SQL-fråga.
+//
+// Dagens datum står i sökvägen och läses aldrig på servern, av samma skäl som
+// månaden och räkningarnas datum gör det: en funktion som läser klockan går inte
+// att testa. now är sessionens tidsstämpel och inte dagens datum — de två hålls
+// isär.
+// ---------------------------------------------------------------------------
+
+// Sessions- och behörighetsspärren, gemensam för sparmålens fem vägar. Svaret är
+// sessionen, eller null när funktionen redan har svarat klienten.
+//
+// Byggd som en funktion varje väg går genom och aldrig som en kontroll upprepad
+// per väg: en upprepad kontroll är en som glöms på en väg (ARKITEKTUR.md under
+// "Behörigheten på servern"). Samma form som billSessionOrNull, med en annan
+// funktionsnyckel.
+function goalSessionOrNull(req, res, now) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return null;
+  }
+  const denied = requireFeature(session, 'savingsGoals');
+  if (denied !== null) {
+    // Kroppen bär feature och requiredPlan utöver texten, så att gränssnittet kan
+    // visa rätt låsruta utan att gissa ur strängen. requireFeature äger formen.
+    sendJson(res, 403, denied);
+    return null;
+  }
+  return session;
+}
+
+// GET /api/sparmal/<ÅÅÅÅ-MM-DD>. 200 med listan, 400 vid fel datumformat, 401 utan
+// session, 403 utan behörighet, 500 vid DatabaseError.
+//
+// Datumet prövas här fastän goalProgress prövar det igen — ett ogiltigt datum ska
+// bli ett 400 med den svenska texten ur MESSAGES och aldrig ett 500 med ett
+// RangeError-meddelande som namnger en funktion i kärnan. Samma förhållande som
+// mellan handleReadBills och readBills.
+//
+// isValidIsoDate i src/core/dates.js äger frågan, och det här lagret skriver inget
+// eget datummönster.
+function handleReadGoals(req, res, now, today) {
+  const session = goalSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  if (!isValidIsoDate(today)) {
+    sendJson(res, 400, { error: MESSAGES.invalidToday });
+    return;
+  }
+  let goals;
+  try {
+    goals = readGoals(session.userId, today);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 200, { goals });
+}
+
+// POST /api/sparmal. 201 med sparmålet, 400 med fieldErrors, 401, 403, 500.
+//
+// Kroppens tre fält ägs av validateGoalDraft i src/core/goal.js. Det här lagret
+// läser varken målbeloppet eller slutdatumet självt.
+//
+// Svaret bär de fyra fälten ur goals-raden och ingen av de sex räknade: de kräver
+// ett dagens datum, och kroppen har inget. Gränssnittet hämtar listan om efter en
+// sparning, precis som det gör för en räkning.
+async function handleCreateGoal(req, res, now) {
+  const session = goalSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
+  // array, en sträng — hanteras av validateGoalDraft och ger fältfel.
+  const result = validateGoalDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let goal;
+  try {
+    goal = addGoal(session.userId, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  sendJson(res, 201, { goal });
+}
+
+// PUT /api/sparmal/<id>. 200 med sparmålet, 400 med fieldErrors, 401, 403, 404 när
+// målet inte finns eller tillhör någon annan, 500. Samma kropp och samma ordning
+// som POST.
+async function handleUpdateGoal(req, res, now, goalId) {
+  const session = goalSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const result = validateGoalDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let goal;
+  try {
+    goal = updateGoal(session.userId, goalId, result.value);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (goal === null) {
+    sendJson(res, 404, { error: MESSAGES.goalNotFound });
+    return;
+  }
+  sendJson(res, 200, { goal });
+}
+
+// DELETE /api/sparmal/<id>. 204, 401, 403, 404 när målet inte finns eller tillhör
+// någon annan, 500.
+//
+// Vägen har ingen kropp och därför ingen 400 — vad som ska hända står i metoden och
+// i sökvägen. Funktionen är inte async av just det skälet: den väntar inte på
+// readBody.
+//
+// Insättningarna försvinner med målet genom ON DELETE CASCADE i schemat, och ingen
+// rad här tar bort dem.
+function handleDeleteGoal(req, res, now, goalId) {
+  const session = goalSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  let removed;
+  try {
+    // Beslutet "finns målet?" fattas av SQL:s WHERE med user_id = ?, inte av en
+    // läsning före: ett mål som tillhör någon annan matchar då ingen rad, och
+    // svaret blir detsamma som för ett id som aldrig funnits.
+    removed = removeGoal(session.userId, goalId);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (!removed) {
+    sendJson(res, 404, { error: MESSAGES.goalNotFound });
+    return;
+  }
+  res.writeHead(204);
+  res.end();
+}
+
+// POST /api/sparmal/<id>/insattning. 201 med insättningen, 400 med fieldErrors,
+// 401, 403, 404 när målet inte finns eller tillhör någon annan, 500.
+//
+// Kroppens två fält ägs av validateDepositDraft i src/core/goal.js. Beloppet får
+// vara negativt — ett uttag — och får inte vara noll; båda reglerna står där och
+// inte här.
+//
+// Svaret bär insättningen och inte målet efteråt: ett 201 beskriver det som
+// skapades. Gränssnittet hämtar listan om för att se det nya savedOre, precis som
+// efter en sparad räkning.
+async function handleCreateDeposit(req, res, now, goalId) {
+  const session = goalSessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const draft = parseBody(await readBody(req));
+  if (draft === UNPARSABLE) {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const result = validateDepositDraft(draft);
+  if (!result.ok) {
+    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
+    return;
+  }
+  let deposit;
+  try {
+    deposit = addDeposit(session.userId, goalId, result.value, { now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (deposit === null) {
+    // Samma statuskod och samma text som för ett id som aldrig funnits: ett mål som
+    // tillhör någon annan ska bete sig som om det inte finns.
+    sendJson(res, 404, { error: MESSAGES.goalNotFound });
+    return;
+  }
+  sendJson(res, 201, { deposit });
 }
 
 function sendUnauthorized(res, message) {

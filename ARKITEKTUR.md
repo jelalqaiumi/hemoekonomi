@@ -10194,3 +10194,149 @@ att de inte krockar med `(B1)` för `budget.js` eller `(BU1)` för budgeten.
 Kravlistan skrivs av det uppdrag som nästa gång rör filen; tills dess står fallen
 onumrerade, vilket är rätt enligt `LARDOMAR.md` 2026-09-14: ett nummer utan punkt
 är sämre än inget nummer.
+
+---
+
+### Sparmål (bindande) [steg 4]
+
+Priskortet lovar `Sparmål` på **Plus**. Det här är den **första funktionen som
+Bas saknar**, och därmed den första som gör behörighetsspärren prövbar: fram
+till nu har varje funktion legat i alla tre planerna, och `403`-grenen har aldrig
+haft en nåbar indata.
+
+**Följden: (P8) och (P9) från steg 1 blir byggbara här.** De lämnades som
+obyggbara då, och ska skrivas i det här steget.
+
+#### Tabellerna
+
+```sql
+CREATE TABLE IF NOT EXISTS goals (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  target_ore  INTEGER NOT NULL CHECK (target_ore > 0),
+  target_date TEXT CHECK (target_date IS NULL OR target_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS goal_deposits (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id     TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  amount_ore  INTEGER NOT NULL CHECK (amount_ore <> 0),
+  made_on     TEXT NOT NULL CHECK (made_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  created_at  TEXT NOT NULL
+);
+```
+
+**`amount_ore <> 0`, inte `> 0`:** en insättning kan vara negativ. Den som tar ut
+pengar ur sitt sparande ska kunna registrera det, annars visar målet mer än som
+finns. Noll är däremot meningslöst och avvisas.
+
+`target_date` är valfritt. Utan det finns inget `perMonthOre` att räkna.
+
+#### Vad `readGoals` svarar
+
+```
+readGoals(userId, today) -> [ { id, name, targetOre, targetDate, savedOre, leftOre, percent, monthsLeft, perMonthOre, status } ]
+```
+
+| Fält | Regel |
+|---|---|
+| `savedOre` | summan av insättningarna, kan vara negativ om uttagen överstiger |
+| `leftOre` | `targetOre - savedOre`, **aldrig negativ** — ett överskridet mål har noll kvar |
+| `percent` | `savedOre / targetOre`, avrundat nedåt till heltal, **noll som lägst och 100 som högst** |
+| `monthsLeft` | hela månader från `today` till `targetDate`, `null` utan slutdatum |
+| `perMonthOre` | `leftOre / monthsLeft` med `divideRoundHalfUp`, `null` utan slutdatum |
+| `status` | se nedan |
+
+**`percent` klipps i båda ändar** därför att en progressruta inte kan rita minus 12
+procent och inte heller 140. `savedOre` och `leftOre` bär sanningen; `percent` är
+till för stapeln.
+
+**`monthsLeft` är noll när slutdatumet är i denna månad eller har passerat.** Då
+är `perMonthOre` hela `leftOre` — allt som återstår ska sparas nu, och en
+division med noll får aldrig uppstå.
+
+`status`, första träff vinner:
+
+| # | Villkor | `status` |
+|---|---|---|
+| 1 | `savedOre >= targetOre` | `klart` |
+| 2 | `targetDate` saknas | `pagaende` |
+| 3 | `targetDate` har passerat | `forsenat` |
+| 4 | annars | `pagaende` |
+
+`today` är ett argument. Ingen funktion i datalagret läser klockan.
+
+#### API-vägar
+
+| Metod och väg | Kropp | Svar |
+|---|---|---|
+| `GET /api/sparmal/<ÅÅÅÅ-MM-DD>` | ingen | `200`, `400`, `401`, `403`, `500` |
+| `POST /api/sparmal` | `{ name, targetSek, targetDate }` | `201`, `400`, `401`, `403`, `500` |
+| `PUT /api/sparmal/<id>` | samma | `200`, `400`, `401`, `403`, `404`, `500` |
+| `DELETE /api/sparmal/<id>` | ingen | `204`, `401`, `403`, `404`, `500` |
+| `POST /api/sparmal/<id>/insattning` | `{ amountSek, madeOn }` | `201`, `400`, `401`, `403`, `404`, `500` |
+
+Alla fem går genom `requireFeature` med `savingsGoals`. **Till skillnad från
+tidigare steg är `403` här nåbar**: en Bas-användare får den.
+
+#### Gränssnittet
+
+Ett eget kort `Sparmål` i månadsvyn, under budgetkortet. Per mål:
+
+```
+Buffert                      28 400,00 kr av 50 000,00 kr
+[============--------]  57 %
+Kvar 21 600,00 kr - spara 2 700,00 kr i månaden till juni 2027
+```
+
+Stapeln är inline-SVG eller ett `div`-par — **inget `style`-attribut i
+JavaScript**, bredden sätts med en CSS-variabel som `app.js` skriver.
+
+| `status` | Utseende |
+|---|---|
+| `klart` | Grön stapel, texten `Målet är nått` |
+| `forsenat` | Röd ram, `Slutdatumet har passerat` |
+| `pagaende` | Vanlig |
+
+En knapp `+ Sätt in` per mål, och `+ Nytt sparmål` överst.
+
+**För en Bas-användare visas kortet inte alls.** I stället står en rad med
+låsikon: `Sparmål ingår i Plus.` och knappen `Se planer`. Det är första gången
+låsmekanismen från steg 1 får något att låsa.
+
+#### Kravlista [steg 4]
+
+`tests/goals.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (S1) | `savedOre` summerar insättningar | inklusive ett negativt uttag |
+| (S2) | `leftOre` är aldrig negativ | ett överskridet mål ger noll |
+| (S3) | `percent` klipps i båda ändar | noll som lägst, 100 som högst |
+| (S4) | `perMonthOre` utan slutdatum är `null` | och `monthsLeft` också |
+| (S5) | `monthsLeft` noll ger hela `leftOre` | ingen division med noll |
+| (S6) | de fyra statusvärdena | ett fall per rad, i ordning |
+| (S7) | `klart` vinner över `forsenat` | ett nått mål med passerat datum är klart |
+| (S8) | en annan användares mål syns inte | |
+| (S9) | insättning noll avvisas | `CHECK` håller |
+| (S10) | ett borttaget mål tar sina insättningar med sig | `ON DELETE CASCADE` |
+
+`tests/goal-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (S11) | de fem vägarna | statuskoderna i tabellen |
+| **(P8)** | **Bas får `403` på en sparmålsväg** | med `feature` och `requiredPlan` i svaret |
+| **(P9)** | **Plus får `200` på samma väg** | |
+| (S12) | nedgradering raderar inget | mål skapat på Plus, ned till Bas, upp igen: målet kvar |
+
+`tests/app.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (84) | kortet visar stapel och procent | tre mål, rätt bredd |
+| (85) | Bas ser låsraden i stället för kortet | och knappen `Se planer` |
+| (86) | ett nått mål visas som klart | grön stapel, texten |
