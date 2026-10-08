@@ -10383,3 +10383,294 @@ låsmekanismen från steg 1 får något att låsa.
 | (85) | Bas ser låsraden i stället för kortet | och knappen `Se planer` |
 | (86) | ett nått mål visas som klart | grön stapel, texten |
 | (87) | `+ Sätt in` ökar `savedOre` och ritar om raden | stapeln och procenten följer med |
+
+---
+
+### Diagram och rapporter (bindande) [steg 5]
+
+Priskortet lovar `Diagram och rapporter` på Plus. `FEATURE_LABELS.reports` bär
+den texten. Ingenting av det finns.
+
+#### Gränsen mot `overview`, som Bas redan har
+
+Den här gränsen måste vara skarp, annars blir steg 5 en andra kopia av något
+Bas betalar för. `readOverview` finns sedan etapp 5 och svarar
+`{ months: [{ month, incomeOre, expenseOre, savingOre, leftOre }], savedThisYear }`.
+
+| | `overview` (Bas) | `reports` (Plus) |
+|---|---|---|
+| Frågan | Hur mycket? | Vart gick det, och höll jag budgeten? |
+| Upplösning | fyra summor per månad | en rad per slag och kategori, per månad |
+| Budget | ingen | taket per månad, och hur ofta det sprack |
+| Ut ur appen | nej | CSV |
+
+`overview` är summorna över tid. `reports` är **uppdelningen bakom summorna, och
+datan ut.** En rapport som bara visade samma fyra tal snyggare vore inget att
+betala för.
+
+`renderChart` i `src/web/app.js` ritar redan utgifter per kategori för **en**
+månad. Rapporten är samma fråga över tid, och den ritas med samma funktion.
+**Ingen andra diagramfunktion skrivs.**
+
+#### Två nya moduler i kärnan
+
+**`src/core/csv.js`** äger formatet. **`src/core/report.js`** äger formen.
+Åtskilda därför att CSV är ett *filformat* med egna fällor som ska gå att pröva
+ensamt, medan rapporten är en *datamodell*. En gemensam modul hade gjort
+injektionsregeln otestbar utan att bygga en hel rapport först.
+
+Båda får en egen numrerad spärrtabell i det här dokumentet innan koden skrivs,
+på formen "Ingångsspärrar i `<modul>` — bindande, första träff vinner", enligt
+`LARDOMAR.md` 2026-09-16. Steg 4 byggde en modul utan sin tabell och fick lämna
+tillbaka den; det upprepas inte.
+
+#### Vad `readReport` svarar
+
+```
+readReport(userId, endMonth, count) -> {
+  months: ['2026-05', ..., '2026-10'],
+  rows: [ {
+    kind, category,
+    perMonthOre: [...],          // samma längd och ordning som months
+    totalOre,
+    averageOre,
+    budgetPerMonthOre: [...],    // samma längd; null för en månad utan tak
+    overBudgetMonths
+  } ],
+  largest: { kind, category } | null
+}
+```
+
+`months` är äldst först, samma ordning och samma tak som `readOverview`:
+`OVERVIEW_MIN_MONTHS` till `OVERVIEW_MAX_MONTHS`. Konstanterna läses därifrån
+och skrivs inte om — ett andra tak för samma sak vore två facit.
+
+Sex beslut där specen annars är tyst, och var och en är en fälla:
+
+**1. Radens nyckel är `(kind, category)`, inte `category`.** Samma kategori kan
+bära både en inkomst och en utgift, och en rad som slog ihop dem hade visat ett
+netto användaren aldrig skrivit. Ordningen är `ITEM_KINDS` ordning, därefter
+`CATEGORIES` ordning — båda frysta listor med en ägare, så ordningen är total
+och vyn kan inte hoppa mellan två läsningar.
+
+**2. `averageOre` delas med `count`, aldrig med antalet månader som har ett
+belopp.** Frågan är vad kategorin kostar i månaden, och en månad utan utgift är
+en riktig nolla och inte en saknad mätning. `divideRoundHalfUp` gör divisionen;
+ingen flyttalsdivision.
+
+**3. En rad kommer med om den har ett belopp skilt från noll i någon månad
+*eller* ett tak i någon månad.** Ett satt tak som inte använts är ett svar: du
+budgeterade för mat och handlade ingen. En kategori som är noll hela serien och
+saknar tak har ingenting att rapportera och utesluts.
+
+**4. `budgetPerMonthOre` är en lista, inte ett tal.** Taket sätts per månad och
+per kategori (`budgets`-tabellen, steg 2). Ett enda `budgetOre` för hela serien
+blir en lögn i samma stund användaren ändrar taket. `null` för varje månad utan
+tak.
+
+**5. `budgetPerMonthOre` är enbart `null` för `income` och `saving`.** Taket
+gäller bara utgifter — det är steg 2:s beslut, där `spentOre` räknar enbart
+utgifter. Skrivs ut här så att nästa läsare inte undrar om det är ett bortfall.
+
+**6. `overBudgetMonths` räknar månader där taket finns *och* beloppet överstiger
+det.** Lika med taket är inte över det. Gränsen prövas på båda sidor.
+
+`largest` är raden med störst `totalOre`, till diagrammets skalning, och `null`
+för en tom rapport. Vid lika `totalOre` vinner den tidigare i radordningen, så
+svaret är entydigt.
+
+`today` behövs inte: en rapport är historik. **Ingen funktion i datalagret läser
+klockan.**
+
+#### CSV: sex fällor, var och en mätbar
+
+Varje punkt här är ett fel som annars blir användarens, inte en teoretisk risk.
+
+**1. Avgränsaren är semikolon.** Vi skriver belopp med decimalkomma, så ett
+komma som avgränsare bryter varje rad. Svensk Excel förväntar sig dessutom
+semikolon.
+
+**2. Filen börjar med en UTF-8 BOM, kodpunkt U+FEFF.** Excel på Windows läser en
+UTF-8-fil utan BOM som Latin-1, och då blir bokstaven a-ring två tecken.
+Projektets användare kör Windows, så det här är det normala utfallet och inte
+ett kantfall.
+
+**3. Radslutet är CR LF, kodpunkterna U+000D U+000A,** enligt RFC 4180.
+
+**4. En textcell som börjar med likhetstecken, plus, minus, snabel-a, tabb eller
+CR föregås av en apostrof.** Excel kör en sådan cell som en formel, och ett
+postnamn är fritext användaren skriver själv. Det här är steg 5:s enda
+säkerhetspunkt och den ska ha egna testfall.
+
+**Undantaget är bindande: regeln gäller enbart textceller.** Ett negativt belopp
+börjar med minustecken, och en apostrof framför det hade gjort hela
+beloppskolumnen oläsbar som tal. Beloppsceller produceras av vår egen
+formaterare och kan bara matcha mönstret minus-valfritt, siffror, komma, två
+siffror.
+
+**5. En cell som innehåller semikolon, citattecken eller ett radbrott omges av
+citattecken, och inre citattecken dubbleras.**
+
+**6. Belopp skrivs som 1234,50** — decimalkomma, två decimaler, ingen
+tusentalsavgränsare och ingen enhet. `formatSek` får inte användas: dess utdata
+har hårda blanksteg (U+00A0) och enheten `kr`, och är obrukbar i ett
+kalkylblad. Ägaren är en egen export i `src/core/csv.js`.
+
+**Rundgångskravet är obligatoriskt.** `LARDOMAR.md` 2026-09-22 beskriver exakt
+det här felet ett steg tidigare: appen visade ett belopp med hårt blanksteg och
+avvisade samma sträng som indata. Varje belopp CSV:n skriver ska gå att läsa
+tillbaka — för varje belopp i testlistan ska det skrivna värdet, matat in i
+beloppskedjan, ge samma antal ören. Gränserna hör med: ett öre, minus ett öre,
+`AMOUNT_MAX_SEK` i ören, och noll.
+
+#### Ingångsspärrar i `src/core/csv.js` — bindande, första träff vinner
+
+Skriven före koden (`LARDOMAR.md` 2026-09-16). `src/core/report.js` får sin
+egen tabell innan den modulen byggs, i del 2 av steget.
+
+Tre exporter:
+
+```
+csvAmountSek(ore)  -> string   // 1234,50
+csvText(value)     -> string   // injektionssäkrad fritext, utan citering
+toCsv(rows)        -> string   // BOM + rader med CRLF, citeringen inräknad
+```
+
+**En cell deklarerar sin typ.** `rows` är en lista av listor, och varje cell är
+`{ text: <sträng> }` eller `{ amountOre: <heltal> }` — aldrig en färdig sträng.
+
+Det är ett medvetet val mot en fotgillra: tog `toCsv` emot färdiga strängar
+måste anroparen minnas att köra varje fritextcell genom `csvText`, och en enda
+glömd cell är injektionshålet tillbaka. Med typade celler kan åtgärden inte
+glömmas: `toCsv` väljer regel ur cellens egen form, och en cell som varken är
+text eller belopp kastar i stället för att tystna.
+
+| # | Funktion | Villkor, skrivet som i koden | Meddelande |
+|---|---|---|---|
+| 1 | `csvAmountSek` | `!Number.isSafeInteger(ore)` | `csvAmountSek kräver ett säkert heltal öre.` |
+| 2 | `csvText` | `typeof value !== 'string'` | `csvText kräver en sträng.` |
+| 3 | `toCsv` | `!Array.isArray(rows)` | `toCsv kräver en lista med rader.` |
+| 4 | `toCsv` | `!Array.isArray(rows[i])` | `toCsv kräver att varje rad är en lista, raden på index <i> är det inte.` |
+| 5 | `toCsv` | cellen är inte `{ text }` eller `{ amountOre }` med exakt en nyckel | `toCsv kräver en cell med text eller amountOre, rad <i> kolumn <j>.` |
+
+Rad 4 och 5 namnger platsen, till skillnad från `money.js` meddelanden: en
+trasig cell i en tabell på trettio rader går annars inte att hitta.
+
+Rad 5 prövar **exakt en nyckel**, inte bara att en av dem finns. En cell med
+båda hade låtit `toCsv` välja tyst, och det valet är hela poängen med att
+cellen deklarerar sin typ.
+
+**`-0` normaliseras och kastar inte.** `csvAmountSek(-0)` ger `0,00`. Noll ören
+är ett giltigt belopp i en rapport — en kategori kan vara noll en månad — och
+`Number.isSafeInteger(-0)` är sant, så en spärr hade inte fångat det ändå.
+`normalizeZero` i `money.js` är ägaren och importeras; ingen andra kopia skrivs
+(`LARDOMAR.md` 2026-09-02).
+
+**`csvText` citerar inte.** Citeringen gör `toCsv` för varje cell, eftersom den
+regeln är gemensam för text och belopp. `csvText` äger bara apostrofen. Två
+funktioner som båda citerade hade dubbelciterat.
+
+#### API-vägar
+
+| Metod och väg | Svar |
+|---|---|
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>` | `200` med rapporten. `400`. `401`. `403`. `500`. |
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv` | `200` med `text/csv`. `400`. `401`. `403`. `500`. |
+
+`N` står i sökvägen och inte i en frågesträng, av samma skäl som månaden gör det
+på varje annan väg: projektet har ingen frågeströmstolkning, och att införa en
+är en ny indatayta för ett tal som ryms i sökvägen.
+
+Båda går genom `requireFeature` med `reports`. **`403` är nåbar här**, precis som
+för sparmål.
+
+**Fel svarar alltid med JSON, också på CSV-vägen.** En `403` eller `400` som kom
+som CSV hade gränssnittet inte kunnat läsa. Bara `200` är `text/csv`.
+
+`sendCsv` är projektets första svar som inte är JSON. Den sätter
+`Content-Type: text/csv; charset=utf-8` och
+`Content-Disposition: attachment; filename="hemochekonomi-<ÅÅÅÅ-MM>.csv"`.
+**Filnamnet är rent ASCII.** En svensk bokstav i ett `Content-Disposition`-huvud
+kräver RFC 5987-kodning, och ett okodat huvud är ett trasigt svar.
+
+#### Gränssnittet
+
+Ett kort `Rapport` i månadsvyn, under sparmålskortet. Tre knappar för perioden
+(`3 mån`, `6 mån`, `12 mån`), diagrammet genom `renderChart`, och en tabell med
+en rad per `(kind, category)`: namn, snitt per månad, summa, och för utgifter
+taket och antalet månader det sprack.
+
+En knapp `Hämta som CSV`.
+
+**Nedladdningen går genom `fetch` och en `Blob`, aldrig genom ett `<a href>`.**
+Två skäl, och det första är avgörande: demoläget ersätter `globalThis.fetch` och
+publiceras på en statisk värd, där ett riktigt HTTP-anrop inte finns att göra —
+en länk hade gett `404` i demon. Det andra är att bara `fetch` kan visa ett `403`
+i appens egen felruta i stället för att öppna en JSON-klump i en flik.
+
+**För en Bas-användare visas kortet inte alls**, utan låsraden
+`Diagram och rapporter ingår i Plus.` med knappen `Se planer`.
+
+**Låsraden är nu projektets andra, och ska därför ha en ägare.** Sparmålskortet
+byggde den första i steg 4. En handskriven kopia här vore två ställen som kan
+glida isär: bryt ut `lockRow(feature)` som läser `FEATURE_LABELS` och `planFor`,
+och låt sparmålskortet anropa samma funktion.
+
+**Döljandet är aldrig skyddet.** Servern svarar `403` på båda vägarna, och det är
+där spärren sitter. Ingen kommentar får antyda något annat.
+
+#### Kravlista [steg 5]
+
+Numren fortsätter där steg 4 slutade. Sparmålens serie heter `(SM)` och
+schedules `(S)`; rapportens heter `(RA)`, eftersom `(R)` ägs av
+`tests/bills.test.js`.
+
+`tests/csv.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (RA1) | BOM först i filen | kodpunkten utskriven i testet |
+| (RA2) | radslutet är CR LF | inte bara LF |
+| (RA3) | de sex injektionstecknen får apostrof | ett fall per tecken |
+| (RA4) | ett negativt belopp får *ingen* apostrof | regelns undantag |
+| (RA5) | citering och dubblering | semikolon, citattecken och radbrott i en cell |
+| (RA6) | beloppsformatet | 1234,50, utan enhet och utan avgränsare |
+| (RA7) | rundgång | varje skrivet belopp läst tillbaka ger samma ören |
+
+`tests/report.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (RA8) | radnyckeln är `(kind, category)` | samma kategori med två slag ger två rader |
+| (RA9) | `averageOre` delas med `count` | en kategori i 2 av 6 månader |
+| (RA10) | halva öret uppåt i snittet | ett belopp som inte delar jämnt |
+| (RA11) | en rad med tak men noll belopp kommer med | och en utan båda utesluts |
+| (RA12) | `budgetPerMonthOre` följer taket per månad | ett ändrat tak mitt i serien |
+| (RA13) | `budgetPerMonthOre` är null för inkomst och sparande | |
+| (RA14) | `overBudgetMonths` på båda sidor om gränsen | lika med taket räknas inte |
+| (RA15) | `largest` vid lika summa | den tidigare i radordningen |
+| (RA16) | tom rapport | `rows` tom, `largest` null, inget kast |
+| (RA17) | taket ärvs ur `readOverview` | `count` utanför ger samma meddelandeform |
+
+`tests/report-api.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (RA18) | båda vägarna | statuskoderna i tabellen |
+| (RA19) | Bas får `403` på båda | samma kropp som sparmålens |
+| (RA20) | Plus får `200` på båda | och CSV-vägen `text/csv` |
+| (RA21) | ett `403` på CSV-vägen svarar JSON | inte CSV |
+| (RA22) | filnamnet är rent ASCII | huvudet läst ordagrant |
+| (RA23) | en annan användares data syns inte | |
+
+`tests/app.test.js`:
+
+| # | Fall | Kräver |
+|---|---|---|
+| (88) | kortet visas för Plus och låsraden för Bas | båda i samma fil |
+| (89) | `lockRow` är en ägare | sparmålskortet anropar samma funktion |
+| (90) | periodknappen hämtar om | tre månader efter tolv, kortare lista än längre |
+| (91) | diagrammet ritas med `renderChart` | ingen andra diagramfunktion |
+
+**Mutationslistan genereras ur `git diff HEAD`**, aldrig ur den här tabellen.
+Tabellen är ett minimum (`LARDOMAR.md` 2026-09-12).
