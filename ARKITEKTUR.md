@@ -10282,6 +10282,39 @@ division med noll får aldrig uppstå.
 Alla fem går genom `requireFeature` med `savingsGoals`. **Till skillnad från
 tidigare steg är `403` här nåbar**: en Bas-användare får den.
 
+#### Ingångsspärrar i `src/core/goal.js` — bindande, första träff vinner
+
+Skriven i steg 4 efter att byggaren lämnade tillbaka att den saknades.
+`LARDOMAR.md` 2026-09-16 gör tabellen obligatorisk för varje modul som kastar:
+utan en utskriven sträng kan ett test bara asserta feltypen, och en feltyp delas
+av varje spärr i modulen.
+
+`goalStatus` och `goalProgress` delar kedjan — `goalProgress` delegerar till
+`requireGoalFields('goalStatus', ...)`. Varje meddelande namnger därför
+`goalStatus` också när anroparen anropade `goalProgress`, eftersom ett
+meddelande som namngav `goalProgress` hade påstått att felet uppstod i en annan
+kontroll.
+
+| # | Villkor, skrivet som i koden | Meddelande |
+|---|---|---|
+| 1 | `!isPlainObject(goal)` | `goalStatus kräver ett sparmål som objekt.` |
+| 2 | `!Number.isSafeInteger(goal.targetOre) || goal.targetOre <= 0` | `goalStatus kräver ett targetOre större än 0, fick "<v>".` |
+| 3 | `!Number.isSafeInteger(goal.savedOre)` | `goalStatus kräver ett savedOre som ett säkert heltal, fick "<v>".` |
+| 4 | `goal.targetDate !== null && !isValidIsoDate(goal.targetDate)` | `goalStatus kräver ett targetDate på formen ÅÅÅÅ-MM-DD eller null, fick "<v>".` |
+| 5 | `!isValidIsoDate(today)` | `goalStatus kräver ett dagens datum på formen ÅÅÅÅ-MM-DD, fick "<v>".` |
+
+`<v>` är `String(värdet)`, så ett `Symbol` och ett `BigInt` når meddelandet i
+stället för att kasta `TypeError` ur stränginterpolationen.
+
+**`Number.isSafeInteger` och inte `Number.isInteger`.** Ett ören-tal utanför det
+säkra heltalsområdet räknas inte exakt, och predikatet coercar inte: `1n` och
+`Symbol('x')` ger `false` i stället för att kasta ur jämförelsen.
+
+**Den assertion som ensam skyddar en rad i tabellen asserterar hela `message`.**
+En bredare lista med värden för samma rad får asserta enbart feltypen — kravet
+är skrivet om rollen och inte om varje `assert.throws`, av skälet i
+`LARDOMAR.md` 2026-09-22.
+
 #### Gränssnittet
 
 Ett eget kort `Sparmål` i månadsvyn, under budgetkortet. Per mål:
@@ -10292,8 +10325,17 @@ Buffert                      28 400,00 kr av 50 000,00 kr
 Kvar 21 600,00 kr - spara 2 700,00 kr i månaden till juni 2027
 ```
 
-Stapeln är inline-SVG eller ett `div`-par — **inget `style`-attribut i
-JavaScript**, bredden sätts med en CSS-variabel som `app.js` skriver.
+Stapeln är **inline-SVG**, byggd med `svgElement` som `renderChart` redan
+använder: bredden sätts som SVG-attributet `width`, färgen med en klass.
+**Inget `style`-attribut i JavaScript** — och ingen CSS-variabel heller.
+
+Byggaren i steg 4 hittade att den tidigare lydelsen var omöjlig att uppfylla:
+den krävde en CSS-variabel och förbjöd `style` i samma mening, men en
+CSS-variabel går bara att sätta per element med `element.style.setProperty`,
+vilket **är** `style`-attributet. För ett `div`-par finns ingen annan väg.
+Beslutet är därför inline-SVG — den enda av de två formerna som uppfyller
+förbudet, och den projektet redan har precedens för: `svgElement` i
+`src/web/app.js` sätter varje värde med `setAttribute` och rör aldrig `style`.
 
 | `status` | Utseende |
 |---|---|
