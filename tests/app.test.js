@@ -3444,7 +3444,7 @@ test('ett 200 utan läsbar lista ger ett tomt kort, och en okänd status ingen s
   assert.equal(celltext(rader[2], 'bill-amount'), formatSek(0));
 });
 
-// ----------------------------------------- (84) till (86) sparmål [steg 4]
+// ----------------------------------------- (84) till (87) sparmål [steg 4]
 
 // Ett sparmål på samma form som src/server/goals.js lämnar det ur
 // GET /api/sparmal/<ÅÅÅÅ-MM-DD>: tio fält, ören och inte kronor, och de sex
@@ -3992,6 +3992,107 @@ test('+ Nytt sparmål sparar målet med POST och ritar om kortet ur en hämtning
   // Formuläret stängs och töms när sparningen lyckades.
   assert.equal(dom.falt('goal-form').hidden, true);
   assert.equal(dom.falt('goal-name').value, '');
+});
+
+// (87)
+test('(87) + Sätt in ökar savedOre och ritar om raden, med stapeln och procenten', async (t) => {
+  // Två renderingar med olika indata, där utgångsläget för den andra är det
+  // förstas motsats: samma mål med ett annat savedOre (LARDOMAR.md 2026-09-12).
+  // Det är OMHÄMTNINGEN som bär skillnaden — svaret på en insättning innehåller
+  // inget av målets sex räknade fält, så raden kan bara följa med genom
+  // GET /api/sparmal. Tas loadGoals bort efter ett 201 står raden kvar på 23 %
+  // och bredden 46, och det här fallet faller.
+  const malId = '66666666-6666-4666-8666-ffffffffffff';
+  const fore = sparmal(malId, 'Resefond', {
+    targetOre: 5000000,
+    targetDate: '2027-04-30',
+    savedOre: 1150000,
+    leftOre: 3850000,
+    percent: 23,
+    monthsLeft: 7,
+    perMonthOre: 550000,
+    status: 'pagaende'
+  });
+  // Insättningen är 2 500,00 kr: 1 150 000 ören blir 1 400 000, alltså 28 procent
+  // av målet. Varje tal skiljer sig från varje annat fält raden visar OCH från
+  // sin egen motsvarighet före insättningen — procenten är 23 respektive 28 och
+  // stapelns bredd 46 respektive 56, aldrig samma tal, så en assertion kan se
+  // vilket av fälten koden läste (LARDOMAR.md 2026-09-16). Målet är med flit
+  // INTE nått efteråt: savedOre stannar under targetOre, statusen är därmed
+  // oförändrad, och fallet prövar omritningen och ingenting annat.
+  const efter = sparmal(malId, 'Resefond', {
+    ...fore,
+    savedOre: 1400000,
+    leftOre: 3600000,
+    percent: 28,
+    perMonthOre: 514286
+  });
+
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => ({ status: 201, json: { deposit: { id: '77777777-7777-4777-8777-999999999999' } } }),
+      () => RAKNINGAR_TOM,
+      ikoordning([sparmalssvar([fore]), sparmalssvar([efter])])
+    )
+  );
+
+  const raden = () => sparmalsrader(dom)[0];
+
+  // Första renderingen: raden som den stod före insättningen.
+  assert.equal(celltext(raden(), 'goal-saved'), `${formatSek(1150000)} av ${formatSek(5000000)}`);
+  assert.equal(celltext(raden(), 'goal-percent'), '23 %');
+  assert.equal(stapelfyllning(raden()).getAttribute('width'), '46');
+  assert.equal(
+    celltext(raden(), 'goal-left'),
+    `Kvar ${formatSek(3850000)} - spara ${formatSek(550000)} i månaden till april 2027`
+  );
+
+  // + Sätt in öppnar kortets insättningsformulär och skickar inget anrop själv.
+  assert.equal(dom.falt('deposit-form').hidden, true);
+  assert.equal(knapp(raden(), 'goal-deposit').textContent, '+ Sätt in');
+  assert.equal(knapp(raden(), 'goal-deposit').utlos('click'), true);
+  assert.equal(dom.falt('deposit-form').hidden, false);
+  assert.equal(anrop.length, 4);
+
+  dom.falt('deposit-amount').value = '2500';
+  dom.falt('deposit-date').value = FRYST_IDAG;
+
+  let forhindrad = false;
+  dom.falt('deposit-form').utlos('submit', {
+    preventDefault() {
+      forhindrad = true;
+    }
+  });
+  assert.equal(forhindrad, true, 'formuläret ska inte skickas av webbläsaren');
+  await flush();
+
+  // Insättningen går till målets egen väg, med de två fälten som de står: app.js
+  // prövar varken beloppet eller datumet självt.
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, `${SPARMALSVAG_PREFIX}${malId}/insattning`);
+  assert.deepEqual(kropp(anrop[4]), { amountSek: '2500', madeOn: FRYST_IDAG });
+
+  // Och raden ritas om ur en OMHÄMTNING, aldrig ur svaret på insättningen.
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, SPARMALSVAG);
+
+  // Andra renderingen: stapeln och procenten följde med det nya savedOre.
+  assert.equal(sparmalsrader(dom).length, 1);
+  assert.equal(celltext(raden(), 'goal-saved'), `${formatSek(1400000)} av ${formatSek(5000000)}`);
+  assert.equal(celltext(raden(), 'goal-percent'), '28 %');
+  assert.equal(stapelfyllning(raden()).getAttribute('width'), '56');
+  assert.equal(
+    celltext(raden(), 'goal-left'),
+    `Kvar ${formatSek(3600000)} - spara ${formatSek(514286)} i månaden till april 2027`
+  );
+  // Målet är fortfarande pågående: 14 000,00 kr av 50 000,00 kr.
+  assert.equal(malstatusklass(raden()), 'goal-pagaende');
+
+  // Formuläret stängs och töms när insättningen lyckades.
+  assert.equal(dom.falt('deposit-form').hidden, true);
+  assert.equal(dom.falt('deposit-amount').value, '');
 });
 
 test('ett 400 från sparmålsvägen visar serverns text och lämnar formuläret öppet', async (t) => {
