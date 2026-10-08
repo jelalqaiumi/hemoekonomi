@@ -613,6 +613,117 @@ button.bill-paid:hover {
   border-color: var(--lank);
 }
 
+/* Sparmålskortets rader [steg 4]. Raden bär item och goal, och till skillnad
+   från de övriga korten är den INTE radens flexlayout: ett sparmål har tre
+   läsrader - namn och sparat av mål, stapel och procent, och Kvar-raden - och en
+   flexrad som radbryter kan inte hålla dem i den ordningen vid varje bredd.
+   Rutnätet är därför två kolumner, och .goal ligger efter .item i filen så att
+   display: grid vinner över display: flex. Padding och radens undre linje kommer
+   fortfarande ur .item, inklusive .item:last-child som tar bort den sista.
+
+   Klassnamnen byggs av app.js ur goal.status, alltså ur GOAL_STATUSES i
+   src/core/goal.js - ingen kopia av de tre värdena står i den här filen utöver
+   de två som har ett eget utseende. */
+.goal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+}
+
+.goal-name {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.goal-saved,
+.goal-percent {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Kvar-raden och statusens text löper över båda kolumnerna: de är meningar och
+   inte tal i en kolumn. */
+.goal-left,
+.goal-note {
+  grid-column: 1 / -1;
+  font-size: 0.875rem;
+  color: var(--text-svag);
+}
+
+/* En status utan egen text - pagaende, som tabellen i ARKITEKTUR.md kallar
+   "Vanlig" - ger en tom cell. Utan regeln lämnar den en tom rutnätsrad med sitt
+   gap efter sig, alltså ett mellanrum användaren inte kan förklara. Regeln
+   ligger här och inte som ett villkor i app.js: vad en tom cell tar för plats är
+   en stilfråga. */
+.goal-note:empty {
+  display: none;
+}
+
+/* Stapeln är inline-SVG, byggd av app.js med samma svgElement som diagrammet
+   ovan: bredden är SVG-attributet width och färgen en klass, aldrig ett
+   style-attribut.
+
+   overflow: hidden och inte visible som .chart svg: app.js klipper med flit
+   ingen procent - clampedPercent i src/core/goal.js äger klippningen - och den
+   här raden är det som gör att en bredd utanför skalan ändå inte kan ritas
+   utanför rutan. */
+.goal-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: hidden;
+}
+
+/* Spåret bakom fyllningen. Utan det syns bara hur långt som är gjort, aldrig
+   hur långt som återstår. --kant är temats linjeton och bär ingen text. */
+.goal-bar-track {
+  fill: var(--kant);
+}
+
+/* Fyllningen. Staplar är grafik och inte text, så kravet är 3:1 - samma
+   bedömning och samma ton som .chart-bar ovan. */
+.goal-bar {
+  fill: var(--ikon-bla);
+}
+
+/* Ett nått mål: grön stapel (ARKITEKTUR.md under "Gränssnittet"). --ikon-gron är
+   temats gröna ton för grafik och ljusnar med ytan i det mörka läget, samma
+   användning som märket för en återkommande post har. */
+.goal-bar-klart {
+  fill: var(--ikon-gron);
+}
+
+/* Ett försenat mål: röd ram runt hela raden (ARKITEKTUR.md under
+   "Gränssnittet"). Samma form och samma skäl som .bill-paminnelse ovan - ramen
+   ersätter radens undre linje, så att två försenade mål intill varandra inte får
+   en dubbel kant. --negativ är temats röda ton; en ram är grafik med kravet 3:1,
+   och tonen ligger på 4,38:1 mot --yta enligt mätningen vid .left-negative. */
+.goal-forsenat {
+  border: 2px solid var(--negativ);
+  border-radius: var(--radie-knapp);
+  padding: 0.65rem 0.6rem;
+}
+
+/* Låsraden [steg 4]: det en Bas-användare ser i stället för kortet. Kortet och
+   raden är två syskon i index.html, och app.js visar exakt ett av dem - raden är
+   bekvämlighet och aldrig spärren, som ligger i requireFeature på servern. */
+.locked-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--text-svag);
+}
+
+/* Hänglåset är dekoration: det bär aria-hidden i index.html, eftersom texten
+   intill säger samma sak i ord. */
+.lock-icon {
+  font-size: 1.1rem;
+}
+
 /* Enheten efter ett fält, raden Påminn mig <N> dagar innan. Fältet är smalt
    eftersom talet är högst tvåsiffrigt, och enheten står efter det på samma rad
    i stället för i etiketten. */

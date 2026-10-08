@@ -25,7 +25,7 @@ import { mountBanner } from '../src/web/demo/banner.js';
 import { createDemoFetch, readDemoMonth, readDemoOverview, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
 import { DEMO } from '../src/web/demo/demolage.js';
 import { clearState, getStorage, readState, STORAGE_KEY, writeState } from '../src/web/demo/lagring.js';
-import { FEATURES, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
+import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
 import { createSeedState, DEMO_EMAIL, seedMonths } from '../src/web/demo/seed.js';
 import { createDemoDom, createStorage, createThrowingStorage } from './helpers/demo-dom.js';
 import { createDom, flush, loadApp } from './helpers/dom.js';
@@ -503,7 +503,30 @@ test('(D4) summorna kommer ur monthTotals och räknas inte av attrappen', async 
     'attrappen hämtar summorna ur budget.js'
   );
   assert.equal(kalla.includes('totals: monthTotals(items)'), true, 'och anropar den');
-  assert.equal(/\.reduce\(/.test(kalla), false, 'ingen reduce i attrappen');
+
+  // Förbudet mot en egen räkning är skrivet om sin ROLL och inte om ordet
+  // reduce: månadens fyra summor ska komma ur monthTotals, och ingen annan
+  // addition i filen får växa fram utan att den här raden fälls.
+  //
+  // Steg 4 gav filen sin första tillåtna addition: toDemoGoal summerar ett
+  // sparmåls insättningar, och på servern är den summan en SUM i SQL
+  // (SAVED_ORE_COLUMN i src/server/goals.js) som demon inte har någon databas
+  // att köra. Undantaget skrivs därför ut ordagrant i stället för att förbudet
+  // breddas eller kringgås med en for-loop — ett förbud som är bredare än sitt
+  // skäl gör nästa granskare oförmögen att skilja fel från nödvändighet
+  // (LARDOMAR.md 2026-09-07).
+  //
+  // En ny reduce någon annanstans i filen fäller raden, eftersom listan ska
+  // vara exakt den här.
+  const reducerader = kalla
+    .split('\n')
+    .map((rad) => rad.trim())
+    .filter((rad) => rad.includes('.reduce('));
+  assert.deepEqual(
+    reducerader,
+    ['.reduce((summa, deposit) => summa + deposit.amountOre, 0);'],
+    'bara insättningssumman i toDemoGoal får addera i attrappen'
+  );
   assert.equal(/amountOre \+/.test(kalla), false, 'inget belopp adderas i attrappen');
 });
 
@@ -1261,4 +1284,211 @@ test('ett tak besökaren satt finns kvar efter en omladdning', async () => {
   const efter = riggning({ storage }).state.budgets.filter((rad) => rad.category === 'transport');
   assert.equal(efter.length, 1);
   assert.equal(efter[0].amountOre, 150000);
+});
+
+// ------------------------------------------------- sparmålen i demon [steg 4]
+
+// Demon börjar på Bas, och sparmål är den första funktionen Bas saknar: 403 är
+// alltså utgångsläget, och kortet syns först efter ett byte till Plus. Det är
+// hela skälet till att seed-datans plan är Bas.
+const SPARMALSVAG = `/api/sparmal/${IDAG}`;
+
+async function bytTillPlus(fetch) {
+  const svar = await fetch('/api/plan', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan: 'plus' })
+  });
+  assert.equal(svar.status, 200);
+}
+
+test('demons sparmålsväg svarar 403 på Bas och 200 på Plus, som servern', async () => {
+  const { fetch } = riggning();
+
+  // Bas: 403 med feature och requiredPlan, alltså den kropp gränssnittet bygger
+  // låsradens text ur. Texten är requireFeature:s egen, byggd ur PLAN_LABELS.
+  const nekad = await fetch(SPARMALSVAG);
+  assert.equal(nekad.status, 403);
+  assert.deepEqual(await json(nekad), {
+    error: `Funktionen ingår i ${PLAN_LABELS.plus}. Uppgradera för att låsa upp.`,
+    feature: 'savingsGoals',
+    requiredPlan: 'plus'
+  });
+
+  // Plus: 200 med listan. Samma väg, samma dag, bara en annan plan.
+  await bytTillPlus(fetch);
+  const svar = await fetch(SPARMALSVAG);
+  assert.equal(svar.status, 200);
+  const { goals } = await json(svar);
+  assert.equal(goals.length, 4);
+});
+
+test('demons sparmålsväg kräver session, rätt metod och en riktig dag', async () => {
+  const { fetch, state } = riggning();
+  await bytTillPlus(fetch);
+
+  // Metoden prövas efter behörigheten, precis som i api.js.
+  const felMetod = await fetch(SPARMALSVAG, { method: 'DELETE' });
+  assert.equal(felMetod.status, 405);
+  assert.equal((await json(felMetod)).error, SERVER_TEXTS.methodNotAllowed);
+
+  // Ett datum som matchar formen men inte finns i kalendern avvisas: isValidIsoDate
+  // i src/core/dates.js äger frågan, och attrappen har inget eget datummönster.
+  const felDag = await fetch('/api/sparmal/2026-02-30');
+  assert.equal(felDag.status, 400);
+  assert.equal((await json(felDag)).error, SERVER_TEXTS.invalidToday);
+
+  // Sessionen prövas FÖRE behörigheten: en utloggad ska få 401 och inte 403,
+  // annars avslöjar svaret vilka funktioner som finns för den som inte är
+  // inloggad.
+  state.loggedIn = false;
+  const utanSession = await fetch(SPARMALSVAG);
+  assert.equal(utanSession.status, 401);
+  assert.equal((await json(utanSession)).error, SERVER_TEXTS.notLoggedIn);
+});
+
+test('demons seed-data visar ett mål per utseende, och ett uttag räknas med', async () => {
+  const { fetch } = riggning();
+  await bytTillPlus(fetch);
+  const { goals } = await json(await fetch(SPARMALSVAG));
+
+  // Sorteringen är namn i svensk ordning, precis som compareGoals i
+  // src/server/goals.js.
+  assert.deepEqual(
+    goals.map((mal) => mal.name),
+    ['Buffert', 'Ny cykel', 'Pension', 'Resa till Lissabon']
+  );
+
+  const vid = (name) => goals.find((mal) => mal.name === name);
+
+  // De tre utseendena finns alla, varje dag demon öppnas.
+  assert.deepEqual(
+    [vid('Buffert').status, vid('Resa till Lissabon').status, vid('Ny cykel').status],
+    ['pagaende', 'forsenat', 'klart']
+  );
+
+  // Buffert: 20 000 + 10 000 - 1 600 kr. Uttaget är den negativa raden, och utan
+  // den vore summan 30 000 kr - alltså räknas den med.
+  assert.equal(vid('Buffert').savedOre, 2000000 + 1000000 - 160000);
+  assert.equal(vid('Buffert').leftOre, 5000000 - 2840000);
+
+  // Ny cykel: insättningarna överstiger målet. leftOre är noll och aldrig
+  // negativ, och percent är klippt till 100 - båda av src/core/goal.js.
+  assert.equal(vid('Ny cykel').savedOre, 950000);
+  assert.equal(vid('Ny cykel').leftOre, 0);
+  assert.equal(vid('Ny cykel').percent, 100);
+
+  // Pension saknar slutdatum: båda månadsfälten är null tillsammans.
+  assert.equal(vid('Pension').targetDate, null);
+  assert.equal(vid('Pension').monthsLeft, null);
+  assert.equal(vid('Pension').perMonthOre, null);
+});
+
+test('ett nytt sparmål i demoläget sparas och överlever en omladdning', async () => {
+  const storage = createStorage();
+  const { fetch } = riggning({ storage });
+  await bytTillPlus(fetch);
+
+  const skapad = await fetch('/api/sparmal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Nytt kök', targetSek: '75000', targetDate: '2028-01-31' })
+  });
+  assert.equal(skapad.status, 201);
+  const { goal } = await json(skapad);
+  // Målbeloppet kommer tillbaka i ÖREN: sekToOre i src/core/money.js är enda
+  // stället ett kronbelopp blir öre, och validateGoalDraft anropar den.
+  assert.equal(goal.targetOre, 7500000);
+  assert.equal(goal.targetDate, '2028-01-31');
+
+  // En omladdning: ett nytt tillstånd läst ur samma lagring.
+  const efter = riggning({ storage });
+  const { goals } = await json(await efter.fetch(SPARMALSVAG));
+  const nytt = goals.find((mal) => mal.name === 'Nytt kök');
+  assert.notEqual(nytt, undefined, 'målet sparades inte i lagringen');
+  assert.equal(nytt.savedOre, 0, 'ett nytt mål har inga insättningar');
+  assert.equal(nytt.percent, 0);
+
+  // Och planen följde med omladdningen, så kortet syns fortfarande.
+  assert.equal((await efter.fetch(SPARMALSVAG)).status, 200);
+});
+
+test('ett ogiltigt sparmål i demoläget ger 400 med fieldErrors i validerarens ordning', async () => {
+  const { fetch } = riggning();
+  await bytTillPlus(fetch);
+
+  const svar = await fetch('/api/sparmal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(svar.status, 400);
+  const kropp = await json(svar);
+  // Fältordningen är formulärets och ägs av validateGoalDraft i
+  // src/core/goal.js: name, targetSek, targetDate. Alla tre prövas, aldrig bara
+  // det första.
+  assert.deepEqual(
+    kropp.fieldErrors.map((fel) => fel.field),
+    ['name', 'targetSek']
+  );
+  assert.equal(kropp.error, kropp.fieldErrors[0].message);
+});
+
+test('POST /api/sparmal kräver behörighet innan kroppen ens läses', async () => {
+  const { fetch } = riggning();
+
+  // Bas: 403, och inget mål skapas. Spärren ligger före valideringen, så en
+  // tom kropp ger 403 och inte 400.
+  const svar = await fetch('/api/sparmal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(svar.status, 403);
+  assert.equal((await json(svar)).requiredPlan, 'plus');
+});
+
+test('ett sparat tillstånd utan goals kasseras, och demon läser om seed-datan', async () => {
+  const storage = createStorage();
+  // Ett tillstånd som sparades före steg 4: allt utom de två nya listorna.
+  const gammalt = createSeedState(IDAG);
+  delete gammalt.goals;
+  writeState(storage, gammalt);
+  assert.equal(readState(storage), null, 'tillståndet ska kasseras');
+
+  // Och demon fungerar: seed-datan läses om, och sparmålskortet har sina rader.
+  const { fetch } = riggning({ storage });
+  await bytTillPlus(fetch);
+  const { goals } = await json(await fetch(SPARMALSVAG));
+  assert.equal(goals.length, 4);
+});
+
+test('src/web/app.js körd mot demons attrapp visar låsraden på Bas och kortet på Plus', async (t) => {
+  const dom = createDom();
+  const storage = createStorage();
+  const { fetch } = riggning({ storage });
+
+  await loadApp(t, { document: dom.document, fetch, idag: IDAG });
+  await flush();
+
+  // Bas: låsraden syns, kortet är dolt, och månadsvyns felruta är TOM - ett 403
+  // är inget fel, och "Okänd adress." eller en feltext här vore ett besked
+  // användaren inte kan göra något med.
+  assert.equal(dom.falt('goal-locked').hidden, false);
+  assert.equal(dom.falt('goal-card').hidden, true);
+  assert.equal(
+    dom.falt('goal-locked-text').textContent,
+    `${FEATURE_LABELS.savingsGoals} ingår i ${PLAN_LABELS.plus}.`
+  );
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.rader('goal-list').length, 0);
+
+  // Plus, läst vid nästa laddning: demon sparar planen, så ett nytt tillstånd ur
+  // samma lagring börjar på Plus. Kedjan är hel - seed.js lägger målen,
+  // demo-fetch.js svarar med dem och app.js ritar dem.
+  await bytTillPlus(fetch);
+  const efter = riggning({ storage });
+  const { goals } = await json(await efter.fetch(SPARMALSVAG));
+  assert.equal(goals.length, 4);
+  assert.equal(goals[0].name, 'Buffert');
 });

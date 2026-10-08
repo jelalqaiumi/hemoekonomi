@@ -353,6 +353,71 @@
             <ul id="budget-list" class="item-list"></ul>
           </section>
 
+          <!-- Sparmål [steg 4]: en rad per mål, under budgetkortet. Raderna
+               kommer ur GET /api/sparmal/<ÅÅÅÅ-MM-DD>, där varje rad bär
+               savedOre, leftOre, percent, monthsLeft, perMonthOre och status
+               FÄRDIGRÄKNADE av goalProgress i src/core/goal.js - app.js räknar
+               ingenting av det själv och klipper ingen procent.
+               Kortet är dolt från början och visas först när hämtningen gav
+               200: vilken av kortet och låsraden nedan som syns avgörs av
+               svaret och aldrig av en gissning om användarens plan. -->
+          <section class="card" id="goal-card" hidden>
+            <h3>Sparmål</h3>
+            <button type="button" class="add" id="add-goal">+ Nytt sparmål</button>
+
+            <!-- Formuläret knappen öppnar: namn, målbelopp och ett valfritt
+                 slutdatum. Dolt från början; app.js sätter hidden. Fältfelen
+                 från POST /api/sparmal visas i den enda felrutan - svarets
+                 error är det första felets text, precis som i räknings- och
+                 budgetformuläret. Egna felrutor går inte: error-name är
+                 postformulärets id. -->
+            <form id="goal-form" novalidate hidden>
+              <div class="field">
+                <label for="goal-name">Namn</label>
+                <input id="goal-name" name="name" type="text" autocomplete="off" />
+              </div>
+
+              <div class="field">
+                <label for="goal-target">Målbelopp (kr)</label>
+                <input id="goal-target" name="targetSek" type="text" inputmode="decimal" autocomplete="off" />
+              </div>
+
+              <!-- Slutdatumet är valfritt: ett sparmål utan slutdatum är ett
+                   giltigt sparmål, det har bara ingen månadstakt och kan inte
+                   vara försenat (checkTargetDate i src/core/goal.js läser tomt
+                   som null). Att fältet är valfritt står i etiketten, så att
+                   det syns utan att användaren behöver prova. -->
+              <div class="field">
+                <label for="goal-target-date">Slutdatum (valfritt)</label>
+                <input id="goal-target-date" name="targetDate" type="date" autocomplete="off" />
+              </div>
+
+              <p class="form-error" id="goal-form-error" role="alert"></p>
+
+              <button type="submit" class="primary" id="goal-submit">Spara</button>
+              <button type="button" class="secondary" id="goal-cancel">Avbryt</button>
+            </form>
+
+            <ul id="goal-list" class="item-list"></ul>
+          </section>
+
+          <!-- Låsraden [steg 4]: det en Bas-användare ser i stället för kortet
+               ovan. Sparmål är den första funktionen Bas saknar, så 403-grenen
+               i requireFeature är nåbar här för första gången.
+               Raden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på
+               var och en av sparmålens fem vägar, och det är den spärren som
+               håller. Texten skrivs av app.js ur svarets feature och
+               requiredPlan, så att ingen funktions- eller planetikett står
+               skriven här. -->
+          <section class="card" id="goal-locked" hidden>
+            <h3>Sparmål</h3>
+            <p class="locked-row">
+              <span class="lock-icon" aria-hidden="true">&#x1F512;</span>
+              <span id="goal-locked-text"></span>
+              <button type="button" class="secondary" id="show-plans">Se planer</button>
+            </p>
+          </section>
+
           <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
                utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
                role="img" och en title, så att den går att läsa med skärmläsare. -->

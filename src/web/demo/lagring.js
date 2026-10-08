@@ -95,7 +95,14 @@ function isDemoState(value) {
     // före steg 2 - kasseras av raden, och demon läser om seed-datan. Utan den
     // skulle readDemoMonth läsa state.budgets på ett tillstånd som inte har
     // fältet, och kortet Budget vore ett kast i stället för en lista.
-    Array.isArray(value.budgets)
+    Array.isArray(value.budgets) &&
+    // Sparmålen och insättningarna [steg 4]. Ett tillstånd som saknar något av de
+    // två - alltså ett som sparades före steg 4 - kasseras av raderna, och demon
+    // läser om seed-datan. Utan dem skulle demo-fetch.js läsa state.goals på ett
+    // tillstånd som inte har fältet, och sparmålskortet vore ett kast i stället
+    // för en lista.
+    Array.isArray(value.goals) &&
+    Array.isArray(value.goalDeposits)
   );
 }
 

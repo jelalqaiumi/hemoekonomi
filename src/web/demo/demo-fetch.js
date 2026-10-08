@@ -21,9 +21,10 @@
 import { billStatus, daysUntilDue, nextBillDueDate, validateBillDraft } from '../../core/bill.js';
 import { monthTotals, sumByKind } from '../../core/budget.js';
 import { CATEGORIES } from '../../core/entry.js';
+import { goalProgress, validateGoalDraft } from '../../core/goal.js';
 import { compareIsoDates, compareMonths, firstDayOfMonth, isValidIsoDate, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
-import { FEATURES, hasFeature, isPlanKey } from '../../core/plans.js';
+import { FEATURES, hasFeature, isPlanKey, planFor, PLAN_LABELS } from '../../core/plans.js';
 import { nextDueDate } from '../../core/schedule.js';
 import { DEMO } from './demolage.js';
 
@@ -76,6 +77,14 @@ const ITEM_MONTH_SEGMENT = 'manad';
 const BILLS_PATH = '/api/rakningar';
 const BILL_PATH_PREFIX = '/api/rakningar/';
 const BILL_PAID_SEGMENT = 'betald';
+// Sparmålens vägar [steg 4]. Samma adresser som src/server/api.js. Insättningens
+// väg står inte här: ingenting i gränssnittet anropar den ännu, och en väg utan
+// anropare är byggd i förtid (ARKITEKTUR.md, "Teststrategi").
+const GOALS_PATH = '/api/sparmal';
+const GOAL_PATH_PREFIX = '/api/sparmal/';
+// Funktionsnyckeln sparmålens vägar kräver. Står som en konstant och inte som en
+// sträng på två ställen, av samma skäl som adresserna ovan.
+const GOALS_FEATURE = 'savingsGoals';
 
 // Antalet månader i översikten. Samma tolv som OVERVIEW_MONTHS i
 // src/server/api.js: antalet står inte i adressen, så en klient kan inte be om
@@ -468,6 +477,43 @@ function compareBills(a, b) {
   return 0;
 }
 
+// Ett sparmål i demons tillstånd som den form GET /api/sparmal svarar med: de
+// fyra fälten ur goals-raden plus de sex räknade. Alla sex kommer ur
+// goalProgress i src/core/goal.js, precis som toGoalView i src/server/goals.js -
+// demon räknar varken procent, månader eller månadstakt själv.
+//
+// savedOre är summan av målets insättningar. Summan räknas här och inte i
+// goalProgress: på servern är den en SUM i SQL, och demon har ingen databas.
+// Additionen är heltal ören och ingenting annat.
+function toDemoGoal(goal, deposits, today) {
+  const savedOre = deposits
+    .filter((deposit) => deposit.goalId === goal.id)
+    .reduce((summa, deposit) => summa + deposit.amountOre, 0);
+  const bas = {
+    id: goal.id,
+    name: goal.name,
+    targetOre: goal.targetOre,
+    targetDate: goal.targetDate
+  };
+  return { ...bas, ...goalProgress({ ...bas, savedOre }, today) };
+}
+
+// Sorteringen compareGoals i src/server/goals.js skriver ut: namn i svensk
+// ordning, därefter id. Sista ledet finns för att ordningen ska vara total.
+function compareGoals(a, b) {
+  const byName = NAME_COLLATOR.compare(a.name, b.name);
+  if (byName !== 0) {
+    return byName;
+  }
+  if (a.id < b.id) {
+    return -1;
+  }
+  if (a.id > b.id) {
+    return 1;
+  }
+  return 0;
+}
+
 function planBody(plan) {
   return { plan, features: FEATURES.filter((feature) => hasFeature(plan, feature)) };
 }
@@ -562,6 +608,29 @@ export function createDemoFetch({
   const fieldErrorSvar = (errors) => svar(400, { error: errors[0].message, fieldErrors: errors });
 
   const metodStods = () => svar(405, { error: SERVER_TEXTS.methodNotAllowed });
+
+  // Behörighetsspärren [steg 4], samma form och samma kropp som requireFeature i
+  // src/server/api.js: texten plus feature och requiredPlan, så att gränssnittet
+  // kan visa rätt låsruta utan att gissa ur strängen.
+  //
+  // hasFeature och planFor i src/core/plans.js äger både upplösningen av arvet och
+  // frågan "vilken plan krävs", och PLAN_LABELS äger planens svenska namn -
+  // attrappen räknar ingenting av det själv och skriver ingen plantitel.
+  //
+  // Till skillnad från budgetens spärr, som api.js kör med 'budget' och som
+  // svarar null för varje plan demon kan ha, är den här grenen NÅBAR: demon börjar
+  // på Bas, och savingsGoals finns bara från Plus.
+  const kraverFunktion = () => {
+    if (hasFeature(state.plan, GOALS_FEATURE)) {
+      return null;
+    }
+    const requiredPlan = planFor(GOALS_FEATURE);
+    return svar(403, {
+      error: `Funktionen ingår i ${PLAN_LABELS[requiredPlan]}. Uppgradera för att låsa upp.`,
+      feature: GOALS_FEATURE,
+      requiredPlan
+    });
+  };
 
   // PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>. Versioneringen är changeTemplateFrom i
   // src/server/months.js, uttryckt i minnet: den gamla versionen får
@@ -974,6 +1043,73 @@ export function createDemoFetch({
       };
       state.bills.push(bill);
       return sparaOch(svar(201, { bill: toDemoBillWritten(bill) }));
+    }
+
+    // Sparmålens vägar [steg 4]. Samma ordning som api.js: sessionen först,
+    // BEHÖRIGHETEN sedan, därefter metoden, datumet och valideringen.
+    //
+    // Behörigheten är det nya här. Till skillnad från budgetens och
+    // räkningarnas vägar är 403-grenen NÅBAR: savingsGoals står i PLANS.plus och
+    // inte i PLANS.bas, och demon börjar på Bas. Besökaren möter alltså låsraden
+    // först och kortet efter ett byte till Plus - det är hela poängen med att
+    // seed-datan börjar på Bas.
+    //
+    // GET /api/sparmal/<ÅÅÅÅ-MM-DD>. Prövas före den enkla /api/sparmal nedan,
+    // precis som i api.js.
+    const goalToday = segmentAfter(pathname, GOAL_PATH_PREFIX);
+    if (goalToday !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      const utanFunktion = kraverFunktion();
+      if (utanFunktion !== null) {
+        return utanFunktion;
+      }
+      if (method !== 'GET') {
+        return metodStods();
+      }
+      if (!isValidIsoDate(goalToday)) {
+        return svar(400, { error: SERVER_TEXTS.invalidToday });
+      }
+      return svar(200, {
+        goals: state.goals
+          .map((goal) => toDemoGoal(goal, state.goalDeposits, goalToday))
+          .sort(compareGoals)
+      });
+    }
+
+    // POST /api/sparmal [steg 4]. Kroppens tre fält ägs av validateGoalDraft i
+    // src/core/goal.js: attrappen läser varken målbeloppet eller slutdatumet
+    // självt.
+    //
+    // Svaret bär de fyra fälten ur goals-raden och ingen av de sex räknade, precis
+    // som addGoal i src/server/goals.js: de kräver ett dagens datum som kroppen
+    // inte bär, och gränssnittet hämtar listan om efter en sparning.
+    if (pathname === GOALS_PATH) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      const utanFunktion = kraverFunktion();
+      if (utanFunktion !== null) {
+        return utanFunktion;
+      }
+      if (method !== 'POST') {
+        return metodStods();
+      }
+      const result = validateGoalDraft(draftFrom(body));
+      if (!result.ok) {
+        return fieldErrorSvar(result.errors);
+      }
+      const goal = {
+        id: makeId(),
+        name: result.value.name,
+        targetOre: result.value.targetOre,
+        targetDate: result.value.targetDate
+      };
+      state.goals.push(goal);
+      return sparaOch(svar(201, { goal }));
     }
 
     // GET /api/oversikt/<ÅÅÅÅ-MM>. Samma ordning som api.js: sessionen först,

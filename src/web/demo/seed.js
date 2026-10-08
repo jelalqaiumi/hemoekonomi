@@ -103,6 +103,59 @@ const SEED_BILLS = Object.freeze([
   { id: 'demo-rakning-tandlakare', name: 'Tandläkare', amountOre: 180000, monthsFromToday: 1, interval: null, remindDays: 5 }
 ]);
 
+// Sparmålen i demon [steg 4]. monthsFromToday är hur många månader från dagens
+// datum slutdatumet ligger, och tillsammans med insättningarna är det det som
+// avgör vilket av kortets tre utseenden raden får:
+//
+//    8  slutdatum åtta månader bort, en bit kvar  -> pagaende, vanlig rad
+//   -2  slutdatum har passerat, en bit kvar       -> forsenat, röd ram
+//    4  insättningarna överstiger målet           -> klart, grön stapel
+//
+// null betyder inget slutdatum alls: ett sparmål utan slutdatum är giltigt, det
+// har bara ingen månadstakt och kan inte vara försenat. Pension finns för att
+// visa just den raden - Kvar-raden slutar efter beloppet.
+//
+// Måttet är månader och inte dagar, av samma skäl som räkningarnas: det enda
+// datumsteg kärnan erbjuder är addMonthsClamped i src/core/dates.js, och den här
+// filen räknar inga datum själv. En rad per utseende, och talen är valda så att
+// de tre utseendena syns VARJE dag demon öppnas - är inget mål försenat och
+// inget nått visar demon inte vad kortet finns för.
+//
+// Insättningarna står som en lista per mål i ören. Buffert har ett UTTAG bland
+// dem: beloppet får vara negativt, och den som tar pengar ur sitt sparande ska
+// kunna registrera det. Utan en negativ rad i seed-datan visar demon inte att
+// det går.
+const SEED_GOALS = Object.freeze([
+  {
+    id: 'demo-mal-buffert',
+    name: 'Buffert',
+    targetOre: 5000000,
+    monthsFromToday: 8,
+    depositsOre: Object.freeze([2000000, 1000000, -160000])
+  },
+  {
+    id: 'demo-mal-resa',
+    name: 'Resa till Lissabon',
+    targetOre: 1200000,
+    monthsFromToday: -2,
+    depositsOre: Object.freeze([300000])
+  },
+  {
+    id: 'demo-mal-cykel',
+    name: 'Ny cykel',
+    targetOre: 800000,
+    monthsFromToday: 4,
+    depositsOre: Object.freeze([500000, 450000])
+  },
+  {
+    id: 'demo-mal-pension',
+    name: 'Pension',
+    targetOre: 10000000,
+    monthsFromToday: null,
+    depositsOre: Object.freeze([1500000])
+  }
+]);
+
 // Demons hela tillstånd, som det ser ut innan besökaren rört något.
 //
 // today är dagens datum på formen ÅÅÅÅ-MM-DD och kommer in som parameter:
@@ -182,6 +235,37 @@ export function createSeedState(today) {
     // anchorDate är densamma som dueDate, precis som addBill i
     // src/server/bills.js skriver den: ankardagen ÄR den första förfallodagen,
     // och en betalning flyttar den aldrig.
+    // Sparmålen och deras insättningar [steg 4]. Raderna bär samma fält som
+    // tabellerna goals och goal_deposits, utan created_at: demon har ingen
+    // databas, och ingenting i demon läser tiden ett mål skapades.
+    //
+    // De sex räknade fälten står INTE här. De räknas av goalProgress i
+    // src/core/goal.js när demo-fetch.js svarar, precis som servern räknar dem -
+    // ett sparat tillstånd ska bära det användaren skrev och aldrig det appen
+    // räknar ut.
+    goals: SEED_GOALS.map((seed) => ({
+      id: seed.id,
+      name: seed.name,
+      targetOre: seed.targetOre,
+      targetDate:
+        seed.monthsFromToday === null ? null : addMonthsClamped(today, seed.monthsFromToday)
+    })),
+    // Insättningarna, platta i en lista med goalId precis som tabellen har:
+    // demon speglar schemat och inte en bekvämare form.
+    //
+    // made_on är dagen insättningen gjordes. Den räknas bakåt från i dag med en
+    // månad per insättning, så att ordningen är den som en användare hade fått
+    // genom att sätta in en gång i månaden. Dagen används inte av någon räkning -
+    // savedOre är en summa - men fältet är obligatoriskt i schemat och ska därför
+    // bära ett datum som går att tro på.
+    goalDeposits: SEED_GOALS.flatMap((seed) =>
+      seed.depositsOre.map((amountOre, index) => ({
+        id: `demo-insattning-${seed.id}-${index}`,
+        goalId: seed.id,
+        amountOre,
+        madeOn: addMonthsClamped(today, index - seed.depositsOre.length)
+      }))
+    ),
     bills: SEED_BILLS.map((seed) => {
       const dueDate = addMonthsClamped(today, seed.monthsFromToday);
       return {

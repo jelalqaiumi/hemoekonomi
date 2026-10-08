@@ -23,13 +23,27 @@
 import { isValidIsoDate } from '../../src/core/dates.js';
 
 // Resten av modulens gränssnitt, oförändrat. Laddaren pekar om app.js:s enda
-// import av /core/dates.js hit, och app.js läser fyra andra exporter ur samma
-// modul: månadens namn, månadens rubrik, månaden ur ett datum och månaden flyttad
-// ett steg. Utan raden nedan finns de inte i den ompekade modulen, och
-// importen faller. Bara dagens datum är utbytt mot en ställbar sträng; de fyra
-// går rakt vidare till den riktiga filen, så en ändring där når den här
-// körningen.
-export { monthLabel, monthName, monthOfIsoDate, shiftMonth } from '../../src/core/dates.js';
+// import av /core/dates.js hit, så varje annan export app.js läser ur den modulen
+// måste finnas här också: är den borta finns den inte i den ompekade modulen, och
+// importen faller med "does not provide an export named …". Uppräkningen nedan
+// bär inget antal — ett krav med siffra blir falskt av nästa tillägg i app.js
+// (LARDOMAR.md 2026-09-10).
+//
+// Bara dagens datum är utbytt mot en ställbar sträng; de övriga går rakt vidare
+// till den riktiga filen, så en ändring där når den här körningen.
+//
+// isValidIsoDate står med i listan sedan steg 4: sparmålskortet i app.js prövar
+// ett targetDate ur svaret innan det går till monthOfIsoDate, som kastar för allt
+// som inte är ett datum. Namnet importeras dessutom ovan för spärren i
+// setFrozenDay — en re-export och en lokal import av samma namn är två skilda
+// bindningar, och raden nedan är den som gör namnet synligt för app.js.
+export {
+  isValidIsoDate,
+  monthLabel,
+  monthName,
+  monthOfIsoDate,
+  shiftMonth
+} from '../../src/core/dates.js';
 
 let frusenDag = null;
 

@@ -24,6 +24,7 @@ import { monthLabel } from '../src/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
 import { REMIND_DAYS_DEFAULT, REMIND_DAYS_MAX, REMIND_DAYS_MIN } from '../src/core/bill.js';
 import { divideRoundHalfUp, formatSek } from '../src/core/money.js';
+import { GOAL_STATUSES } from '../src/core/goal.js';
 import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
@@ -86,6 +87,16 @@ const RAKNINGSVAG_PREFIX = '/api/rakningar/';
 const RAKNINGSVAG = `${RAKNINGSVAG_PREFIX}${FRYST_IDAG}`;
 const RAKNINGAR_TOM = Object.freeze({ status: 200, json: { bills: [] } });
 
+// Sparmålens väg [steg 4]. Dagen står i sökvägen, så prefixet och inte hela
+// adressen, av samma skäl som räkningarnas: fallen kör med olika frysta dagar.
+const SPARMALSVAG_PREFIX = '/api/sparmal/';
+const SPARMALSVAG = `${SPARMALSVAG_PREFIX}${FRYST_IDAG}`;
+// Förvalet är ett 200 med en tom lista, alltså en plan SOM HAR sparmål. Valet är
+// inte neutralt: ett 403 som förval hade visat låsraden i varje fall i filen och
+// gjort det fall som prövar den intetsägande. Kortet syns därmed i varje inloggat
+// fall, och låsraden bara där den efterfrågas.
+const SPARMAL_TOM = Object.freeze({ status: 200, json: { goals: [] } });
+
 // En post på samma form som src/server/months.js lämnar den: ören och inte
 // kronor, och fälten som säger om posten kommer från en mall.
 function post(id, kind, name, amountOre, category, extra = {}) {
@@ -136,8 +147,9 @@ async function starta(t, plan, idag = FRYST_IDAG) {
 }
 
 // En plan för en inloggad session: 200 på GET /api/mig, listan med räkningar ur
-// hamtaRakningar på varje GET av /api/rakningar/..., månadssvaret ur hamtaManad
-// på varje annan GET, och resten till ovrigt.
+// hamtaRakningar på varje GET av /api/rakningar/..., sparmålen ur hamtaSparmal på
+// varje GET av /api/sparmal/... [steg 4], månadssvaret ur hamtaManad på varje
+// annan GET, och resten till ovrigt.
 //
 // Räkningarnas hämtning [steg 3] har en egen gren och faller inte till
 // hamtaManad: app.js hämtar listan en gång vid laddningen, och en plan som
@@ -145,15 +157,27 @@ async function starta(t, plan, idag = FRYST_IDAG) {
 // Grenen prövar metoden också, så att POST /api/rakningar/<id>/betald går vidare
 // till ovrigt där varje annan ändring hamnar.
 //
-// Förvalet är en tom lista: ett kort utan rader, alltså det utgångsläge varje
-// fall som inte handlar om räkningar förutsätter.
-function planInloggad(hamtaManad, ovrigt = () => null, hamtaRakningar = () => RAKNINGAR_TOM) {
+// Sparmålen har en egen gren av samma skäl som räkningarna, och den prövar
+// metoden också: POST /api/sparmal bär ingen dag i sökvägen och går vidare till
+// ovrigt, där varje annan ändring hamnar.
+//
+// Förvalen är tomma listor: kort utan rader, alltså det utgångsläge varje fall
+// som inte handlar om räkningar eller sparmål förutsätter.
+function planInloggad(
+  hamtaManad,
+  ovrigt = () => null,
+  hamtaRakningar = () => RAKNINGAR_TOM,
+  hamtaSparmal = () => SPARMAL_TOM
+) {
   return (anropet, index) => {
     if (anropet.url === '/api/mig') {
       return MIG_200;
     }
     if (anropet.method === 'GET' && anropet.url.startsWith(RAKNINGSVAG_PREFIX)) {
       return hamtaRakningar(anropet, index);
+    }
+    if (anropet.method === 'GET' && anropet.url.startsWith(SPARMALSVAG_PREFIX)) {
+      return hamtaSparmal(anropet, index);
     }
     if (anropet.method === 'GET') {
       return hamtaManad(anropet.url);
@@ -230,7 +254,7 @@ test('(37) ett 401 vid laddningen visar inloggningsvyn och döljer månadsvyn', 
 test('(38) ett 200 vid laddningen visar månadsvyn med månadens namn', async (t) => {
   const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([])));
 
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
   assert.equal(anrop[1].method, 'GET');
   assert.equal(anrop[1].url, MANADSVAG);
 
@@ -263,9 +287,9 @@ test('(40) bakåtknappen hämtar föregående månad och byter rubrik', async (t
   assert.equal(dom.falt('month-prev').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
-  assert.equal(anrop[3].method, 'GET');
-  assert.equal(anrop[3].url, `/api/manad/${FOREGAENDE_MANAD}`);
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].method, 'GET');
+  assert.equal(anrop[4].url, `/api/manad/${FOREGAENDE_MANAD}`);
   assert.equal(dom.falt('month-label').textContent, FOREGAENDE_RUBRIK);
   // Tomtexterna bär den nya månadens namn, inte den gamlas.
   assert.equal(dom.falt('income-empty').textContent, 'Inga inkomster i augusti ännu - lägg till din första.');
@@ -277,14 +301,14 @@ test('(41) framåtknappen hämtar nästa månad, också över ett årsskifte', a
   assert.equal(dom.falt('month-next').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
-  assert.equal(anrop[3].url, `/api/manad/${JANUARI_NASTA_AR}`);
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].url, `/api/manad/${JANUARI_NASTA_AR}`);
   assert.equal(dom.falt('month-label').textContent, JANUARI_RUBRIK);
 
   // Ett andra steg framåt räknar vidare från januari och inte från dagens månad.
   assert.equal(dom.falt('month-next').utlos('click'), true);
   await flush();
-  assert.equal(anrop[4].url, '/api/manad/2027-02');
+  assert.equal(anrop[5].url, '/api/manad/2027-02');
   assert.equal(dom.falt('month-label').textContent, 'Februari 2027');
 });
 
@@ -525,16 +549,16 @@ test('(49) en ny utgift skickas som POST och hämtar om månaden', async (t) => 
   assert.equal(skickaFormularet(dom), true, 'app.js kallade inte preventDefault');
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, MANADSVAG);
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, MANADSVAG);
   // Slaget kommer från vilken lista knappen satt i och är inget fält. Beloppet
   // skickas som den råa strängen ur formuläret — ingen egen tolkning i app.js.
   // occurredOn och note står med sedan steg 2 och är tomma strängar när
   // användaren inte fyllt i dem: checkOccurredOn och checkNote i
   // src/core/item.js läser en tom sträng som "ingen dag" respektive "ingen
   // kommentar", precis som checkToMonth läser sitt tomma fält.
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -544,8 +568,8 @@ test('(49) en ny utgift skickas som POST och hämtar om månaden', async (t) => 
   });
 
   // Direktuppdateringen: ett GET för samma månad, och listan växer.
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
   assert.deepEqual(namnen(dom, 'expense-list'), ['Hyra']);
   assert.equal(dom.falt('total-expense').textContent, formatSek(123450));
   // Formuläret stängs OCH nollställs efter en lyckad sparning: ett dolt formulär
@@ -581,8 +605,8 @@ test('(50) knappen är låst medan anropet pågår och ett andra försök ger in
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop.length, 4);
-  assert.equal(anrop[3].method, 'POST');
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].method, 'POST');
   assert.equal(dom.falt('item-submit').disabled, true, 'knappen släpptes innan svaret kom');
 
   // Ett andra submit medan anropet är i luften. Formulärets eget pågående-läge
@@ -590,14 +614,14 @@ test('(50) knappen är låst medan anropet pågår och ett andra försök ger in
   // disabled duger inte som enda spärr.
   skickaFormularet(dom);
   await flush();
-  assert.equal(anrop.length, 4, 'ett andra försök gav ett andra POST');
+  assert.equal(anrop.length, 5, 'ett andra försök gav ett andra POST');
 
   // Svaret kommer, knappen släpps, och omhämtningen blir av.
-  anrop[3].svara({ status: 201, json: { item: null } });
+  anrop[4].svara({ status: 201, json: { item: null } });
   await flush();
   assert.equal(dom.falt('item-submit').disabled, false);
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'GET');
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'GET');
 });
 
 test('ett andra klick på samma Ta bort-knapp medan anropet är i luften ger inget andra DELETE', async (t) => {
@@ -607,14 +631,14 @@ test('ett andra klick på samma Ta bort-knapp medan anropet är i luften ger ing
   assert.equal(taBort.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
-  assert.equal(anrop[3].method, 'DELETE');
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].method, 'DELETE');
   assert.equal(taBort.disabled, true);
   // Webbläsaren skickar inget klick till en avstängd knapp, och attrappen gör
   // likadant: utlos svarar false utan att kalla lyssnaren.
   assert.equal(taBort.utlos('click'), false);
   await flush();
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('(51) Ta bort hämtar om månaden, listan krymper och summorna ändras', async (t) => {
@@ -639,10 +663,10 @@ test('(51) Ta bort hämtar om månaden, listan krymper och summorna ändras', as
   knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
   await flush();
 
-  assert.equal(anrop[3].method, 'DELETE');
-  assert.equal(anrop[3].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[4].method, 'DELETE');
+  assert.equal(anrop[4].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
 
   assert.equal(dom.rader('expense-list').length, 0);
   assert.equal(dom.falt('expense-empty').textContent, TOM_UTGIFTSLISTA);
@@ -670,9 +694,9 @@ test('(52) Ändra fyller formuläret och sparar posten med PUT', async (t) => {
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -681,8 +705,8 @@ test('(52) Ändra fyller formuläret och sparar posten med PUT', async (t) => {
     note: ''
   });
   // Direktuppdateringen sker också efter en ändring.
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
 });
 
 test('en ny post efter en ändring skickas som POST med tomma fält', async (t) => {
@@ -706,9 +730,9 @@ test('en ny post efter en ändring skickas som POST med tomma fält', async (t) 
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, MANADSVAG);
-  assert.equal(kropp(anrop[3]).kind, 'income');
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(kropp(anrop[4]).kind, 'income');
 });
 
 test('(53) ett 400 visar fältfelen vid sina fält och skapar ingen post', async (t) => {
@@ -737,7 +761,7 @@ test('(53) ett 400 visar fältfelen vid sina fält och skapar ingen post', async
   assert.equal(dom.falt('item-form-error').textContent, '');
   // Ingen omhämtning: posten skapades inte, och formuläret står kvar öppet med
   // användarens värden.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.falt('item-form-card').hidden, false);
   assert.equal(dom.rader('expense-list').length, 0);
 });
@@ -778,7 +802,7 @@ test('ett 404 vid Ta bort visar serverns text i månadsvyns allmänna ruta', asy
 
   assert.equal(dom.falt('month-error').textContent, 'Posten finns inte.');
   // Ingen omhämtning på ett 404: vyn står kvar som den var.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.rader('saving-list').length, 1);
 });
 
@@ -812,7 +836,7 @@ test('ett 401 på en sparning visar inloggningsvyn', async (t) => {
   assert.equal(dom.falt('login-view').hidden, false);
   assert.equal(dom.falt('month-view').hidden, true);
   // Ingen omhämtning och inget fältfel: sessionen är slut.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.falt('item-form-error').textContent, '');
 });
 
@@ -824,7 +848,7 @@ test('ett 401 på en borttagning visar inloggningsvyn', async (t) => {
 
   assert.equal(dom.falt('login-view').hidden, false);
   assert.equal(dom.falt('month-view').hidden, true);
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.falt('month-error').textContent, '');
 });
 
@@ -1008,16 +1032,16 @@ test('(57) Logga ut anropar utloggningsvägen och visar inloggningsvyn', async (
   assert.equal(dom.falt('log-out').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, '/api/auth/logga-ut');
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, '/api/auth/logga-ut');
   assert.equal(dom.falt('log-out').disabled, true, 'knappen släpptes innan svaret kom');
   assert.equal(dom.falt('month-view').hidden, false, 'vyn byttes innan svaret kom');
   // Ett andra klick medan anropet är i luften ger inget andra anrop.
   assert.equal(dom.falt('log-out').utlos('click'), false);
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 
-  anrop[3].svara({ status: 204 });
+  anrop[4].svara({ status: 204 });
   await flush();
 
   assert.equal(dom.falt('login-view').hidden, false);
@@ -1078,7 +1102,7 @@ test('(59) Avbryt stänger formuläret, tömmer fälten och skickar inget anrop'
   assert.equal(dom.falt('item-name').value, '');
   assert.equal(dom.falt('item-amount').value, '');
   // Anropslistan är oförändrad: de två anropen är laddningens.
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('(60) Avbryt rensar fältfelen, så att formuläret öppnas rent nästa gång', async (t) => {
@@ -1167,8 +1191,8 @@ test('(62) en misslyckad omhämtning efter en ändring lämnar vyn stående', as
   knapp(dom.rader('saving-list')[0], 'remove').utlos('click');
   await flush();
 
-  assert.equal(anrop[3].method, 'DELETE');
-  assert.equal(anrop[4].method, 'GET');
+  assert.equal(anrop[4].method, 'DELETE');
+  assert.equal(anrop[5].method, 'GET');
   assert.equal(dom.falt('month-error').textContent, serverns);
   kravVynStaende(dom);
 });
@@ -1189,10 +1213,10 @@ test('en pågående hämtning lämnar den gamla feltexten kvar tills svaret komm
   dom.falt('month-next').utlos('click');
   await flush();
 
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.falt('month-error').textContent, serverns, 'texten försvann innan svaret kom');
 
-  anrop[3].svara(manadssvar(treSlagsposter(), STAENDE_TOTALER));
+  anrop[4].svara(manadssvar(treSlagsposter(), STAENDE_TOTALER));
   await flush();
 
   assert.equal(dom.falt('month-error').textContent, '');
@@ -1300,7 +1324,7 @@ test('(64) kryssrutan Återkommande öppnar de två fälten, som är dolda tills
     Object.entries(INTERVAL_LABELS)
   );
   // Kryssrutan skickar inget anrop: de två anropen är GET /api/mig och månaden.
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fält', async (t) => {
@@ -1319,9 +1343,9 @@ test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fä
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, `/api/mallar/${MANAD}`);
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -1330,7 +1354,7 @@ test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fä
     toMonth: ''
   });
   // Månaden hämtas om, och formuläret stängs med rutan nollställd.
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[5].url, MANADSVAG);
   assert.equal(dom.falt('item-form-card').hidden, true);
   assert.equal(dom.falt('item-recurring').checked, false);
   assert.equal(dom.falt('recurring-fields').hidden, true);
@@ -1369,7 +1393,7 @@ test('ett 400 från mallvägen visar fältfelen vid interval och toMonth', async
   assert.equal(dom.falt('item-form-error').textContent, '');
   assert.equal(dom.falt('item-form-card').hidden, false);
   // Ingen omhämtning: ingen post skapades.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('(65) en mallrads Ändra visar två val med månadens namn i och öppnar inget formulär', async (t) => {
@@ -1390,7 +1414,7 @@ test('(65) en mallrads Ändra visar två val med månadens namn i och öppnar in
   // Frågan kommer före formuläret: Ändra på en mallrad öppnar det inte självt.
   assert.equal(dom.falt('item-form-card').hidden, true);
   // Och frågan skickar inget anrop.
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('(65) en mallrads Ta bort visar sin egen fråga med samma två val', async (t) => {
@@ -1402,7 +1426,7 @@ test('(65) en mallrads Ta bort visar sin egen fråga med samma två val', async 
   assert.equal(fragetext(rad), REMOVE_QUESTION);
   assert.deepEqual(valen(rad).map((val) => val.textContent), [BARA_MANADEN, FRAN_OCH_MED_MANADEN]);
   // Ta bort på en mallrad tar inte bort något självt: frågan kommer först.
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 
   // Den andra frågan ersätter den första i samma ruta: en rad frågar en sak i
   // taget. Utgångsläget är borttagningsfrågan, så bytet fälls av det här steget.
@@ -1451,9 +1475,9 @@ test('(66) en engångsposts Ändra öppnar formuläret direkt och raden har inge
   await flush();
 
   // Samma väg som före etapp 4: postens egen, varken månadsvägen eller mallvägen.
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, `/api/poster/${bio.id}`);
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, `/api/poster/${bio.id}`);
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -1488,14 +1512,14 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
   // Kroppen bär amountSek och ingenting annat: en avvikelse har bara en kolumn
   // för belopp.
-  assert.deepEqual(kropp(anrop[3]), { amountSek: '13000' });
+  assert.deepEqual(kropp(anrop[4]), { amountSek: '13000' });
   // Månaden hämtas om: vyn byggs aldrig ur svaret på en ändring.
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
 
   // Det andra valet, från samma rad. Nu är rutan kryssad och de två fälten
   // öppna: en ny version av serien är fortfarande en återkommande post.
@@ -1509,10 +1533,10 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[6].method, 'PUT');
   // Seriens id, inte postens: de två vägarna skiljer sig i både sökväg och kropp.
-  assert.equal(anrop[5].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
-  assert.deepEqual(kropp(anrop[5]), {
+  assert.equal(anrop[6].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[6]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '12000',
@@ -1520,7 +1544,7 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
     interval: 'quarterly',
     toMonth: '2027-03'
   });
-  assert.equal(anrop[6].url, MANADSVAG);
+  assert.equal(anrop[7].url, MANADSVAG);
 });
 
 test('(67) Ta bort: Bara månaden hoppar över månaden, Från och med månaden avslutar serien', async (t) => {
@@ -1537,22 +1561,22 @@ test('(67) Ta bort: Bara månaden hoppar över månaden, Från och med månaden 
   assert.equal(valen(dom.rader('expense-list')[0])[0].utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
-  assert.deepEqual(kropp(anrop[3]), { skipped: true });
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  assert.deepEqual(kropp(anrop[4]), { skipped: true });
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
 
   knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
   assert.equal(valen(dom.rader('expense-list')[0])[1].utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[5].method, 'DELETE');
-  assert.equal(anrop[5].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.equal(anrop[6].method, 'DELETE');
+  assert.equal(anrop[6].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
   // Vägen har ingen kropp: vad som ska hända står i metoden och i sökvägen.
-  assert.equal(anrop[5].body, undefined);
-  assert.equal(anrop[6].method, 'GET');
-  assert.equal(anrop[6].url, MANADSVAG);
+  assert.equal(anrop[6].body, undefined);
+  assert.equal(anrop[7].method, 'GET');
+  assert.equal(anrop[7].url, MANADSVAG);
 });
 
 test('(70) Från och med förifyller Intervall och Till och med ur posten', async (t) => {
@@ -1595,9 +1619,9 @@ test('(71) en beloppsändring från och med månaden behåller intervallet', asy
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '13000',
@@ -1678,16 +1702,16 @@ test('valet som utlöser ett anrop är låst tills svaret kommit', async (t) => 
   assert.equal(bara.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(bara.disabled, true, 'valet släpptes innan svaret kom');
   assert.equal(bara.utlos('click'), false, 'ett låst val tog emot ett klick');
   await flush();
-  assert.equal(anrop.length, 4, 'ett andra klick gav ett andra anrop');
+  assert.equal(anrop.length, 5, 'ett andra klick gav ett andra anrop');
 
-  anrop[3].svara({ status: 200, json: { items: [], totals: NOLLOR } });
+  anrop[4].svara({ status: 200, json: { items: [], totals: NOLLOR } });
   await flush();
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].url, MANADSVAG);
 });
 
 test('ett 404 på en avslutad serie visar serverns text och lämnar valet släppt', async (t) => {
@@ -1717,6 +1741,10 @@ test('ett 404 på en avslutad serie visar serverns text och lämnar valet släpp
 // sträng, inte ett beteende — och den enda anledningen att den duger här är att det
 // inte finns något beteende att pröva.
 const APP_KALLA_PATH = fileURLToPath(new URL('../src/web/app.js', import.meta.url));
+// Sidan som attrappen härmar. Adressen byggs ur import.meta.url och aldrig ur
+// process.cwd() (LARDOMAR.md 2026-09-04): fallen nedan jämför statisk
+// uppmärkning i index.html mot det attrappen bär.
+const INDEX_PATH = fileURLToPath(new URL('../src/web/index.html', import.meta.url));
 const SUMMAELEMENT = Object.freeze(['TOTAL_INCOME', 'TOTAL_EXPENSE', 'TOTAL_SAVING', 'TOTAL_LEFT']);
 
 test('(55) app.js räknar aldrig fram summeringen själv', async () => {
@@ -2757,18 +2785,18 @@ test('+ Sätt tak sparar taket med PUT och ritar om kortet ur en hämtning', asy
   await flush();
 
   // anrop: 0 GET /api/mig, 1 GET månaden, 2 PUT taket, 3 GET månaden igen.
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[3].method, 'PUT');
-  assert.equal(anrop[3].url, BUDGETVAG);
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[4].method, 'PUT');
+  assert.equal(anrop[4].url, BUDGETVAG);
   // Beloppet skickas som den råa strängen ur fältet — ingen egen tolkning i
   // app.js, precis som för en post.
-  assert.deepEqual(kropp(anrop[3]), { category: 'housing', amountSek: '9000' });
+  assert.deepEqual(kropp(anrop[4]), { category: 'housing', amountSek: '9000' });
 
   // Vyn ritas ur hämtningen och aldrig ur svaret på ändringen: spentOre och
   // leftOre beror på månadens poster, och kortet och listorna ska aldrig visa två
   // olika månadstillstånd.
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, MANADSVAG);
   assert.equal(budgetrader(dom).length, 3);
 
   // Och formuläret är stängt och tömt.
@@ -2799,7 +2827,7 @@ test('ett 400 från budgetvägen visar serverns text och lämnar formuläret öp
   assert.equal(dom.falt('budget-form').hidden, false);
   assert.equal(dom.falt('budget-amount').value, '0');
   // Ingen omhämtning: inget tak skrevs.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('ett avvisat fetch vid en sparning av ett tak visar den allmänna texten', async (t) => {
@@ -2826,7 +2854,7 @@ test('Avbryt i budgetformuläret stänger det utan att skicka något anrop', asy
 
   assert.equal(dom.falt('budget-form').hidden, true);
   assert.equal(dom.falt('budget-amount').value, '');
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('budgetknappen är låst tills svaret kommit, så att två snabba klick inte ger två tak', async (t) => {
@@ -2841,15 +2869,15 @@ test('budgetknappen är låst tills svaret kommit, så att två snabba klick int
   skickaBudgetformularet(dom);
   await flush();
 
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(dom.falt('budget-submit').disabled, true);
   // Enter i beloppsfältet går förbi den avstängda knappen, så formulärets eget
   // pågående-läge är spärren.
   skickaBudgetformularet(dom);
   await flush();
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 
-  anrop[3].svara({ status: 200, json: { budgets: [] } });
+  anrop[4].svara({ status: 200, json: { budgets: [] } });
   await flush();
   assert.equal(dom.falt('budget-submit').disabled, false);
 });
@@ -2914,8 +2942,8 @@ test('Datum och Kommentar fylls i av Ändra och skickas med posten', async (t) =
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].method, 'PUT');
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'PUT');
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -2989,8 +3017,8 @@ test('en mall skickas utan Datum och Kommentar, också när fälten har värden'
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[3].url, `/api/mallar/${MANAD}`);
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[4]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -3079,7 +3107,7 @@ test('(81) räkningskortet visar de tre utseendena: förfallen, påminnelse och 
   );
 
   // Hämtningen görs med dagens datum i sökvägen, läst ur den injicerade dagen.
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
   assert.equal(anrop[2].method, 'GET');
   assert.equal(anrop[2].url, RAKNINGSVAG);
 
@@ -3111,7 +3139,7 @@ test('(81) räkningskortet visar de tre utseendena: förfallen, påminnelse och 
   for (const rad of rader) {
     assert.equal(knapp(rad, 'bill-paid').textContent, BILL_PAID_LABEL);
   }
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('(82) Betald flyttar fram en återkommande räkning, och den nya förfallodagen syns', async (t) => {
@@ -3137,15 +3165,15 @@ test('(82) Betald flyttar fram en återkommande räkning, och den nya förfallod
 
   // Betalningen: dagens datum står i kroppen, samma sträng som i sökvägen till
   // hämtningen. Servern läser ingen klocka.
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, `/api/rakningar/${HYRA_ID}/betald`);
-  assert.deepEqual(kropp(anrop[3]), { today: FRYST_IDAG });
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, `/api/rakningar/${HYRA_ID}/betald`);
+  assert.deepEqual(kropp(anrop[4]), { today: FRYST_IDAG });
 
   // Därefter en omhämtning av räkningarna — och ingen av månaden: en betalning
   // rör ingen månadspost.
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, RAKNINGSVAG);
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, RAKNINGSVAG);
   assert.equal(anrop.filter((anropet) => anropet.url === MANADSVAG).length, 1);
 
   // Räkningen är kvar, med sin nya förfallodag och sin nya dagtext. Exakt en
@@ -3178,7 +3206,7 @@ test('(83) en betald engångsräkning försvinner ur listan', async (t) => {
   assert.equal(knapp(rakningsrader(dom)[0], 'bill-paid').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[3].url, `/api/rakningar/${TAND_ID}/betald`);
+  assert.equal(anrop[4].url, `/api/rakningar/${TAND_ID}/betald`);
   // Noll rader, fastän svaret fortfarande bär räkningen: utgångsläget var en
   // rad, så raden som tömmer listan fälls av det här fallet.
   assert.equal(rakningsrader(dom).length, 0);
@@ -3213,14 +3241,14 @@ test('knappen Betald är låst tills svaret kommit, så att två snabba klick in
   assert.equal(betald.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(betald.disabled, true);
   // Webbläsaren skickar inget klick till en avstängd knapp, och attrappen gör
   // likadant: utlos svarar false och inget andra anrop går ut.
   assert.equal(betald.utlos('click'), false);
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 
-  anrop[3].svara({ status: 200, json: { bill } });
+  anrop[4].svara({ status: 200, json: { bill } });
   await flush();
   assert.equal(betald.disabled, false);
 });
@@ -3246,9 +3274,9 @@ test('+ Ny räkning sparar räkningen med POST och ritar om kortet ur en hämtni
   assert.equal(skickaRakningsformularet(dom), true);
   await flush();
 
-  assert.equal(anrop[3].method, 'POST');
-  assert.equal(anrop[3].url, '/api/rakningar');
-  assert.deepEqual(kropp(anrop[3]), {
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, '/api/rakningar');
+  assert.deepEqual(kropp(anrop[4]), {
     name: 'Hemförsäkring',
     amountSek: '249,00',
     dueDate: '2026-10-01',
@@ -3260,7 +3288,7 @@ test('+ Ny räkning sparar räkningen med POST och ritar om kortet ur en hämtni
   // ur svaret på sparningen, som varken bär status eller daysUntil.
   assert.equal(dom.falt('bill-form').hidden, true);
   assert.equal(dom.falt('bill-name').value, '');
-  assert.equal(anrop[4].url, RAKNINGSVAG);
+  assert.equal(anrop[5].url, RAKNINGSVAG);
   assert.deepEqual(
     rakningsrader(dom).map((rad) => celltext(rad, 'bill-name')),
     ['Hemförsäkring']
@@ -3287,7 +3315,7 @@ test('ett 400 från räkningsvägen visar serverns text och lämnar formuläret 
   // Fälten står kvar: användaren ska kunna rätta det ena och skicka igen.
   assert.equal(dom.falt('bill-name').value, 'Hemförsäkring');
   // Ingen omhämtning: ingenting sparades.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('ett avvisat fetch vid en sparning av en räkning visar den allmänna texten', async (t) => {
@@ -3314,7 +3342,7 @@ test('Avbryt i räkningsformuläret stänger det utan att skicka något anrop', 
 
   assert.equal(dom.falt('bill-form').hidden, true);
   assert.equal(dom.falt('bill-name').value, '');
-  assert.equal(anrop.length, 3);
+  assert.equal(anrop.length, 4);
 });
 
 test('räkningsformulärets intervallfält har Engångs först och därefter de fyra intervallen', async (t) => {
@@ -3355,7 +3383,7 @@ test('räkningarna hämtas en gång och inte vid ett månadsbyte', async (t) => 
   assert.equal(dom.falt('month-prev').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(anrop.filter((anropet) => anropet.url === RAKNINGSVAG).length, 1);
 });
 
@@ -3414,4 +3442,752 @@ test('ett 200 utan läsbar lista ger ett tomt kort, och en okänd status ingen s
   // En okänd status ger de två layoutklasserna och ingen tredje.
   assert.deepEqual(rader[1].className.split(' '), ['item', 'bill']);
   assert.equal(celltext(rader[2], 'bill-amount'), formatSek(0));
+});
+
+// ----------------------------------------- (84) till (86) sparmål [steg 4]
+
+// Ett sparmål på samma form som src/server/goals.js lämnar det ur
+// GET /api/sparmal/<ÅÅÅÅ-MM-DD>: tio fält, ören och inte kronor, och de sex
+// räknade fälten FÄRDIGRÄKNADE av goalProgress i src/core/goal.js. Talen är
+// skrivna och inte uträknade här — app.js ska visa svarets fält och aldrig räkna
+// om dem, och ett testfall som räknar själv prövar sin egen räkning.
+function sparmal(id, name, fields) {
+  return { id, name, ...fields };
+}
+
+function sparmalssvar(goals) {
+  return { status: 200, json: { goals } };
+}
+
+function sparmalsrader(dom) {
+  return dom.rader('goal-list');
+}
+
+// Raden bär tre klasser — item, goal och goal-<status> — så celltext, som
+// jämför hela className, hittar inte raden själv. Statusklassen plockas ut för
+// sig, samma form och samma skäl som statusklass för en räkningsrad ovan.
+function malstatusklass(rad) {
+  const klasser = rad.className.split(' ');
+  assert.deepEqual(klasser.slice(0, 2), ['item', 'goal'], 'raden saknar layoutklasserna');
+  return klasser[2];
+}
+
+// Stapeln i en rad: den enda SVG:n bland radens barn. Plockas på tagName och
+// inte på index, så att en ny cell före stapeln inte tystar assertionen.
+function stapeln(rad) {
+  const svg = rad.children.find((barn) => barn.tagName === 'svg');
+  assert.notEqual(svg, undefined, 'raden saknar stapeln');
+  return svg;
+}
+
+function stapelfyllning(rad) {
+  const rektanglar = stapeln(rad).children.filter((barn) => barn.tagName === 'rect');
+  assert.equal(rektanglar.length, 2, 'stapeln ska ha ett spår och en fyllning');
+  return rektanglar[1];
+}
+
+function stapelsparet(rad) {
+  return stapeln(rad).children.filter((barn) => barn.tagName === 'rect')[0];
+}
+
+// De fyra målen fallen använder. Varje tal är valt så att det skiljer sig från
+// varje annat fält raden kunde ha visat: procenten är inte samma tal som
+// monthsLeft, och perMonthOre är inte samma tal som leftOre i BUFFERT — annars
+// kan en assertion inte se vilket av fälten koden läste (LARDOMAR.md
+// 2026-09-16).
+//
+// I RESA och CYKEL är leftOre och perMonthOre med nödvändighet lika: ett
+// slutdatum som har passerat eller ligger i denna månad ger monthsLeft 0, och då
+// ÄR månadstakten hela det som återstår (regeln i src/core/goal.js). Det är
+// BUFFERT som bär den skiljande assertionen för perMonthOre.
+const BUFFERT = Object.freeze(
+  sparmal('11111111-1111-4111-8111-aaaaaaaaaaaa', 'Buffert', {
+    targetOre: 5000000,
+    targetDate: '2027-06-30',
+    savedOre: 2840000,
+    leftOre: 2160000,
+    percent: 57,
+    monthsLeft: 8,
+    perMonthOre: 270000,
+    status: 'pagaende'
+  })
+);
+
+const RESA = Object.freeze(
+  sparmal('22222222-2222-4222-8222-bbbbbbbbbbbb', 'Resa', {
+    targetOre: 1200000,
+    targetDate: '2026-08-31',
+    savedOre: 300000,
+    leftOre: 900000,
+    percent: 25,
+    monthsLeft: 0,
+    perMonthOre: 900000,
+    status: 'forsenat'
+  })
+);
+
+const CYKEL = Object.freeze(
+  sparmal('33333333-3333-4333-8333-cccccccccccc', 'Cykel', {
+    targetOre: 800000,
+    targetDate: '2026-11-30',
+    savedOre: 950000,
+    leftOre: 0,
+    percent: 100,
+    monthsLeft: 2,
+    perMonthOre: 0,
+    status: 'klart'
+  })
+);
+
+// Ett mål UTAN slutdatum: monthsLeft och perMonthOre är null, precis som
+// goalProgress sätter dem tillsammans.
+const PENSION = Object.freeze(
+  sparmal('44444444-4444-4444-8444-dddddddddddd', 'Pension', {
+    targetOre: 10000000,
+    targetDate: null,
+    savedOre: 1500000,
+    leftOre: 8500000,
+    percent: 15,
+    monthsLeft: null,
+    perMonthOre: null,
+    status: 'pagaende'
+  })
+);
+
+// 403-kroppen requireFeature i src/server/api.js svarar med: texten plus feature
+// och requiredPlan, som gränssnittet bygger låsradens text ur.
+const SPARMAL_403 = Object.freeze({
+  status: 403,
+  json: {
+    error: 'Funktionen ingår i Plus. Uppgradera för att låsa upp.',
+    feature: 'savingsGoals',
+    requiredPlan: 'plus'
+  }
+});
+
+// Låsradens text, skriven ur de två ägarna och inte som en literal: byts
+// FEATURE_LABELS.savingsGoals eller PLAN_LABELS.plus i src/core/plans.js ska det
+// här fallet följa med av sig självt, precis som vyn gör.
+const LASTEXT = `${FEATURE_LABELS.savingsGoals} ingår i ${PLAN_LABELS.plus}.`;
+
+test('laddningen hämtar sparmålen med dagens datum i sökvägen, efter räkningarna', async (t) => {
+  // Anropens ordning vid laddningen står utskriven en gång, här: varje fall i
+  // filen som räknar anrop börjar efter dem, så ett nytt kort i månadsvyn
+  // flyttar varje index. Faller det här fallet är det ordningen som ändrats.
+  const { anrop } = await starta(t, planInloggad(() => manadssvar([])));
+
+  assert.deepEqual(
+    anrop.map((anropet) => `${anropet.method} ${anropet.url}`),
+    ['GET /api/mig', `GET ${MANADSVAG}`, `GET ${RAKNINGSVAG}`, `GET ${SPARMALSVAG}`]
+  );
+});
+
+test('(84) kortet visar namn, sparat av mål, stapel, procent och Kvar-raden', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar([BUFFERT, RESA, CYKEL])
+    )
+  );
+
+  // Kortet syns och låsraden är dold: svaret var 200.
+  assert.equal(dom.falt('goal-card').hidden, false);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+
+  const rader = sparmalsrader(dom);
+  assert.equal(rader.length, 3);
+
+  // Raden är ett li med layoutklasserna och statusens egen klass — klassnamnen
+  // är kontraktet mot .goal och .goal-forsenat i src/web/style.css, så både
+  // className och tagName asserteras (LARDOMAR.md 2026-09-22).
+  assert.equal(rader[0].tagName, 'li');
+  assert.equal(rader[0].className, 'item goal goal-pagaende');
+  assert.equal(malstatusklass(rader[0]), 'goal-pagaende');
+
+  // Buffert: raden ur exemplet i ARKITEKTUR.md. perMonthOre (2 700,00 kr) är ett
+  // annat tal än leftOre (21 600,00 kr), så Kvar-raden visar att båda fälten
+  // läses ur svaret och inte räknas om.
+  assert.equal(celltext(rader[0], 'goal-name'), 'Buffert');
+  assert.equal(
+    celltext(rader[0], 'goal-saved'),
+    `${formatSek(2840000)} av ${formatSek(5000000)}`
+  );
+  assert.equal(celltext(rader[0], 'goal-percent'), '57 %');
+  assert.equal(
+    celltext(rader[0], 'goal-left'),
+    `Kvar ${formatSek(2160000)} - spara ${formatSek(270000)} i månaden till juni 2027`
+  );
+  // pagaende är "Vanlig" i tabellen: ingen egen text.
+  assert.equal(celltext(rader[0], 'goal-note'), '');
+
+  // Stapeln är inline-SVG i SVG:ns namnrymd, med bredden som attribut. Bredden
+  // är det dubbla procenttalet, alltså ett annat tal än procenten själv: en
+  // bredd som läste percent rakt hade gett 57.
+  const fyllning = stapelfyllning(rader[0]);
+  assert.equal(stapeln(rader[0]).namespace, 'http://www.w3.org/2000/svg');
+  assert.equal(fyllning.getAttribute('width'), '114');
+  assert.equal(fyllning.getAttribute('class'), 'goal-bar goal-bar-pagaende');
+  // Spåret är alltid hela bredden: utan det syns bara hur långt som är gjort.
+  assert.equal(stapelsparet(rader[0]).getAttribute('width'), '200');
+  assert.equal(stapelsparet(rader[0]).getAttribute('class'), 'goal-bar-track');
+  // Ingen rad rör style — bredden är ett SVG-attribut och färgen en klass.
+  assert.equal(fyllning.getAttribute('style'), null);
+
+  // Resa: försenat ger radens röda ram och sin egen text. Procenten 25 ger
+  // bredden 50.
+  assert.equal(malstatusklass(rader[1]), 'goal-forsenat');
+  assert.equal(celltext(rader[1], 'goal-percent'), '25 %');
+  assert.equal(celltext(rader[1], 'goal-note'), 'Slutdatumet har passerat');
+  assert.equal(stapelfyllning(rader[1]).getAttribute('width'), '50');
+
+  // Inget av de tre målen har skickat något anrop.
+  assert.equal(anrop.length, 4);
+});
+
+test('(85) en Bas-användare ser låsraden i stället för kortet', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_403)
+  );
+
+  // Kortet är dolt och låsraden syns — tvärtom mot ett 200.
+  assert.equal(dom.falt('goal-card').hidden, true);
+  assert.equal(dom.falt('goal-locked').hidden, false);
+  assert.equal(dom.falt('goal-locked-text').textContent, LASTEXT);
+  // Ingen rad ritades, och kortets lista står tom.
+  assert.equal(sparmalsrader(dom).length, 0);
+
+  // Ett 403 är INGET fel: det är det normala svaret för en plan utan sparmål, och
+  // får därför aldrig hamna i månadsvyns felruta.
+  assert.equal(dom.falt('month-error').textContent, '');
+
+  // Knappen Se planer går till samma vy som Min plan i sidomenyn, och hämtar
+  // planen när den klickas.
+  assert.equal(dom.falt('show-plans').utlos('click'), true);
+  await flush();
+  assert.equal(anrop.length, 5);
+  assert.equal(anrop[4].method, 'GET');
+  assert.equal(anrop[4].url, PLANVAG);
+  assert.equal(dom.falt('plan-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+});
+
+test('(85) låsraden och knappen Se planer står i index.html, inte bara i attrappen', async () => {
+  // Ikonen och knappens etikett är statisk uppmärkning och skrivs inte av
+  // app.js. Attrappens textContent bevisar därför ingenting om sidan — den
+  // jämförs här mot index.html självt, så att en etikett som ändras på ett av de
+  // två ställena fälls.
+  const html = await fs.readFile(INDEX_PATH, 'utf8');
+
+  assert.equal(html.includes('id="show-plans">Se planer<'), true, 'knappen Se planer saknas');
+  assert.equal(html.includes('id="add-goal">+ Nytt sparmål<'), true, 'knappen + Nytt sparmål saknas');
+  // Hänglåset: kodpunkten U+1F512, skriven som en HTML-entitet så att den syns i
+  // källtexten, och aria-hidden eftersom texten intill säger samma sak i ord.
+  assert.equal(html.includes('class="lock-icon" aria-hidden="true">&#x1F512;<'), true, 'låsikonen saknas');
+
+  // Båda bär hidden FRÅN BÖRJAN, och det är index.html som måste bära det:
+  // app.js visar exakt ett av dem och först när hämtningen svarat. Saknas
+  // attributet ser en Bas-användare ett tomt Sparmål-kort tills svaret kommer,
+  // och vid ett misslyckat anrop står både kortet och låsraden kvar synliga.
+  //
+  // Attrappen sätter hidden själv och kan därför inte bevisa det här — raden
+  // jämförs mot sidan, inte mot mätapparaten (LARDOMAR.md 2026-09-22).
+  for (const id of ['goal-card', 'goal-locked']) {
+    const taggen = new RegExp(`<section[^>]*id="${id}"[^>]*>`).exec(html);
+    assert.notEqual(taggen, null, `${id} saknas i index.html`);
+    assert.equal(taggen[0].includes(' hidden'), true, `${id} bär inte hidden från början`);
+  }
+});
+
+test('ett slutdatum utan månadstakt ger den korta Kvar-raden i stället för ett kast', async (t) => {
+  // Den indata som når det andra ledet i goalLeftText-spärren: ett läsbart
+  // targetDate men inget perMonthOre. Servern sätter de två tillsammans, så
+  // formen kan bara komma ur en skadad kropp — och då ska raden bli den korta.
+  // Utan ledet anropas formatSek(null), som kastar RangeError och tömmer hela
+  // kortet i stället för en rad.
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar([sparmal(BUFFERT.id, 'Buffert', { ...BUFFERT, perMonthOre: null })])
+    )
+  );
+
+  const rader = sparmalsrader(dom);
+  assert.equal(rader.length, 1, 'raden ska ritas och inte falla bort');
+  assert.equal(celltext(rader[0], 'goal-left'), `Kvar ${formatSek(2160000)}`);
+});
+
+test('(86) ett nått mål visas som klart med grön stapel och sin egen text', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar([CYKEL])
+    )
+  );
+
+  const rad = sparmalsrader(dom)[0];
+
+  // Statusen kommer ur svaret: app.js jämför inget sparat belopp med något mål.
+  assert.equal(malstatusklass(rad), 'goal-klart');
+  assert.equal(celltext(rad, 'goal-note'), 'Målet är nått');
+  // Den gröna stapeln är klassen goal-bar-klart, som .goal-bar-klart i
+  // src/web/style.css fyller med temats gröna ton.
+  assert.equal(stapelfyllning(rad).getAttribute('class'), 'goal-bar goal-bar-klart');
+  // Hundra procent fyller hela bredden, och ett överskridet mål har noll kvar —
+  // båda är klippta av src/core/goal.js och inte här.
+  assert.equal(celltext(rad, 'goal-percent'), '100 %');
+  assert.equal(stapelfyllning(rad).getAttribute('width'), '200');
+  assert.equal(celltext(rad, 'goal-saved'), `${formatSek(950000)} av ${formatSek(800000)}`);
+});
+
+test('ett mål utan slutdatum visar Kvar-raden utan månadstakt', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar([PENSION])
+    )
+  );
+
+  const rad = sparmalsrader(dom)[0];
+
+  // monthsLeft och perMonthOre är null: raden slutar efter beloppet, och varken
+  // strängen null eller undefined syns.
+  assert.equal(celltext(rad, 'goal-left'), `Kvar ${formatSek(8500000)}`);
+  assert.equal(celltext(rad, 'goal-percent'), '15 %');
+  assert.equal(stapelfyllning(rad).getAttribute('width'), '30');
+  assert.equal(malstatusklass(rad), 'goal-pagaende');
+});
+
+test('kortet ritas om i båda riktningarna när sparmålen hämtas om', async (t) => {
+  // Tre renderingar, där varje utgångsläge är nästa förväntade resultats
+  // motsats: en kortare lista efter en längre fäller ett saknat
+  // replaceChildren, och en icke-tom lista efter en tom fäller en rad som bara
+  // bygger på (LARDOMAR.md 2026-09-12).
+  const svar = ikoordning([
+    sparmalssvar([BUFFERT, RESA, CYKEL]),
+    sparmalssvar([PENSION]),
+    sparmalssvar([])
+  ]);
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => ({ status: 201, json: { goal: { id: PENSION.id } } }),
+      () => RAKNINGAR_TOM,
+      svar
+    )
+  );
+
+  const namn = () => sparmalsrader(dom).map((rad) => celltext(rad, 'goal-name'));
+  assert.deepEqual(namn(), ['Buffert', 'Resa', 'Cykel']);
+
+  // En sparning hämtar kortet om. Andra hämtningen: en KORTARE lista med ett
+  // annat mål — en rad som byggde på hade gett fyra rader.
+  const sparaMal = () => {
+    dom.falt('add-goal').utlos('click');
+    dom.falt('goal-name').value = 'Pension';
+    dom.falt('goal-target').value = '100000';
+    dom.falt('goal-target-date').value = '';
+    dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  };
+
+  sparaMal();
+  await flush();
+  assert.deepEqual(namn(), ['Pension']);
+
+  // Tredje hämtningen: en TOM lista efter en icke-tom. Kortet syns fortfarande —
+  // ett mål som inte finns har ingen rad, och det är inget tredje tillstånd.
+  sparaMal();
+  await flush();
+  assert.deepEqual(namn(), []);
+  assert.equal(dom.falt('goal-card').hidden, false);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+});
+
+test('kortet och låsraden byter plats i båda riktningarna', async (t) => {
+  // Utgångsläget för varje byte är det motsatta av det förväntade: ett 403 efter
+  // ett 200 ska dölja kortet, och ett 200 efter ett 403 ska dölja låsraden. En
+  // rad som bara sätter det ena hidden-värdet fälls av den ena riktningen.
+  const svar = ikoordning([sparmalssvar([BUFFERT]), SPARMAL_403, sparmalssvar([RESA])]);
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => ({ status: 201, json: { goal: { id: BUFFERT.id } } }),
+      () => RAKNINGAR_TOM,
+      svar
+    )
+  );
+
+  assert.equal(dom.falt('goal-card').hidden, false);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+
+  const sparaMal = () => {
+    dom.falt('add-goal').utlos('click');
+    dom.falt('goal-name').value = 'Buffert';
+    dom.falt('goal-target').value = '50000';
+    dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  };
+
+  // 403 efter 200: kortet döljs, låsraden syns och texten skrivs.
+  sparaMal();
+  await flush();
+  assert.equal(dom.falt('goal-card').hidden, true);
+  assert.equal(dom.falt('goal-locked').hidden, false);
+  assert.equal(dom.falt('goal-locked-text').textContent, LASTEXT);
+
+  // 200 efter 403: låsraden döljs och kortet syns med den nya listan.
+  sparaMal();
+  await flush();
+  assert.equal(dom.falt('goal-card').hidden, false);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+  assert.deepEqual(
+    sparmalsrader(dom).map((rad) => celltext(rad, 'goal-name')),
+    ['Resa']
+  );
+});
+
+test('GOAL_NOTES nycklar står i GOAL_STATUSES, och pagaende har med flit ingen', async (t) => {
+  // De tre statusvärdena bor i src/core/goal.js och utseendena i src/web/app.js:
+  // en status utan rad i app.js skulle visas utan text, och en rad i app.js utan
+  // status i kärnan är en gren ingen indata når. Fallet knyter de två listorna
+  // till varandra (LARDOMAR.md 2026-09-02).
+  //
+  // Mätt genom vyn och inte genom en import: app.js går inte att importera utan
+  // laddaren, så varje status renderas och texten läses ur raden.
+  const alla = GOAL_STATUSES.map((status, index) =>
+    sparmal(`5${index}555555-5555-4555-8555-eeeeeeeeeeee`, `Mål ${status}`, {
+      targetOre: 1000000,
+      targetDate: '2027-01-31',
+      savedOre: 250000,
+      leftOre: 750000,
+      percent: 25,
+      monthsLeft: 4,
+      perMonthOre: 187500,
+      status
+    })
+  );
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar(alla)
+    )
+  );
+
+  const texter = new Map(
+    sparmalsrader(dom).map((rad) => [malstatusklass(rad), celltext(rad, 'goal-note')])
+  );
+
+  // Varje status i kärnans lista får sin egen klass på raden.
+  assert.deepEqual(
+    [...texter.keys()],
+    GOAL_STATUSES.map((status) => `goal-${status}`)
+  );
+  // De två som har ett utseende har text, och pagaende har ingen.
+  assert.equal(texter.get('goal-klart'), 'Målet är nått');
+  assert.equal(texter.get('goal-forsenat'), 'Slutdatumet har passerat');
+  assert.equal(texter.get('goal-pagaende'), '');
+});
+
+test('en okänd status ger ingen statusklass och ingen text', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
+      sparmalssvar([sparmal(BUFFERT.id, 'Buffert', { ...BUFFERT, status: 'okand' })])
+    )
+  );
+
+  const rad = sparmalsrader(dom)[0];
+  // Hela className är de två layoutklasserna: ingen tredje klass alls, alltså
+  // ingen klass som ingen stilregel känner.
+  assert.equal(rad.className, 'item goal');
+  assert.equal(celltext(rad, 'goal-note'), '');
+  assert.equal(stapelfyllning(rad).getAttribute('class'), 'goal-bar');
+});
+
+test('ett 200 utan läsbar lista ger ett tomt kort, och en kropp utan tal ger nollor', async (t) => {
+  const svar = ikoordning([
+    { status: 200 },
+    sparmalssvar([sparmal(BUFFERT.id, 'Buffert', { status: 'pagaende' })])
+  ]);
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => ({ status: 201, json: { goal: { id: BUFFERT.id } } }),
+      () => RAKNINGAR_TOM,
+      svar
+    )
+  );
+
+  // Ett 200 utan läsbar JSON-kropp: kortet syns, listan är tom och ingenting
+  // kastar.
+  assert.equal(dom.falt('goal-card').hidden, false);
+  assert.equal(sparmalsrader(dom).length, 0);
+
+  // En rad utan något av de räknade fälten ger nollor och en tom stapel, aldrig
+  // strängen undefined eller NaN.
+  dom.falt('add-goal').utlos('click');
+  dom.falt('goal-name').value = 'Buffert';
+  dom.falt('goal-target').value = '50000';
+  dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  await flush();
+
+  const rad = sparmalsrader(dom)[0];
+  assert.equal(celltext(rad, 'goal-saved'), `${formatSek(0)} av ${formatSek(0)}`);
+  assert.equal(celltext(rad, 'goal-percent'), '0 %');
+  assert.equal(celltext(rad, 'goal-left'), `Kvar ${formatSek(0)}`);
+  assert.equal(stapelfyllning(rad).getAttribute('width'), '0');
+});
+
+test('+ Nytt sparmål sparar målet med POST och ritar om kortet ur en hämtning', async (t) => {
+  const svar = ikoordning([sparmalssvar([]), sparmalssvar([BUFFERT])]);
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => ({ status: 201, json: { goal: { id: BUFFERT.id } } }),
+      () => RAKNINGAR_TOM,
+      svar
+    )
+  );
+
+  // Formuläret är dolt tills knappen klickas.
+  assert.equal(dom.falt('goal-form').hidden, true);
+  dom.falt('add-goal').utlos('click');
+  assert.equal(dom.falt('goal-form').hidden, false);
+
+  dom.falt('goal-name').value = 'Buffert';
+  dom.falt('goal-target').value = '50000';
+  dom.falt('goal-target-date').value = '2027-06-30';
+
+  let forhindrad = false;
+  dom.falt('goal-form').utlos('submit', {
+    preventDefault() {
+      forhindrad = true;
+    }
+  });
+  assert.equal(forhindrad, true, 'formuläret ska inte skickas av webbläsaren');
+  await flush();
+
+  // De tre fälten skickas som de står: ingen validering och ingen omräkning i
+  // app.js.
+  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop[4].url, '/api/sparmal');
+  assert.deepEqual(kropp(anrop[4]), {
+    name: 'Buffert',
+    targetSek: '50000',
+    targetDate: '2027-06-30'
+  });
+
+  // Kortet ritas ur en OMHÄMTNING och aldrig ur svaret på sparningen: svaret på
+  // en POST bär ingen av de sex räknade fälten.
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, SPARMALSVAG);
+  assert.deepEqual(
+    sparmalsrader(dom).map((rad) => celltext(rad, 'goal-name')),
+    ['Buffert']
+  );
+
+  // Formuläret stängs och töms när sparningen lyckades.
+  assert.equal(dom.falt('goal-form').hidden, true);
+  assert.equal(dom.falt('goal-name').value, '');
+});
+
+test('ett 400 från sparmålsvägen visar serverns text och lämnar formuläret öppet', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => ({
+      status: 400,
+      json: {
+        error: 'Målbeloppet måste vara ett tal.',
+        fieldErrors: [{ field: 'targetSek', message: 'Målbeloppet måste vara ett tal.' }]
+      }
+    }))
+  );
+
+  dom.falt('add-goal').utlos('click');
+  dom.falt('goal-name').value = 'Buffert';
+  dom.falt('goal-target').value = 'abc';
+  dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  await flush();
+
+  // Svarets error är det första felets text, och den står i formulärets enda
+  // felruta — fältet error-name tillhör postformuläret.
+  assert.equal(dom.falt('goal-form-error').textContent, 'Målbeloppet måste vara ett tal.');
+  assert.equal(dom.falt('goal-form').hidden, false);
+  assert.equal(dom.falt('goal-name').value, 'Buffert', 'fälten ska inte tömmas av ett fel');
+});
+
+test('knappen Spara i sparmålsformuläret är låst tills svaret kommit', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null)
+  );
+
+  dom.falt('add-goal').utlos('click');
+  dom.falt('goal-name').value = 'Buffert';
+  dom.falt('goal-target').value = '50000';
+  dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  await flush();
+
+  assert.equal(anrop.length, 5);
+  assert.equal(dom.falt('goal-submit').disabled, true);
+
+  // En andra submit medan anropet är i luften ger inget andra anrop: hanteraren
+  // prövar sitt eget pågående-läge och litar aldrig på knappens disabled, som
+  // Enter i ett fält går förbi.
+  dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  await flush();
+  assert.equal(anrop.length, 5);
+
+  anrop[4].svara({ status: 201, json: { goal: { id: BUFFERT.id } } });
+  await flush();
+  assert.equal(dom.falt('goal-submit').disabled, false);
+});
+
+test('ett avvisat fetch vid en sparning av ett sparmål visar den allmänna texten', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => new Error('nätverket nere'))
+  );
+
+  dom.falt('add-goal').utlos('click');
+  dom.falt('goal-name').value = 'Buffert';
+  dom.falt('goal-target').value = '50000';
+  dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
+  await flush();
+
+  assert.equal(dom.falt('goal-form-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('goal-submit').disabled, false);
+});
+
+test('Avbryt i sparmålsformuläret stänger det utan att skicka något anrop', async (t) => {
+  const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([])));
+
+  dom.falt('add-goal').utlos('click');
+  dom.falt('goal-name').value = 'Buffert';
+  assert.equal(dom.falt('goal-cancel').utlos('click'), true);
+
+  assert.equal(dom.falt('goal-form').hidden, true);
+  assert.equal(dom.falt('goal-name').value, '');
+  assert.equal(anrop.length, 4);
+});
+
+test('ett 500 på sparmålens väg visar serverns text och lämnar kortet dolt', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => ({
+      status: 500,
+      json: { error: 'Databasen kunde inte läsas.' }
+    }))
+  );
+
+  // Ett 500 är ett verkligt fel, till skillnad från ett 403: serverns text står i
+  // månadsvyns felruta, och varken kortet eller låsraden visas — appen vet inte
+  // vad användaren har rätt till.
+  assert.equal(dom.falt('month-error').textContent, 'Databasen kunde inte läsas.');
+  assert.equal(dom.falt('goal-card').hidden, true);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+});
+
+test('ett avvisat fetch vid hämtningen av sparmålen visar den allmänna texten', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => new Error('nätverket nere')
+    )
+  );
+
+  assert.equal(dom.falt('month-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('goal-card').hidden, true);
+  assert.equal(dom.falt('goal-locked').hidden, true);
+});
+
+test('ett 401 på sparmålens väg visar inloggningsvyn', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => MIG_401)
+  );
+
+  assert.equal(dom.falt('login-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+});
+
+test('en 403-kropp utan läsbara nycklar ger en tom låstext, aldrig en engelsk nyckel', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => ({
+      status: 403,
+      json: { error: 'Nej.', feature: 'okandFunktion', requiredPlan: 'guld' }
+    }))
+  );
+
+  assert.equal(dom.falt('goal-locked').hidden, false);
+  assert.equal(dom.falt('goal-locked-text').textContent, '');
+});
+
+const MALCELLER = Object.freeze(['goal-saved', 'goal-percent', 'goal-left']);
+
+// Källan utan radkommentarer. En textspärr ska mäta koden och inte prosan: utan
+// den här raden fälls varje fall som förbjuder ett ord app.js självt förklarar
+// varför det INTE använder. app.js skriver sin prosa som hela kommentarrader, så
+// filtret räcker; en kommentar efter kod på samma rad skulle slinka igenom, och
+// den begränsningen står här för att nästa läsare ska veta det.
+function kallanUtanKommentarer(kalla) {
+  return kalla
+    .split('\n')
+    .filter((rad) => !rad.trimStart().startsWith('//'))
+    .join('\n');
+}
+
+test('app.js räknar aldrig fram sparmålskortets tal själv', async () => {
+  const kalla = await fs.readFile(APP_KALLA_PATH, 'utf8');
+
+  // Ingen sats som rör en av sparmålsradens tre talceller får innehålla en loop,
+  // en reduce eller en map: alla tre är sätt att skriva om svarets tal till en
+  // egen räkning. Satsen som lägger raderna i listan rör inget av klassnamnen och
+  // får därför använda map — den bygger ett element per rad och kan inte summera.
+  for (const sats of kalla.split(';')) {
+    const traffar = MALCELLER.filter((namn) => sats.includes(namn));
+    if (traffar.length === 0) {
+      continue;
+    }
+    for (const forbjudet of ['reduce', 'for (', 'for(', '.map(']) {
+      assert.equal(
+        sats.includes(forbjudet),
+        false,
+        `satsen med ${traffar.join(', ')} innehåller ${forbjudet}: ${sats.trim()}`
+      );
+    }
+  }
+
+  // Varje räknat fält läses ur svarets eget fält, och inget av dem räknas fram.
+  for (const falt of ['savedOre', 'targetOre', 'leftOre', 'perMonthOre', 'percent']) {
+    assert.equal(kalla.includes(`goal.${falt}`), true, `app.js läser inte goal.${falt} ur svaret`);
+  }
+
+  // Procentskalans båda ändar och de tre statusvärdena ägs av src/core/goal.js,
+  // och app.js läser dem därifrån.
+  for (const namn of ['PERCENT_MIN', 'PERCENT_FULL', 'GOAL_STATUSES']) {
+    assert.equal(kalla.includes(namn), true, `app.js läser inte ${namn} ur src/core/goal.js`);
+  }
+
+  // Klassnamnen byggs ur listan och inte ur tre avskrivna strängar: raden nedan
+  // är det som gör att en status utanför listan inte får någon statusklass.
+  assert.equal(kalla.includes('GOAL_STATUSES.includes(status)'), true);
+
+  // Och EXAKT de statusvärden som har ett eget utseende står skrivna i koden, som
+  // nycklar i GOAL_NOTES — en tabell måste kunna slå upp dem. pagaende står inte
+  // skrivet i någon kodrad: "Vanlig" i ARKITEKTUR.md är frånvaron av en rad, och
+  // en gren för den hade varit en gren ingen indata når.
+  const koden = kallanUtanKommentarer(kalla);
+  assert.deepEqual(
+    GOAL_STATUSES.filter((status) => koden.includes(status)),
+    ['klart', 'forsenat'],
+    'bara de statusvärden som har ett utseende får stå skrivna i app.js'
+  );
 });

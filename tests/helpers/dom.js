@@ -361,6 +361,55 @@ export function createDom() {
   );
   monthView.append(budgetCard);
 
+  // Sparmålskortet [steg 4]: knappen som öppnar formuläret, formuläret med sina
+  // tre fält och listan med en rad per mål. Formuläret är ett FakeForm av samma
+  // skäl som de tre andra: app.js lyssnar på submit och anropar reset.
+  //
+  // Kortet bär hidden från början, precis som index.html skriver attributet:
+  // app.js visar det först när GET /api/sparmal gav 200, och låsraden nedan
+  // först när den gav 403. Attrappen börjar därför i det läge där ingetdera
+  // syns, alltså före svaret.
+  //
+  // Varje nytt id i index.html betyder ett nytt FakeElement här: testfallet som
+  // jämför de två listorna fäller ett glömt element.
+  const goalCard = skapa('section', 'goal-card', { className: 'card', hidden: true });
+  const goalForm = new FakeForm('goal-form');
+  goalForm.hidden = true;
+  registry.set('goal-form', goalForm);
+  const goalFalt = Object.freeze([
+    { name: 'name', id: 'goal-name', tagName: 'input' },
+    { name: 'targetSek', id: 'goal-target', tagName: 'input' },
+    { name: 'targetDate', id: 'goal-target-date', tagName: 'input' }
+  ]);
+  for (const { name, id, tagName } of goalFalt) {
+    const falt = skapa(tagName, id);
+    goalForm.append(falt);
+    goalForm.registrera(name, falt);
+  }
+  goalForm.append(
+    skapa('p', 'goal-form-error', { className: 'form-error' }),
+    skapa('button', 'goal-submit', { type: 'submit', textContent: 'Spara' }),
+    skapa('button', 'goal-cancel', { type: 'button', textContent: 'Avbryt' })
+  );
+  goalCard.append(
+    skapa('button', 'add-goal', { type: 'button', className: 'add', textContent: '+ Nytt sparmål' }),
+    goalForm,
+    skapa('ul', 'goal-list', { className: 'item-list' })
+  );
+  monthView.append(goalCard);
+
+  // Låsraden [steg 4], det en Bas-användare ser i stället för kortet ovan.
+  // Texten skrivs av app.js ur 403-svarets feature och requiredPlan; ikonen och
+  // knappens etikett står i index.html och inte här, så attrappen bär bara
+  // etiketten för att ett klick ska gå att pröva på samma element webbläsaren
+  // har.
+  const goalLocked = skapa('section', 'goal-locked', { className: 'card', hidden: true });
+  goalLocked.append(
+    skapa('span', 'goal-locked-text'),
+    skapa('button', 'show-plans', { type: 'button', className: 'secondary', textContent: 'Se planer' })
+  );
+  monthView.append(goalLocked);
+
   monthView.append(
     skapa('div', 'chart', { className: 'chart' }),
     skapa('p', 'chart-empty', { className: 'empty-state' }),

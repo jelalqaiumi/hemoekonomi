@@ -12,9 +12,10 @@ import {
   REMIND_DAYS_MIN,
   billDaysText
 } from '/core/bill.js';
-import { monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
+import { isValidIsoDate, monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS } from '/core/item.js';
+import { GOAL_STATUSES, PERCENT_FULL, PERCENT_MIN } from '/core/goal.js';
 import { FEATURE_LABELS, PLANS, PLAN_LABELS } from '/core/plans.js';
 import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
 
@@ -257,6 +258,23 @@ const BILL_FORM_ERROR = document.querySelector('#bill-form-error');
 const BILL_SUBMIT = document.querySelector('#bill-submit');
 const BILL_CANCEL = document.querySelector('#bill-cancel');
 
+// Sparmålskortet och låsraden [steg 4]. Båda bär hidden i index.html: vilket av
+// de två som syns avgörs av GET /api/sparmal och aldrig av en gissning om
+// användarens plan.
+const GOAL_CARD = document.querySelector('#goal-card');
+const GOAL_LIST = document.querySelector('#goal-list');
+const ADD_GOAL = document.querySelector('#add-goal');
+const GOAL_FORM = document.querySelector('#goal-form');
+const GOAL_NAME_FIELD = document.querySelector('#goal-name');
+const GOAL_TARGET_FIELD = document.querySelector('#goal-target');
+const GOAL_TARGET_DATE_FIELD = document.querySelector('#goal-target-date');
+const GOAL_FORM_ERROR = document.querySelector('#goal-form-error');
+const GOAL_SUBMIT = document.querySelector('#goal-submit');
+const GOAL_CANCEL = document.querySelector('#goal-cancel');
+const GOAL_LOCKED = document.querySelector('#goal-locked');
+const GOAL_LOCKED_TEXT = document.querySelector('#goal-locked-text');
+const SHOW_PLANS = document.querySelector('#show-plans');
+
 // Fälten i formuläret, i samma ordning som validateMonthItemDraft rapporterar
 // dem. Fältet kind står inte här: slaget kommer från vilken lista knappen satt i
 // och är inget fält, så ett fieldError för kind har inget element att skrivas
@@ -318,6 +336,10 @@ let budgetSubmitInProgress = false;
 // Räkningsformulärets eget pågående-läge, av samma skäl som de två andras: Enter
 // i ett fält skickar formuläret direkt, förbi den avstängda knappen.
 let billSubmitInProgress = false;
+
+// Samma spärr för sparmålsformuläret [steg 4], av samma skäl: Enter i ett fält
+// skickar formuläret direkt, förbi den avstängda knappen.
+let goalSubmitInProgress = false;
 // Om formuläret står i läget Bara <månad>. Satt av setMonthOnlyLayout och läst av
 // updateSingleFields, som behöver både det här läget och kryssrutans: blocket med
 // Datum och Kommentar döljs av vilket som helst av de två, och ett villkor som
@@ -784,6 +806,334 @@ function billRow(bill) {
 // en räkning som inte finns har ingen rad, samma regel som budgetkortet.
 function renderBills(bills) {
   BILL_LIST.replaceChildren(...bills.filter((bill) => bill.paidAt === null).map(billRow));
+}
+
+// ------------------------------------------------- sparmålskortet [steg 4]
+
+// Procentskalans båda ändar och de tre statusvärdena läses ur src/core/goal.js,
+// som äger dem. Stapelns bredd räknas ur PERCENT_MIN och PERCENT_FULL, och
+// radens klasser ur GOAL_STATUSES: ingen av de tre statussträngarna och ingen av
+// skalans två ändar står skriven som en literal i den här filen.
+
+// Stapelns mått i SVG:ns egna användarenheter, precis som diagrammets ovan.
+// viewBox skalar dem till kortets bredd, så inget tal här är pixlar.
+//
+// Bredden är med flit INTE 100, fastän skalan är procent och 100 hade gjort en
+// användarenhet till en procent. Skälet är mätbarhet: med bredden 100 blir
+// goalBarWidth(percent) numeriskt samma tal som percent självt, och då går
+// mutationen "läs percent rakt in i width i stället för att skala" inte att
+// fälla för någon indata — den sortens mutation ska enligt LARDOMAR.md
+// 2026-09-10 antingen gå att fälla på värdet eller skyddas av en textspärr. Med
+// 200 är stapelns bredd alltid det dubbla procenttalet, alltså ett annat tal än
+// varje fält raden visar, och ett testfall kan se skillnaden.
+const GOAL_BAR_WIDTH = 200;
+const GOAL_BAR_HEIGHT = 6;
+
+// Inledningen på Kvar-raden. Står som en konstant därför att båda formerna av
+// raden börjar med den — med och utan månadstakt.
+const GOAL_LEFT_PREFIX = 'Kvar ';
+
+// Statusens egen text. Nycklarna är värden ur GOAL_STATUSES, och ett testfall
+// kräver att varje nyckel står i listan: en status som inte finns ger ingen text
+// i stället för en text ingen stilregel känner.
+//
+// pagaende har med flit INGEN rad. Tabellen under "Gränssnittet" i ARKITEKTUR.md
+// skriver "Vanlig" för den, alltså varken färg eller text, och en tom sträng som
+// värde hade sagt samma sak med en rad som ser ut som ett glömt värde.
+const GOAL_NOTES = Object.freeze({
+  klart: 'Målet är nått',
+  forsenat: 'Slutdatumet har passerat'
+});
+
+// Radens klasser. Statusen kommer ur svaret och prövas mot GOAL_STATUSES i
+// src/core/goal.js, som äger de tre värdena — samma form och samma skäl som
+// billClassName ovan: en status utanför listan ger ingen statusklass i stället
+// för en klass ingen stilregel känner.
+function goalClassName(status) {
+  return GOAL_STATUSES.includes(status) ? `item goal goal-${status}` : 'item goal';
+}
+
+// Stapelns egen klass, med samma spärr och samma skäl som radens. Statusen står
+// på BÅDA: raden bär ramen för ett försenat mål, stapeln bär färgen för ett nått.
+function goalBarClassName(status) {
+  return GOAL_STATUSES.includes(status) ? `goal-bar goal-bar-${status}` : 'goal-bar';
+}
+
+// Procenten ur svaret, prövad innan den når stapelns bredd. Samma regel och samma
+// skäl som oreFromResponse och daysFromResponse: ett 200 utan läsbar kropp ska ge
+// en rad som går att läsa i stället för ett kast som tömmer hela kortet.
+//
+// Ingen klippning här. percent är redan klippt i båda ändar av clampedPercent i
+// src/core/goal.js, som äger regeln, och en andra klippning i den här filen hade
+// varit ett andra facit för samma fråga. Att stapeln inte kan rita utanför sin
+// ruta är i stället en stilregel — .goal-chart bär overflow: hidden.
+function percentFromResponse(value) {
+  return Number.isSafeInteger(value) ? value : PERCENT_MIN;
+}
+
+// Stapelns bredd i SVG:ns användarenheter. Skalans båda ändar läses ur
+// src/core/goal.js: PERCENT_MIN är den tomma stapeln och PERCENT_FULL den fyllda,
+// och ingen av dem står skriven som en siffra här.
+function goalBarWidth(percent) {
+  return Math.round(((percent - PERCENT_MIN) * GOAL_BAR_WIDTH) / (PERCENT_FULL - PERCENT_MIN));
+}
+
+// Stapeln som inline-SVG, byggd med samma svgElement som diagrammet: varje värde
+// sätts med setAttribute, och ingen rad rör style. Bredden är SVG-attributet
+// width och färgen en klass (ARKITEKTUR.md under "Gränssnittet" i
+// sparmålsavsnittet).
+//
+// Två rektanglar: spåret, som alltid är hela bredden, och fyllningen ovanpå det.
+// Utan spåret syns bara hur långt som är gjort, aldrig hur långt som återstår.
+//
+// aria-hidden och inte role="img" med en title, till skillnad från diagrammet
+// ovan: procenten står som text i cellen direkt efter stapeln, så en
+// skärmläsarbrukare får samma uppgift i ord. Diagrammet har ingen text intill sig
+// och behöver därför sin title.
+function goalBar(percent, status) {
+  const svg = svgElement('svg', {
+    'aria-hidden': 'true',
+    class: 'goal-chart',
+    viewBox: `0 0 ${GOAL_BAR_WIDTH} ${GOAL_BAR_HEIGHT}`
+  });
+  svg.append(
+    svgElement('rect', {
+      class: 'goal-bar-track',
+      x: 0,
+      y: 0,
+      width: GOAL_BAR_WIDTH,
+      height: GOAL_BAR_HEIGHT
+    }),
+    svgElement('rect', {
+      class: goalBarClassName(status),
+      x: 0,
+      y: 0,
+      width: goalBarWidth(percent),
+      height: GOAL_BAR_HEIGHT
+    })
+  );
+  return svg;
+}
+
+// Cellen efter namnet: hur mycket som är sparat av målet. Båda talen är fält i
+// svaret och räknas inte här.
+function goalSavedText(goal) {
+  return `${formatSek(oreFromResponse(goal.savedOre))} av ${formatSek(oreFromResponse(goal.targetOre))}`;
+}
+
+function goalPercentText(percent) {
+  return `${percent} %`;
+}
+
+// Kvar-raden, i de två former svaret kan ge.
+//
+// Ett mål UTAN slutdatum har varken monthsLeft eller perMonthOre — goalProgress i
+// src/core/goal.js sätter de två till null tillsammans. Då finns ingen månadstakt
+// att skriva och ingen månad att skriva den till, så raden slutar efter beloppet.
+// Den korta formen är alltså inte ett tredje tillstånd utan den andra halvan av
+// ett fält ARKITEKTUR.md skriver ut som valfritt.
+//
+// isValidIsoDate i src/core/dates.js äger frågan "är det här ett datum", och
+// monthOfIsoDate kastar för allt annat: villkoret står därför före anropet, så
+// att en kropp utan läsbart targetDate ger den korta formen i stället för ett
+// kast som tömmer hela kortet.
+//
+// Månaden skrivs med monthLabel i gemener — "juni 2027". monthLabel äger formen
+// <månad> <år>, och det enda som ändras är versalen: ARKITEKTUR.md skriver raden
+// med gemen begynnelsebokstav, eftersom månaden står mitt i en mening. Varje
+// begynnelsebokstav i MONTH_NAMES är en ASCII-bokstav, så toLowerCase kan inte
+// ändra strängens längd.
+function goalLeftText(goal) {
+  const left = `${GOAL_LEFT_PREFIX}${formatSek(oreFromResponse(goal.leftOre))}`;
+  if (!isValidIsoDate(goal.targetDate) || !Number.isSafeInteger(goal.perMonthOre)) {
+    return left;
+  }
+  const month = monthLabel(monthOfIsoDate(goal.targetDate)).toLowerCase();
+  return `${left} - spara ${formatSek(goal.perMonthOre)} i månaden till ${month}`;
+}
+
+function goalNoteText(status) {
+  return Object.hasOwn(GOAL_NOTES, status) ? GOAL_NOTES[status] : '';
+}
+
+// En rad i sparmålskortet: namn, sparat av mål, stapel, procent, Kvar-raden och
+// statusens egen text.
+//
+// Varje tal kommer ur svarets egna fält. De sex räknade fälten — savedOre,
+// leftOre, percent, monthsLeft, perMonthOre och status — räknas av goalProgress i
+// src/core/goal.js och aldrig här: app.js subtraherar inget målbelopp, dividerar
+// ingen månadstakt och klipper ingen procent.
+function goalRow(goal) {
+  const row = document.createElement('li');
+  row.className = goalClassName(goal.status);
+
+  const percent = percentFromResponse(goal.percent);
+  row.append(
+    cell('goal-name', goal.name),
+    cell('goal-saved', goalSavedText(goal)),
+    goalBar(percent, goal.status),
+    cell('goal-percent', goalPercentText(percent)),
+    cell('goal-left', goalLeftText(goal)),
+    cell('goal-note', goalNoteText(goal.status))
+  );
+  return row;
+}
+
+// Kortet ritas om vid varje lyckad hämtning. replaceChildren och inte append, av
+// samma skäl som i de övriga korten: en lista som byggs men aldrig töms visar ett
+// mål som tagits bort, och en andra hämtning skulle dubblera varje rad.
+//
+// Ingen filtrering: också ett mål som är klart får en rad, med sin egen text och
+// sin gröna stapel. Datalagret sållar med flit inte, och kortet svarar på frågan
+// vad användaren sparar till — inte bara vad som återstår.
+function renderGoals(goals) {
+  GOAL_LIST.replaceChildren(...goals.map(goalRow));
+}
+
+// Kortet syns och låsraden döljs. Båda bär hidden i index.html, så ingetdera syns
+// före det första svaret: vilket av de två som gäller avgörs av hämtningen och
+// aldrig av en gissning om användarens plan.
+function showGoalCard() {
+  GOAL_LOCKED.hidden = true;
+  GOAL_CARD.hidden = false;
+}
+
+// Låsradens text, byggd ur 403-svarets feature och requiredPlan.
+//
+// Varken funktionens eller planens svenska namn står skrivet i den här filen:
+// FEATURE_LABELS och PLAN_LABELS i src/core/plans.js äger dem, och samma två
+// tabeller ger 403-svarets egen text i requireFeature. Vyn och spärren kan därmed
+// inte säga olika saker om vad som ingår i vad.
+//
+// En nyckel som inte står i tabellerna ger den tomma strängen och aldrig sin
+// engelska nyckel, samma regel och samma skäl som renderPlan följer för en okänd
+// plan.
+function goalLockedText(body) {
+  const { feature, requiredPlan } = body;
+  if (!Object.hasOwn(FEATURE_LABELS, feature) || !Object.hasOwn(PLAN_LABELS, requiredPlan)) {
+    return '';
+  }
+  return `${FEATURE_LABELS[feature]} ingår i ${PLAN_LABELS[requiredPlan]}.`;
+}
+
+// Låsraden syns och kortet döljs.
+//
+// Raden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på var och en av
+// sparmålens fem vägar, och det är requireFeature i src/server/api.js som håller.
+// Ett kort som inte syns hindrar ingenting.
+function showGoalLock(body) {
+  GOAL_CARD.hidden = true;
+  GOAL_LOCKED_TEXT.textContent = goalLockedText(body);
+  GOAL_LOCKED.hidden = false;
+}
+
+// Hämtar sparmålen och ritar om kortet, eller visar låsraden när svaret är 403.
+//
+// 403 är INGET fel här. Sparmål är den första funktionen Bas saknar, så 403 är
+// det normala svaret för en Bas-användare, och det skrivs därför aldrig i
+// månadsvyns felruta — det visar låsraden i stället. Varje annat svar än 200 och
+// 403 är ett verkligt fel och får serverns text, precis som på de övriga korten.
+//
+// Dagens datum står i sökvägen, läst ur TODAY, av samma skäl som räkningarnas: de
+// räknade fälten hör till en dag och inte till en månad, så månadsväljaren rör
+// dem inte.
+//
+// Ingen av felvägarna tömmer kortet — vyn nollställs aldrig av ett fel.
+async function loadGoals() {
+  let response;
+  try {
+    response = await fetch(`/api/sparmal/${TODAY}`);
+  } catch {
+    MONTH_ERROR.textContent = GENERAL_ERROR;
+    return;
+  }
+
+  if (sessionExpired(response)) {
+    return;
+  }
+
+  const body = await readJson(response);
+
+  if (response.status === 403) {
+    showGoalLock(body);
+    return;
+  }
+
+  if (response.status !== 200) {
+    MONTH_ERROR.textContent = generalText(body);
+    return;
+  }
+
+  renderGoals(Array.isArray(body.goals) ? body.goals : []);
+  showGoalCard();
+}
+
+// Sparmålsformuläret [steg 4]: namn, målbelopp och ett valfritt slutdatum. Egna
+// funktioner och inte något av de andra formulärens lägen, av samma skäl som
+// räkningens och budgetens har egna: formulären har inget fält gemensamt.
+function openGoalForm() {
+  GOAL_FORM.reset();
+  GOAL_FORM_ERROR.textContent = '';
+  GOAL_FORM.hidden = false;
+}
+
+function closeGoalForm() {
+  GOAL_FORM.hidden = true;
+  GOAL_FORM.reset();
+  GOAL_FORM_ERROR.textContent = '';
+}
+
+// Sparar ett nytt sparmål. De tre fälten skickas som de står, och valideringen
+// ägs av validateGoalDraft i src/core/goal.js genom POST /api/sparmal — app.js
+// prövar varken målbeloppet eller slutdatumet självt.
+//
+// Slutdatumfältets tomma värde betyder "inget slutdatum", och den tomma strängen
+// är precis vad checkTargetDate läser som null. Fältet skickas därför orört.
+//
+// Fältfelen visas i formulärets enda felruta, samma val och samma skäl som i
+// räknings- och budgetformuläret: svarets error är det första felets text, och
+// egna felrutor hade krävt ett id som inte kan heta error-name, eftersom
+// postformuläret redan äger det.
+//
+// Lyckas sparningen hämtas målen om — vyn byggs aldrig ur svaret på en ändring,
+// och svaret på en POST bär ingen av de sex räknade fälten.
+async function submitGoal(button) {
+  GOAL_FORM_ERROR.textContent = '';
+
+  button.disabled = true;
+  goalSubmitInProgress = true;
+  try {
+    let response;
+    try {
+      response = await fetch('/api/sparmal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: GOAL_NAME_FIELD.value,
+          targetSek: GOAL_TARGET_FIELD.value,
+          targetDate: GOAL_TARGET_DATE_FIELD.value
+        })
+      });
+    } catch {
+      GOAL_FORM_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (response.status === 201) {
+      closeGoalForm();
+      await loadGoals();
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    GOAL_FORM_ERROR.textContent = generalText(await readJson(response));
+  } finally {
+    button.disabled = false;
+    goalSubmitInProgress = false;
+  }
 }
 
 function renderMonth(body) {
@@ -1699,6 +2049,11 @@ async function loadMe() {
     // väntan på svaret är släppt. Funktionen hanterar själv varje felväg, så
     // löftet kan inte avvisas.
     void loadBills();
+    // Sparmålen hämtas en gång, efter räkningarna, av samma skäl: de räknade
+    // fälten hör till dagen och inte till månaden, så ett andra anrop vid ett
+    // månadsbyte hade gett samma svar. Hämtningen avgör dessutom vilket av
+    // kortet och låsraden som syns — 403 betyder en plan utan sparmål.
+    void loadGoals();
     return;
   }
 
@@ -1815,6 +2170,32 @@ ADD_BILL.addEventListener('click', () => {
 
 BILL_CANCEL.addEventListener('click', () => {
   closeBillForm();
+});
+
+// Sparmålskortets knappar [steg 4]. + Nytt sparmål öppnar formuläret, Avbryt
+// stänger det utan att skicka något anrop, och Se planer i låsraden går till
+// samma vy som knappen Min plan i sidomenyn — showPlan äger hämtningen och
+// vybytet, så låsraden har ingen egen väg dit.
+ADD_GOAL.addEventListener('click', () => {
+  openGoalForm();
+});
+
+GOAL_CANCEL.addEventListener('click', () => {
+  closeGoalForm();
+});
+
+SHOW_PLANS.addEventListener('click', () => {
+  void showPlan(SHOW_PLANS);
+});
+
+GOAL_FORM.addEventListener('submit', (event) => {
+  event.preventDefault();
+  // Samma spärr och samma skäl som de tre andra formulärens: Enter i ett fält
+  // skickar formuläret direkt, förbi den avstängda knappen.
+  if (goalSubmitInProgress) {
+    return;
+  }
+  void submitGoal(GOAL_SUBMIT);
 });
 
 BILL_FORM.addEventListener('submit', (event) => {
