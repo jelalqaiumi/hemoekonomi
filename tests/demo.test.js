@@ -128,7 +128,7 @@ test('(D3) varje svensk text attrappen svarar med är ägarens, tecken för teck
   // exporteras ur src/server/auth.js.
   assert.equal(SERVER_TEXTS.notLoggedIn, NOT_LOGGED_IN_MESSAGE);
   assert.equal(SERVER_TEXTS.unknownCode, AUTH_MESSAGES.unknownCode);
-  // De fyra övriga står i MESSAGES i src/server/api.js, som är modullokal och
+  // De övriga står i MESSAGES i src/server/api.js, som är modullokal och
   // inte exporterad. Kopian jämförs därför mot filens egen rad: en ändring av
   // texten i api.js fäller det här testfallet.
   const api = await fs.readFile(API_PATH, 'utf8');
@@ -137,7 +137,10 @@ test('(D3) varje svensk text attrappen svarar med är ägarens, tecken för teck
     ['invalidMonth', SERVER_TEXTS.invalidMonth],
     ['unknownPath', SERVER_TEXTS.unknownPath],
     ['methodNotAllowed', SERVER_TEXTS.methodNotAllowed],
-    ['invalidPlan', SERVER_TEXTS.invalidPlan]
+    ['invalidPlan', SERVER_TEXTS.invalidPlan],
+    // Räkningarnas två texter [steg 3].
+    ['invalidToday', SERVER_TEXTS.invalidToday],
+    ['billNotFound', SERVER_TEXTS.billNotFound]
   ]) {
     assert.equal(api.includes(`${nyckel}: '${text}'`), true, `${nyckel} i src/server/api.js`);
   }

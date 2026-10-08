@@ -17,6 +17,7 @@ import {
   REMIND_DAYS_DEFAULT,
   REMIND_DAYS_MAX,
   REMIND_DAYS_MIN,
+  billDaysText,
   billStatus,
   daysUntilDue,
   nextBillDueDate,
@@ -192,6 +193,83 @@ test('daysUntilDue låter daysBetween avvisa det som inte är ett datum', () => 
     assert.throws(() => daysUntilDue(IDAG, value), {
       name: 'RangeError',
       message: /^daysBetween kräver ett datum på formen ÅÅÅÅ-MM-DD/
+    }, String(value));
+  }
+});
+
+// --- billDaysText ------------------------------------------------------------
+//
+// Tabellen under "Dagtexterna med naturlig svenska" i ARKITEKTUR.md har fem
+// rader, och var och en har ett eget testfall nedan. Gränserna -2, -1, 0, 1 och
+// 2 prövas var för sig: det är där formen byter, och ett fall som bara prövade
+// -5 och 5 hade passerat varje förväxling av de tre mittraderna.
+//
+// Strängarna skrivs ut tecken för tecken som ägaren i src/core/bill.js skriver
+// dem, aldrig byggda av testet ur samma mall som koden (LARDOMAR.md
+// 2026-09-14) — ett test som räknar fram sin förväntan ur samma uttryck som
+// koden prövar ingenting.
+
+test('billDaysText ger Förföll för <N> dagar sedan vid -2 och lägre', () => {
+  assert.equal(billDaysText(-2), 'Förföll för 2 dagar sedan');
+  assert.equal(billDaysText(-3), 'Förföll för 3 dagar sedan');
+  assert.equal(billDaysText(-5), 'Förföll för 5 dagar sedan');
+  assert.equal(billDaysText(-31), 'Förföll för 31 dagar sedan');
+  // <N> är absolutbeloppet: inget minustecken når texten.
+  assert.equal(billDaysText(-365).includes('-'), false);
+});
+
+test('billDaysText ger Förföll igår vid -1', () => {
+  assert.equal(billDaysText(-1), 'Förföll igår');
+  // Gränsen nedåt: -2 är den andra formen, inte den här.
+  assert.notEqual(billDaysText(-2), 'Förföll igår');
+});
+
+test('billDaysText ger Förfaller idag vid 0', () => {
+  assert.equal(billDaysText(0), 'Förfaller idag');
+  // -0 är noll dagar kvar, alltså i dag. Number.isInteger säger true för -0, så
+  // spärren släpper igenom värdet, och grenen daysUntil === 0 är sann för båda
+  // (LARDOMAR.md 2026-09-02).
+  assert.equal(billDaysText(-0), 'Förfaller idag');
+  // Ingen av de två gränserna intill ger samma text.
+  assert.notEqual(billDaysText(-1), 'Förfaller idag');
+  assert.notEqual(billDaysText(1), 'Förfaller idag');
+});
+
+test('billDaysText ger Förfaller imorgon vid 1', () => {
+  assert.equal(billDaysText(1), 'Förfaller imorgon');
+  // Gränsen uppåt: 2 är den femte formen, inte den här. Raden fäller en
+  // mittrad som skrivits som daysUntil <= 1.
+  assert.notEqual(billDaysText(2), 'Förfaller imorgon');
+});
+
+test('billDaysText ger Förfaller om <N> dagar vid 2 och högre', () => {
+  assert.equal(billDaysText(2), 'Förfaller om 2 dagar');
+  assert.equal(billDaysText(3), 'Förfaller om 3 dagar');
+  assert.equal(billDaysText(14), 'Förfaller om 14 dagar');
+  assert.equal(billDaysText(365), 'Förfaller om 365 dagar');
+});
+
+test('billDaysText byter form på exakt de fem gränserna', () => {
+  // De fem gränserna i en följd, var och en med sin utskrivna text. Fallet
+  // fäller varje förskjutning av en gräns med ett steg, också den som lämnar de
+  // enskilda fallen ovan oförändrade.
+  assert.deepEqual(
+    [-2, -1, 0, 1, 2].map(billDaysText),
+    [
+      'Förföll för 2 dagar sedan',
+      'Förföll igår',
+      'Förfaller idag',
+      'Förfaller imorgon',
+      'Förfaller om 2 dagar'
+    ]
+  );
+});
+
+test('billDaysText kastar RangeError för allt som inte är ett heltal', () => {
+  for (const value of [...ICKE_TAL, undefined, 2.5, -2.5]) {
+    assert.throws(() => billDaysText(value), {
+      name: 'RangeError',
+      message: `billDaysText kräver ett heltal dagar, fick "${String(value)}".`
     }, String(value));
   }
 });

@@ -141,6 +141,57 @@ export function daysUntilDue(dueDate, today) {
   return daysBetween(today, dueDate);
 }
 
+// Räkningens dagtext, den rad användaren läser bredvid förfallodagen.
+//
+// Texten bor här och inte i app.js av samma skäl som daysText i sin tid lades i
+// src/core/: den är användarvänd text som räknas fram ur ett tal, och ett tal som
+// blir text är kärnans sak. app.js skriver därför ingen av de fem strängarna.
+//
+// Formen är ARKITEKTUR.md:s tabell under "Dagtexterna med naturlig svenska",
+// bindande ordagrant, och <N> är absolutbeloppet:
+//
+//   -2 eller lägre -> Förföll för <N> dagar sedan
+//   -1             -> Förföll igår
+//    0             -> Förfaller idag
+//    1             -> Förfaller imorgon
+//    2 eller högre -> Förfaller om <N> dagar
+//
+// De tre mittraderna är egna grenar och inte specialfall av de två ytterraderna:
+// svenskan har egna ord för igår, idag och imorgon, och "Förfaller om 1 dagar"
+// är inte en text som går att läsa. Gränserna -2, -1, 0, 1 och 2 prövas var för
+// sig i tests/bill.test.js — det är där formen byter, och ett testfall som bara
+// prövar -5 och 5 fäller ingen förväxling av gränserna.
+//
+// -0 ger Förfaller idag: noll dagar kvar är i dag, och daysUntilDue ger just +0
+// eller -0 för samma dag. Villkoret skrivs som daysUntil === 0, som är sant för
+// båda — och Math.abs(-0) är 0, så inget minustecken kan nå en text även om
+// gränsen skulle flyttas. Number.isInteger räknas aldrig som en spärr mot -0
+// (LARDOMAR.md 2026-09-02), och därför prövas -0 av ett eget testfall.
+//
+// Spärren är modulens vanliga form: talet kommer ur daysUntilDue eller ur
+// fältet daysUntil i GET /api/rakningar, så ett värde som faller här är ett
+// programmeringsfel. Number.isInteger coercar inte — 1n och Symbol('x') ger
+// false i stället för att kasta TypeError ur jämförelsen.
+export function billDaysText(daysUntil) {
+  if (!Number.isInteger(daysUntil)) {
+    throw new RangeError(`billDaysText kräver ett heltal dagar, fick "${String(daysUntil)}".`);
+  }
+  const antal = Math.abs(daysUntil);
+  if (daysUntil <= -2) {
+    return `Förföll för ${antal} dagar sedan`;
+  }
+  if (daysUntil === -1) {
+    return 'Förföll igår';
+  }
+  if (daysUntil === 0) {
+    return 'Förfaller idag';
+  }
+  if (daysUntil === 1) {
+    return 'Förfaller imorgon';
+  }
+  return `Förfaller om ${antal} dagar`;
+}
+
 // Nästa förfallodag för en återkommande räkning som just betalades.
 //
 // Framflyttningen går genom nextDueDate i schedule.js, som äger både

@@ -255,6 +255,67 @@
             </section>
           </div>
 
+          <!-- Räkningar [steg 3]: en rad per obetald räkning, över budgetkortet.
+               Raderna kommer ur GET /api/rakningar/<ÅÅÅÅ-MM-DD>, där varje rad
+               bär status och daysUntil färdigräknade - app.js räknar ingenting
+               av det själv, och dagtexten kommer ur billDaysText i
+               src/core/bill.js. En betald engångsräkning har ingen rad: kortet
+               svarar på frågan vad som ska betalas.
+               En tom lista ger ett kort med bara knappen, samma regel som
+               budgetkortet: en räkning som inte finns har ingen rad. -->
+          <section class="card" id="bill-card">
+            <h3>Räkningar</h3>
+            <button type="button" class="add" id="add-bill">+ Ny räkning</button>
+
+            <!-- Formuläret knappen öppnar: namn, belopp, förfallodag, intervall
+                 eller Engångs, och hur många dagar innan påminnelsen visas.
+                 Dolt från början; app.js sätter hidden. Fältfelen från
+                 POST /api/rakningar visas i den enda felrutan - svarets error är
+                 det första felets text, precis som i budgetformuläret. -->
+            <form id="bill-form" novalidate hidden>
+              <div class="field">
+                <label for="bill-name">Namn</label>
+                <input id="bill-name" name="name" type="text" autocomplete="off" />
+              </div>
+
+              <div class="field">
+                <label for="bill-amount">Belopp (kr)</label>
+                <input id="bill-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+              </div>
+
+              <div class="field">
+                <label for="bill-due-date">Förfallodag</label>
+                <input id="bill-due-date" name="dueDate" type="date" autocomplete="off" />
+              </div>
+
+              <div class="field">
+                <!-- Alternativen fylls i av app.js: Engångs först, därefter de
+                     fyra intervallen ur INTERVAL_LABELS i src/core/entry.js.
+                     Ingen intervalletikett skrivs för hand här. -->
+                <label for="bill-interval">Intervall</label>
+                <select id="bill-interval" name="interval"></select>
+              </div>
+
+              <!-- Påminn mig <N> dagar innan. Etiketten står före fältet och
+                   enheten efter det, så att raden läses som den mening
+                   ARKITEKTUR.md skriver. min, max och värdet sätts av app.js ur
+                   REMIND_DAYS_MIN, REMIND_DAYS_MAX och REMIND_DAYS_DEFAULT i
+                   src/core/bill.js - ingen gräns står som en siffra här. -->
+              <div class="field">
+                <label for="bill-remind-days">Påminn mig</label>
+                <input id="bill-remind-days" name="remindDays" type="number" step="1" autocomplete="off" />
+                <span class="field-unit">dagar innan</span>
+              </div>
+
+              <p class="form-error" id="bill-form-error" role="alert"></p>
+
+              <button type="submit" class="primary" id="bill-submit">Spara</button>
+              <button type="button" class="secondary" id="bill-cancel">Avbryt</button>
+            </form>
+
+            <ul id="bill-list" class="item-list"></ul>
+          </section>
+
           <!-- Budget [steg 2]: en rad per kategori som har ett tak, under
                utgiftslistan. Raderna kommer ur fältet budgets i
                GET /api/manad/<ÅÅÅÅ-MM>, där varje rad bär category, amountOre,

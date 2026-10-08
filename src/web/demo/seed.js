@@ -7,7 +7,7 @@
 // här filen från disk. app.js skriver /core/ därför att tests/helpers/dom.js
 // skriver om just den formen; en demofil som testas direkt behöver ingen
 // omskrivning.
-import { monthOfIsoDate, shiftMonth } from '../../core/dates.js';
+import { addMonthsClamped, monthOfIsoDate, shiftMonth } from '../../core/dates.js';
 
 // Demoanvändaren. exempel.se är ett påhittat domännamn som inte kan ta emot
 // post, så ingen riktig adress står i koden.
@@ -74,6 +74,33 @@ const SEED_BUDGETS = Object.freeze([
   { category: 'housing', amountOre: 900000 },
   { category: 'other', amountOre: 800000 },
   { category: 'subscription', amountOre: 70000 }
+]);
+
+// Räkningarna i demon [steg 3]. monthsFromToday är hur många månader från
+// dagens datum förfallodagen ligger, och det är det talet som avgör vilket av
+// kortets tre utseenden raden får:
+//
+//   -1  förfallodagen har passerat        -> forfallen, röd rad
+//    0  förfallodagen är i dag            -> paminnelse, guldram
+//    1  förfallodagen ligger en månad bort -> kommande, vanlig rad
+//
+// Måttet är månader och inte dagar: det enda datumsteg kärnan erbjuder är
+// addMonthsClamped i src/core/dates.js, och den här filen räknar inga datum
+// själv. En rad per utseende, och de tre talen är valda så att de tre utseendena
+// syns VARJE dag demon öppnas - är ingen rad förfallen och ingen i
+// påminnelsefönstret visar demon inte det kortet finns för.
+//
+// remindDays är 3 för de två återkommande, samma tal som REMIND_DAYS_DEFAULT i
+// src/core/bill.js; tandläkarräkningen har 5 för att visa att fältet går att
+// sätta. Talen skrivs här och inte läses ur kärnan: seed-datan ska visa ett
+// värde besökaren själv kunde ha skrivit, inte appens förval.
+//
+// Tandläkarräkningen är en engångsräkning (interval null). Betalar besökaren
+// den försvinner raden, och det är den andra halvan av vad kortet gör.
+const SEED_BILLS = Object.freeze([
+  { id: 'demo-rakning-el', name: 'Elräkning', amountOre: 76000, monthsFromToday: -1, interval: 'monthly', remindDays: 3 },
+  { id: 'demo-rakning-hemforsakring', name: 'Hemförsäkring', amountOre: 145000, monthsFromToday: 0, interval: 'quarterly', remindDays: 3 },
+  { id: 'demo-rakning-tandlakare', name: 'Tandläkare', amountOre: 180000, monthsFromToday: 1, interval: null, remindDays: 5 }
 ]);
 
 // Demons hela tillstånd, som det ser ut innan besökaren rört något.
@@ -147,7 +174,27 @@ export function createSeedState(today) {
       month: currentMonth,
       category: seed.category,
       amountOre: seed.amountOre
-    }))
+    })),
+    // Räkningarna [steg 3]. Raden bär samma fält som tabellen bills, utan
+    // created_at: demon har ingen databas, och ingenting i demon läser tiden en
+    // räkning skapades.
+    //
+    // anchorDate är densamma som dueDate, precis som addBill i
+    // src/server/bills.js skriver den: ankardagen ÄR den första förfallodagen,
+    // och en betalning flyttar den aldrig.
+    bills: SEED_BILLS.map((seed) => {
+      const dueDate = addMonthsClamped(today, seed.monthsFromToday);
+      return {
+        id: seed.id,
+        name: seed.name,
+        amountOre: seed.amountOre,
+        dueDate,
+        anchorDate: dueDate,
+        interval: seed.interval,
+        remindDays: seed.remindDays,
+        paidAt: null
+      };
+    })
   };
 }
 

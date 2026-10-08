@@ -298,6 +298,43 @@ export function createDom() {
     );
   }
 
+  // Räkningskortet [steg 3]: knappen som öppnar formuläret, formuläret med sina
+  // fem fält och listan med en rad per obetald räkning. Formuläret är ett
+  // FakeForm av samma skäl som de två andra: app.js lyssnar på submit och
+  // anropar reset. Fälten är registrerade i formulärets elements, så att
+  // reset() tömmer dem - app.js läser dem som element och inte ur elements, men
+  // nollställningen går genom formuläret.
+  //
+  // Varje nytt id i index.html betyder ett nytt FakeElement här: testfallet som
+  // jämför de två listorna fäller ett glömt element.
+  const billCard = skapa('section', 'bill-card', { className: 'card' });
+  const billForm = new FakeForm('bill-form');
+  billForm.hidden = true;
+  registry.set('bill-form', billForm);
+  const billFalt = Object.freeze([
+    { name: 'name', id: 'bill-name', tagName: 'input' },
+    { name: 'amountSek', id: 'bill-amount', tagName: 'input' },
+    { name: 'dueDate', id: 'bill-due-date', tagName: 'input' },
+    { name: 'interval', id: 'bill-interval', tagName: 'select' },
+    { name: 'remindDays', id: 'bill-remind-days', tagName: 'input' }
+  ]);
+  for (const { name, id, tagName } of billFalt) {
+    const falt = skapa(tagName, id);
+    billForm.append(falt);
+    billForm.registrera(name, falt);
+  }
+  billForm.append(
+    skapa('p', 'bill-form-error', { className: 'form-error' }),
+    skapa('button', 'bill-submit', { type: 'submit', textContent: 'Spara' }),
+    skapa('button', 'bill-cancel', { type: 'button', textContent: 'Avbryt' })
+  );
+  billCard.append(
+    skapa('button', 'add-bill', { type: 'button', className: 'add' }),
+    billForm,
+    skapa('ul', 'bill-list', { className: 'item-list' })
+  );
+  monthView.append(billCard);
+
   // Budgetkortet [steg 2]: knappen som öppnar det lilla formuläret, formuläret
   // självt och listan med en rad per kategori som har ett tak. Formuläret är ett
   // FakeForm av samma skäl som postformuläret: app.js lyssnar på submit och

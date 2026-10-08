@@ -5,6 +5,13 @@
 // Sidan har två tillstånd och ingen router. GET /api/mig avgör vilket: 401 visar
 // inloggningsvyn, 200 visar månadsvyn. Ett 401 från någon annan väg senare i
 // körningen visar inloggningsvyn igen — sessionen kan gå ut medan sidan är öppen.
+import {
+  BILL_STATUSES,
+  REMIND_DAYS_DEFAULT,
+  REMIND_DAYS_MAX,
+  REMIND_DAYS_MIN,
+  billDaysText
+} from '/core/bill.js';
 import { monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS } from '/core/item.js';
@@ -48,6 +55,16 @@ const BUDGET_LEFT_PREFIX = 'kvar ';
 function budgetLeftText(leftOre) {
   return `${BUDGET_LEFT_PREFIX}${formatSek(leftOre)}`;
 }
+
+// Räkningskortets två egna texter [steg 3]. Dagtexten står INTE här: den ägs av
+// billDaysText i src/core/bill.js, eftersom den räknas fram ur ett tal.
+//
+// Betald är knappen på varje rad, och Engångs är det första alternativet i
+// formulärets intervallfält - det alternativ en räkning utan intervall har.
+// Båda står ordagrant i ARKITEKTUR.md under "Gränssnittet" respektive
+// "Dagtexterna med naturlig svenska".
+const BILL_PAID_LABEL = 'Betald';
+const BILL_ONE_TIME_LABEL = 'Engångs';
 
 const SAVE_LABEL = 'Spara';
 const SAVE_CHANGE_LABEL = 'Spara ändring';
@@ -226,6 +243,20 @@ const BUDGET_FORM_ERROR = document.querySelector('#budget-form-error');
 const BUDGET_SUBMIT = document.querySelector('#budget-submit');
 const BUDGET_CANCEL = document.querySelector('#budget-cancel');
 
+// Räkningskortet [steg 3]. Ligger i månadsvyn, över budgetkortet. Formuläret har
+// fem fält och en enda felruta, samma form som budgetformuläret.
+const BILL_LIST = document.querySelector('#bill-list');
+const ADD_BILL = document.querySelector('#add-bill');
+const BILL_FORM = document.querySelector('#bill-form');
+const BILL_NAME_FIELD = document.querySelector('#bill-name');
+const BILL_AMOUNT_FIELD = document.querySelector('#bill-amount');
+const BILL_DUE_DATE_FIELD = document.querySelector('#bill-due-date');
+const BILL_INTERVAL_FIELD = document.querySelector('#bill-interval');
+const BILL_REMIND_DAYS_FIELD = document.querySelector('#bill-remind-days');
+const BILL_FORM_ERROR = document.querySelector('#bill-form-error');
+const BILL_SUBMIT = document.querySelector('#bill-submit');
+const BILL_CANCEL = document.querySelector('#bill-cancel');
+
 // Fälten i formuläret, i samma ordning som validateMonthItemDraft rapporterar
 // dem. Fältet kind står inte här: slaget kommer från vilken lista knappen satt i
 // och är inget fält, så ett fieldError för kind har inget element att skrivas
@@ -246,9 +277,18 @@ const MODE_ITEM = 'item';
 const MODE_MONTH = 'month';
 const MODE_SERIES = 'series';
 
-// Månaden vyn visar. Den enda klockläsningen i filen: monthOfIsoDate(todayIso())
-// öppnar den aktuella månaden, och knapparna räknar därefter med shiftMonth.
-let currentMonth = monthOfIsoDate(todayIso());
+// Dagens datum, och filens enda klockläsning. Tre läsare: månadsvyn öppnar den
+// månad dagen ligger i, räkningskortet hämtas för dagen, och Betald skickar
+// dagen med i kroppen. Alla tre läser samma sträng - en andra läsning hade
+// kunnat ge två olika dagar i samma klickning, om dygnet byttes mittemellan, och
+// då skulle sökvägen och kroppen kunna säga olika saker om samma handling.
+//
+// Dagen läses vid laddningen och inte vid varje rendering: den sida som står
+// öppen över midnatt visar den dag den öppnades, precis som månadsvyn alltid
+// gjort.
+const TODAY = todayIso();
+// Månaden vyn visar. Knapparna räknar därefter med shiftMonth.
+let currentMonth = monthOfIsoDate(TODAY);
 // E-postadressen koden skickades till. Behövs i steg två, som bara skickar koden.
 let loginEmail = '';
 // Id:t formuläret ändrar, eller null när formuläret gäller en ny post.
@@ -275,6 +315,9 @@ let submitInProgress = false;
 // Budgetformulärets eget pågående-läge, av samma skäl: Enter i beloppsfältet
 // skickar formuläret direkt, förbi den avstängda knappen.
 let budgetSubmitInProgress = false;
+// Räkningsformulärets eget pågående-läge, av samma skäl som de två andras: Enter
+// i ett fält skickar formuläret direkt, förbi den avstängda knappen.
+let billSubmitInProgress = false;
 // Om formuläret står i läget Bara <månad>. Satt av setMonthOnlyLayout och läst av
 // updateSingleFields, som behöver både det här läget och kryssrutans: blocket med
 // Datum och Kommentar döljs av vilket som helst av de två, och ett villkor som
@@ -685,6 +728,64 @@ function renderBudgets(budgets) {
   BUDGET_LIST.replaceChildren(...budgets.map(budgetRow));
 }
 
+// Ett heltal dagar ur svaret, prövat innan det når billDaysText, som kastar
+// RangeError för allt som inte är ett heltal. Samma regel och samma skäl som
+// oreFromResponse ovan: ett 200 utan läsbart daysUntil ska ge en rad som går att
+// läsa i stället för ett kast som tömmer hela kortet.
+function daysFromResponse(value) {
+  return Number.isSafeInteger(value) ? value : 0;
+}
+
+// Radens klasser. Statusen kommer ur svaret och prövas mot BILL_STATUSES i
+// src/core/bill.js, som äger de fyra värdena: en status som inte står i listan
+// ger ingen statusklass i stället för en klass ingen stilregel känner. De fyra
+// värdena skrivs därmed inte av i den här filen.
+function billClassName(status) {
+  return BILL_STATUSES.includes(status) ? `item bill bill-${status}` : 'item bill';
+}
+
+// En rad i räkningskortet: namn, belopp, förfallodag, dagtext och knappen
+// Betald.
+//
+// Dagtexten räknas inte här. billDaysText i src/core/bill.js äger de fem
+// formerna, och talet den läser är fältet daysUntil ur GET /api/rakningar, som
+// servern redan har räknat med daysBetween - app.js subtraherar inga datum.
+//
+// Utseendet avgörs av bill.status, också det räknat av servern: appen avgör
+// aldrig själv om en räkning är förfallen.
+function billRow(bill) {
+  const row = document.createElement('li');
+  row.className = billClassName(bill.status);
+
+  row.append(
+    cell('bill-name', bill.name),
+    cell('bill-amount', formatSek(oreFromResponse(bill.amountOre))),
+    cell('bill-due-date', bill.dueDate),
+    cell('bill-days', billDaysText(daysFromResponse(bill.daysUntil))),
+    actionButton('bill-paid', BILL_PAID_LABEL, (button) => {
+      void payBill(bill.id, button);
+    })
+  );
+  return row;
+}
+
+// Kortet ritas om vid varje lyckad hämtning av räkningarna. replaceChildren och
+// inte append, av samma skäl som i de övriga korten: en lista som byggs men
+// aldrig töms visar en räkning som är betald och bort, och en andra hämtning
+// skulle dubblera varje rad.
+//
+// Bara obetalda räkningar får en rad. Villkoret är paidAt === null och inte
+// statusen: paidAt är det fält rad 1 i statustabellen läser, alltså definitionen
+// av betald, och app.js skriver därmed ingen av statusens svenska strängar.
+// Datalagret sållar med flit inte - det är kortet som avgör vad frågan "vad ska
+// betalas" svarar på.
+//
+// En tom lista ger ett kort med bara knappen. Det är inget tredje tillstånd:
+// en räkning som inte finns har ingen rad, samma regel som budgetkortet.
+function renderBills(bills) {
+  BILL_LIST.replaceChildren(...bills.filter((bill) => bill.paidAt === null).map(billRow));
+}
+
 function renderMonth(body) {
   const items = Array.isArray(body.items) ? body.items : [];
   renderTotals(body.totals ?? {});
@@ -724,6 +825,54 @@ async function loadMonth() {
   // (ARKITEKTUR.md, "Vyn när en hämtning misslyckas").
   MONTH_ERROR.textContent = '';
   renderMonth(body);
+}
+
+// Hämtar räkningarna och ritar om kortet. Dagens datum står i sökvägen, läst ur
+// TODAY: listan hör till en dag och inte till en månad, så månadsväljaren rör
+// den inte - en räkning förfaller ett datum, oavsett vilken månad vyn visar.
+//
+// Felvägarna är månadshämtningens: ett anrop som inte kommer fram ger den
+// allmänna texten, ett 401 visar inloggningsvyn, och ett annat svar visar
+// serverns text. Ingen av dem tömmer kortet - vyn nollställs aldrig av ett fel.
+async function loadBills() {
+  let response;
+  try {
+    response = await fetch(`/api/rakningar/${TODAY}`);
+  } catch {
+    MONTH_ERROR.textContent = GENERAL_ERROR;
+    return;
+  }
+
+  if (sessionExpired(response)) {
+    return;
+  }
+
+  const body = await readJson(response);
+  if (response.status !== 200) {
+    MONTH_ERROR.textContent = generalText(body);
+    return;
+  }
+
+  renderBills(Array.isArray(body.bills) ? body.bills : []);
+}
+
+// Markerar en räkning betald. Dagens datum står i kroppen, samma sträng som i
+// sökvägen ovan: servern läser ingen klocka, och en återkommande räkning som
+// betalas sent ska flyttas till den första dragningen framåt.
+//
+// Lyckas anropet hämtas räkningarna om, inte månaden: en räkning är ingen
+// månadspost, och listorna och summeringen rörs inte av en betalning. Den nya
+// förfallodagen kommer ur omhämtningen - vyn byggs aldrig ur svaret på en
+// ändring. En återkommande räkning får därmed direkt sin nya rad, och en betald
+// engångsräkning faller ur listan.
+function payBill(billId, button) {
+  return sendChange(button, {
+    url: `/api/rakningar/${billId}/betald`,
+    method: 'POST',
+    body: { today: TODAY },
+    okStatus: 200,
+    reload: loadBills
+  });
 }
 
 async function changeMonth(month, button) {
@@ -992,6 +1141,82 @@ async function submitBudget(button) {
   }
 }
 
+// Räkningsformuläret [steg 3]: namn, belopp, förfallodag, intervall eller
+// Engångs, och hur många dagar innan påminnelsen visas. Egna funktioner och inte
+// postformulärets lägen, av samma skäl som budgetformuläret har egna: de två
+// formulären har inga fält gemensamt.
+//
+// Förvalet för Påminn mig läses ur REMIND_DAYS_DEFAULT i src/core/bill.js och
+// sätts efter reset(), som tömmer varje fält. Ingen siffra står här: samma tal
+// äger villkoret i checkRemindDays och schemats DEFAULT.
+function openBillForm() {
+  BILL_FORM.reset();
+  BILL_REMIND_DAYS_FIELD.value = String(REMIND_DAYS_DEFAULT);
+  BILL_FORM_ERROR.textContent = '';
+  BILL_FORM.hidden = false;
+}
+
+function closeBillForm() {
+  BILL_FORM.hidden = true;
+  BILL_FORM.reset();
+  BILL_FORM_ERROR.textContent = '';
+}
+
+// Sparar en ny räkning. De fem fälten skickas som de står, och valideringen ägs
+// av validateBillDraft i src/core/bill.js genom POST /api/rakningar - app.js
+// prövar varken beloppet, datumet eller intervallet självt.
+//
+// Intervallfältets tomma värde betyder Engångs, och den tomma strängen är precis
+// vad checkBillInterval läser som null. Fältet skickas därför orört.
+//
+// Fältfelen visas i formulärets enda felruta, samma val och samma skäl som i
+// budgetformuläret: svarets error är det första felets text, och fem egna
+// felrutor hade krävt fem id:n som inte kan heta error-name och error-amountSek,
+// eftersom postformuläret redan äger dem.
+//
+// Lyckas sparningen hämtas räkningarna om - vyn byggs aldrig ur svaret på en
+// ändring, och svaret på en POST bär varken status eller daysUntil.
+async function submitBill(button) {
+  BILL_FORM_ERROR.textContent = '';
+
+  button.disabled = true;
+  billSubmitInProgress = true;
+  try {
+    let response;
+    try {
+      response = await fetch('/api/rakningar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: BILL_NAME_FIELD.value,
+          amountSek: BILL_AMOUNT_FIELD.value,
+          dueDate: BILL_DUE_DATE_FIELD.value,
+          interval: BILL_INTERVAL_FIELD.value,
+          remindDays: BILL_REMIND_DAYS_FIELD.value
+        })
+      });
+    } catch {
+      BILL_FORM_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (response.status === 201) {
+      closeBillForm();
+      await loadBills();
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    BILL_FORM_ERROR.textContent = generalText(await readJson(response));
+  } finally {
+    button.disabled = false;
+    billSubmitInProgress = false;
+  }
+}
+
 // En ändring som inte går genom formuläret: en borttagen engångspost, en
 // överhoppad månad och en avslutad serie. Knappen som utlöste anropet spärras
 // före fetch och släpps i ett finally, så att två snabba klick inte ger två
@@ -1000,7 +1225,13 @@ async function submitBudget(button) {
 //
 // Id:n skickas ordagrant. Ett id är alltid ett UUID, och servern jämför
 // sökvägens led som exakta strängar utan att avkoda dem.
-async function sendChange(button, { url, method, body, okStatus }) {
+//
+// reload är den hämtning som körs när ändringen lyckades, med loadMonth som
+// förval. Räkningskortet [steg 3] skickar loadBills i stället: en betalning rör
+// ingen månadspost, så att hämta månaden om hade varit ett anrop utan verkan på
+// det som ändrades. Parametern och inte en andra kopia av funktionen - de två
+// vägarna är samma väg sånär som på vilken lista som ritas om.
+async function sendChange(button, { url, method, body, okStatus, reload = loadMonth }) {
   button.disabled = true;
   try {
     let response;
@@ -1020,7 +1251,7 @@ async function sendChange(button, { url, method, body, okStatus }) {
     }
 
     if (response.status === okStatus) {
-      await loadMonth();
+      await reload();
       return;
     }
 
@@ -1456,6 +1687,18 @@ async function loadMe() {
     renderUser((await readJson(response)).email);
     showMonthView();
     await loadMonth();
+    // Räkningarna hämtas en gång, efter månaden. Inte vid varje månadsbyte:
+    // listan hör till dagen och inte till månaden, så ett andra anrop hade gett
+    // samma svar. Kortet hämtas om när en räkning sparas eller markeras betald,
+    // alltså när listan verkligen kan ha ändrats.
+    //
+    // Utan await: loadMe anropas av filens await på toppnivå, och ett svar som
+    // dröjer skulle då hålla hela modulen oladdad - inloggningsvyn, månadsvyn
+    // och varje lyssnare med den. Anropet görs ändå här och inte i en lyssnare,
+    // så att fetch registreras synkront i samma ordning varje gång; bara
+    // väntan på svaret är släppt. Funktionen hanterar själv varje felväg, så
+    // löftet kan inte avvisas.
+    void loadBills();
     return;
   }
 
@@ -1473,6 +1716,17 @@ fillOptions('#item-interval', INTERVAL_LABELS);
 // postformulärets: ett tak kan därmed bara gälla en kategori valideringen
 // godkänner.
 fillOptions('#budget-category', CATEGORY_LABELS);
+// Räkningens intervallfält [steg 3]: Engångs först, därefter de fyra intervallen
+// ur INTERVAL_LABELS. Engångs har den tomma strängen som värde, som
+// checkBillInterval i src/core/bill.js läser som null - en räkning utan
+// intervall. Ingen intervalletikett skrivs för hand i den här filen.
+fillOptions('#bill-interval', { '': BILL_ONE_TIME_LABEL, ...INTERVAL_LABELS });
+
+// Gränserna för Påminn mig läses ur src/core/bill.js, samma två tal som
+// checkRemindDays prövar mot och som schemats CHECK bär. Som attribut och inte
+// som egenskaper: min och max finns bara som attribut på ett number-fält.
+BILL_REMIND_DAYS_FIELD.setAttribute('min', String(REMIND_DAYS_MIN));
+BILL_REMIND_DAYS_FIELD.setAttribute('max', String(REMIND_DAYS_MAX));
 
 // Kryssrutan öppnar och stänger de två fälten, och döljer samtidigt Datum och
 // Kommentar [steg 2] — en mall har dem inte. Den skickar inget anrop och rör
@@ -1551,6 +1805,26 @@ ADD_BUDGET.addEventListener('click', () => {
 
 BUDGET_CANCEL.addEventListener('click', () => {
   closeBudgetForm();
+});
+
+// Räkningskortets knappar [steg 3]. + Ny räkning öppnar formuläret, Avbryt
+// stänger det utan att skicka något anrop.
+ADD_BILL.addEventListener('click', () => {
+  openBillForm();
+});
+
+BILL_CANCEL.addEventListener('click', () => {
+  closeBillForm();
+});
+
+BILL_FORM.addEventListener('submit', (event) => {
+  event.preventDefault();
+  // Samma spärr och samma skäl som de två andra formulärens: Enter i ett fält
+  // skickar formuläret direkt, förbi den avstängda knappen.
+  if (billSubmitInProgress) {
+    return;
+  }
+  void submitBill(BILL_SUBMIT);
 });
 
 BUDGET_FORM.addEventListener('submit', (event) => {

@@ -18,9 +18,10 @@
 // samma fil i webbläsaren, eftersom new URL('../../core/x.js', '…/demo/y.js')
 // ger /core/x.js, men bara den relativa formen pekar på src/core/ också när ett
 // testfall importerar den här filen från disk.
+import { billStatus, daysUntilDue, nextBillDueDate, validateBillDraft } from '../../core/bill.js';
 import { monthTotals, sumByKind } from '../../core/budget.js';
 import { CATEGORIES } from '../../core/entry.js';
-import { compareMonths, firstDayOfMonth, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
+import { compareIsoDates, compareMonths, firstDayOfMonth, isValidIsoDate, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
 import { FEATURES, hasFeature, isPlanKey } from '../../core/plans.js';
 import { nextDueDate } from '../../core/schedule.js';
@@ -40,6 +41,8 @@ import { DEMO } from './demolage.js';
 //   unknownPath      MESSAGES.unknownPath i src/server/api.js
 //   methodNotAllowed MESSAGES.methodNotAllowed i src/server/api.js
 //   invalidPlan      MESSAGES.invalidPlan i src/server/api.js
+//   invalidToday     MESSAGES.invalidToday i src/server/api.js
+//   billNotFound     MESSAGES.billNotFound i src/server/api.js
 export const SERVER_TEXTS = Object.freeze({
   notLoggedIn: 'Du är inte inloggad.',
   unknownCode: 'Koden stämmer inte. Begär en ny kod och försök igen.',
@@ -47,7 +50,11 @@ export const SERVER_TEXTS = Object.freeze({
   invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.',
   unknownPath: 'Okänd adress.',
   methodNotAllowed: 'Metoden stöds inte.',
-  invalidPlan: 'Välj Bas, Plus eller Premium.'
+  invalidPlan: 'Välj Bas, Plus eller Premium.',
+  // Räkningarnas två texter [steg 3]. invalidToday gäller både datumet i GET:ens
+  // sökväg och today i kroppen till betald - samma fält med samma regel.
+  invalidToday: 'Dagens datum måste anges som ÅÅÅÅ-MM-DD.',
+  billNotFound: 'Räkningen finns inte.'
 });
 
 // Vägarna, med samma adresser som src/server/api.js.
@@ -65,6 +72,10 @@ const OVERVIEW_PATH_PREFIX = '/api/oversikt/';
 // Budgetens två vägar [steg 2]. Samma adresser som src/server/api.js.
 const BUDGET_PATH_PREFIX = '/api/budget/';
 const ITEM_MONTH_SEGMENT = 'manad';
+// Räkningarnas vägar [steg 3]. Samma adresser som src/server/api.js.
+const BILLS_PATH = '/api/rakningar';
+const BILL_PATH_PREFIX = '/api/rakningar/';
+const BILL_PAID_SEGMENT = 'betald';
 
 // Antalet månader i översikten. Samma tolv som OVERVIEW_MONTHS i
 // src/server/api.js: antalet står inte i adressen, så en klient kan inte be om
@@ -134,6 +145,20 @@ function budgetCategoryFromPath(pathname) {
     return null;
   }
   return { month: parts[0], category: parts[1] };
+}
+
+// Id:t i /api/rakningar/<id>/betald [steg 3], eller null när sökvägen inte har
+// den formen. Samma regler som billPaidIdFromPath i src/server/api.js: exakt två
+// led, och det andra ska vara betald.
+function billPaidIdFromPath(pathname) {
+  if (!pathname.startsWith(BILL_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(BILL_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] !== BILL_PAID_SEGMENT) {
+    return null;
+  }
+  return parts[0];
 }
 
 // Sökvägen ur det app.js skickade. Adressen är alltid absolut-från-roten i
@@ -386,6 +411,63 @@ function templateVersionForMonth(state, seriesId, month) {
 // Svarskroppen för planens två vägar: { plan, features }. Samma form och samma
 // upplösning av arvet som planBody i src/server/api.js — hasFeature i
 // src/core/plans.js äger upplösningen, och attrappen räknar inte ut den själv.
+// En räkning i demons tillstånd som den form GET /api/rakningar svarar med: de
+// sju fälten plus daysUntil och status. Båda de räknade fälten kommer ur
+// src/core/bill.js, precis som toBillView i src/server/bills.js - demon räknar
+// varken dagar eller status själv.
+//
+// anchorDate står inte i svaret: den kolumnen ingår inte i det gränssnittet får,
+// och demons rad bär den bara för framflyttningen.
+function toDemoBill(bill, today) {
+  return {
+    id: bill.id,
+    name: bill.name,
+    amountOre: bill.amountOre,
+    dueDate: bill.dueDate,
+    interval: bill.interval,
+    remindDays: bill.remindDays,
+    paidAt: bill.paidAt,
+    daysUntil: daysUntilDue(bill.dueDate, today),
+    status: billStatus(bill, today)
+  };
+}
+
+// Samma skrivväg som addBill och updateBill i src/server/bills.js svarar med:
+// de sju fälten utan daysUntil och status, som kräver ett today kroppen inte
+// bär.
+function toDemoBillWritten(bill) {
+  return {
+    id: bill.id,
+    name: bill.name,
+    amountOre: bill.amountOre,
+    dueDate: bill.dueDate,
+    interval: bill.interval,
+    remindDays: bill.remindDays,
+    paidAt: bill.paidAt
+  };
+}
+
+// Sorteringen compareBills i src/server/bills.js skriver ut: due_date, därefter
+// namn i svensk ordning, därefter id. Sista ledet finns för att ordningen ska
+// vara total.
+function compareBills(a, b) {
+  const byDate = compareIsoDates(a.dueDate, b.dueDate);
+  if (byDate !== 0) {
+    return byDate;
+  }
+  const byName = NAME_COLLATOR.compare(a.name, b.name);
+  if (byName !== 0) {
+    return byName;
+  }
+  if (a.id < b.id) {
+    return -1;
+  }
+  if (a.id > b.id) {
+    return 1;
+  }
+  return 0;
+}
+
 function planBody(plan) {
   return { plan, features: FEATURES.filter((feature) => hasFeature(plan, feature)) };
 }
@@ -800,6 +882,98 @@ export function createDemoFetch({
         }
       ];
       return sparaOch(svar(200, { budgets: readDemoMonth(state, budgetMonth).budgets }));
+    }
+
+    // POST /api/rakningar/<id>/betald [steg 3]. Prövas före den enkla
+    // /api/rakningar/<led>, precis som i api.js: den längre vägen är den mer
+    // specifika.
+    //
+    // De två utfallen är markBillPaid i src/server/bills.js, uttryckta i minnet:
+    // en engångsräkning behåller sitt dueDate och får paidAt satt, och en
+    // återkommande får nästa förfallodag med paidAt nollställd. anchorDate rörs
+    // inte av någondera - en betalning flyttar aldrig seriens fas.
+    const billPaidId = billPaidIdFromPath(pathname);
+    if (billPaidId !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'POST') {
+        return metodStods();
+      }
+      // draftFrom och inte parseBody: en kropp som inte går att tolka ger
+      // undefined, och undefined är inget datum - samma svar som för ett today
+      // som saknas. Valfri kedjning av samma skäl som i api.js: en kropp som är
+      // null, en sträng eller en array ger undefined.
+      const today = draftFrom(body)?.today;
+      if (!isValidIsoDate(today)) {
+        return svar(400, { error: SERVER_TEXTS.invalidToday });
+      }
+      const row = state.bills.find((bill) => bill.id === billPaidId);
+      if (row === undefined) {
+        return svar(404, { error: SERVER_TEXTS.billNotFound });
+      }
+      if (row.interval === null) {
+        // Dagen och inte en tidsstämpel: demon läser ingen klocka här, och
+        // ingenting i vyn visar tidpunkten - paidAt behöver bara vara satt för
+        // att statusen ska bli betald. Servern skriver nowIso() i samma fält.
+        row.paidAt = today;
+      } else {
+        row.dueDate = nextBillDueDate(row, today);
+        row.paidAt = null;
+      }
+      return sparaOch(svar(200, { bill: toDemoBillWritten(row) }));
+    }
+
+    // GET /api/rakningar/<ÅÅÅÅ-MM-DD> [steg 3]. Samma ordning som api.js:
+    // sessionen först, metoden, sedan datumet. isValidIsoDate i
+    // src/core/dates.js äger frågan - inget eget datummönster här.
+    const billToday = segmentAfter(pathname, BILL_PATH_PREFIX);
+    if (billToday !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'GET') {
+        return metodStods();
+      }
+      if (!isValidIsoDate(billToday)) {
+        return svar(400, { error: SERVER_TEXTS.invalidToday });
+      }
+      return svar(200, {
+        bills: state.bills.map((bill) => toDemoBill(bill, billToday)).sort(compareBills)
+      });
+    }
+
+    // POST /api/rakningar [steg 3]. Kroppens fem fält ägs av validateBillDraft i
+    // src/core/bill.js: attrappen läser varken beloppet, datumet eller
+    // intervallet självt.
+    if (pathname === BILLS_PATH) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      if (method !== 'POST') {
+        return metodStods();
+      }
+      const result = validateBillDraft(draftFrom(body));
+      if (!result.ok) {
+        return fieldErrorSvar(result.errors);
+      }
+      const bill = {
+        id: makeId(),
+        name: result.value.name,
+        amountOre: result.value.amountOre,
+        dueDate: result.value.dueDate,
+        // Ankardagen ÄR den första förfallodagen, precis som addBill skriver
+        // den.
+        anchorDate: result.value.dueDate,
+        interval: result.value.interval,
+        remindDays: result.value.remindDays,
+        paidAt: null
+      };
+      state.bills.push(bill);
+      return sparaOch(svar(201, { bill: toDemoBillWritten(bill) }));
     }
 
     // GET /api/oversikt/<ÅÅÅÅ-MM>. Samma ordning som api.js: sessionen först,

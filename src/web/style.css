@@ -555,6 +555,78 @@ button:disabled:hover {
   white-space: nowrap;
 }
 
+/* Räkningskortets rader [steg 3]. Raden är en .item, så flexlayouten ovan
+   gäller oförändrad; här står cellernas egna mått och de två utseenden statusen
+   ger. Klassnamnen byggs av app.js ur bill.status, alltså ur BILL_STATUSES i
+   src/core/bill.js - ingen kopia av de fyra värdena står i den här filen utöver
+   de två som har ett eget utseende. */
+.bill-name {
+  flex: 1 1 7rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.bill-amount,
+.bill-due-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bill-days {
+  font-size: 0.875rem;
+  color: var(--text-svag);
+}
+
+/* Förfallen: röd text. Dagtexten är 0,875rem, alltså brödtext, och bär därför
+   --fel-text och aldrig --negativ - samma val som fältfelen gör, av samma skäl
+   (uppmätt 7,43:1 mot --yta och 5,35:1 i det mörka läget). Hela raden färgas,
+   så att namnet och beloppet läses tillsammans med dagtexten. */
+.bill-forfallen,
+.bill-forfallen .bill-days {
+  color: var(--fel-text);
+}
+
+/* Påminnelse: guldram. --guld bär ingen text i det här temat - den når 2,83:1
+   mot vitt - men en ram är grafik med kravet 3:1, och det är just den rollen
+   den har här. Ramen ligger runt hela raden och ersätter radens undre linje, så
+   att två påminnelser intill varandra inte får en dubbel kant. */
+.bill-paminnelse {
+  border: 2px solid var(--guld);
+  border-radius: var(--radie-knapp);
+  padding: 0.65rem 0.6rem;
+}
+
+/* Knappen Betald. Samma form som radens övriga knappar - padding, ram och
+   storlek kommer ur button.edit ovan, och det här blocket sätter bara den
+   avvikande färgen: en bekräftande handling, inte en borttagning. */
+button.bill-paid {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-knapp);
+  background: var(--yta);
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+button.bill-paid:hover {
+  border-color: var(--lank);
+}
+
+/* Enheten efter ett fält, raden Påminn mig <N> dagar innan. Fältet är smalt
+   eftersom talet är högst tvåsiffrigt, och enheten står efter det på samma rad
+   i stället för i etiketten. */
+.field-unit {
+  color: var(--text-svag);
+  font-size: 0.875rem;
+}
+
+.field input#bill-remind-days {
+  width: auto;
+  max-width: 6rem;
+  display: inline-block;
+}
+
 /* Frågan en mallrad ställer [etapp 4]: texten och de två valen. Rutan är ett
    eget barn i .item, som radbryter, och flex-basis 100 procent lägger den därför
    på en egen rad under knapparna i stället för att tränga ihop dem. */
