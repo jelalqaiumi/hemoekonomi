@@ -10419,10 +10419,10 @@ månad. Rapporten är samma fråga över tid, och den ritas med samma funktion.
 ensamt, medan rapporten är en *datamodell*. En gemensam modul hade gjort
 injektionsregeln otestbar utan att bygga en hel rapport först.
 
-Båda får en egen numrerad spärrtabell i det här dokumentet innan koden skrivs,
-på formen "Ingångsspärrar i `<modul>` — bindande, första träff vinner", enligt
-`LARDOMAR.md` 2026-09-16. Steg 4 byggde en modul utan sin tabell och fick lämna
-tillbaka den; det upprepas inte.
+Båda fick en egen numrerad spärrtabell i det här dokumentet före koden, på
+formen "Ingångsspärrar i `<modul>` — bindande, första träff vinner", enligt
+`LARDOMAR.md` 2026-09-16: de två avsnitten nedan. Steg 4 byggde en modul utan
+sin tabell och fick lämna tillbaka den.
 
 #### Vad `readReport` svarar
 
@@ -10525,8 +10525,8 @@ beloppskedjan, ge samma antal ören. Gränserna hör med: ett öre, minus ett ö
 
 #### Ingångsspärrar i `src/core/csv.js` — bindande, första träff vinner
 
-Skriven före koden (`LARDOMAR.md` 2026-09-16). `src/core/report.js` får sin
-egen tabell innan den modulen byggs, i del 2 av steget.
+Skriven före koden (`LARDOMAR.md` 2026-09-16). `src/core/report.js` fick sin
+egen tabell i samma del, i avsnittet nedan.
 
 Tre exporter:
 
@@ -10569,6 +10569,61 @@ cellen deklarerar sin typ.
 **`csvText` citerar inte.** Citeringen gör `toCsv` för varje cell, eftersom den
 regeln är gemensam för text och belopp. `csvText` äger bara apostrofen. Två
 funktioner som båda citerade hade dubbelciterat.
+
+#### Ingångsspärrar i `src/core/report.js` — bindande, första träff vinner
+
+Skriven före koden (`LARDOMAR.md` 2026-09-16), i del 1 av steget.
+
+Modulen har en export:
+
+```
+reportRows(monthsData) -> { months, rows, largest }
+```
+
+där varje element i `monthsData` är `{ month, items, budgets }` — alltsa en
+månadssträng plus precis de två listor `readMonth` i `src/server/months.js`
+redan svarar med. `budgets` form är `{ category, amountOre, spentOre, leftOre }`,
+satt av `budgetLines` i samma fil.
+
+**En lista, inte två parallella.** Min egen första skiss hade
+`reportRows(months, perMonth)`, och två parallella listor kan komma i otakt i
+längd — en hel felklass som försvinner när månaden bärs av samma element som
+sina poster. `months` i svaret härleds därför ur indatan och skickas inte in.
+
+`readReport(userId, endMonth, count)` i `src/server/reports.js` är den funktion
+som läser databasen; `reportRows` är den rena formen och körs i webbläsaren.
+Två namn för två skilda ansvar.
+
+| # | Villkor, skrivet som i koden | Meddelande |
+|---|---|---|
+| 1 | `!Array.isArray(monthsData)` | `reportRows kräver en lista med månader.` |
+| 2 | `monthsData.length === 0` | `reportRows kräver minst en månad.` |
+| 3 | `!isPlainObject(monthsData[i])` | `reportRows kräver ett objekt per månad, index <i>.` |
+| 4 | `!isValidIsoMonth(monthsData[i].month)` | `reportRows kräver en månad på formen ÅÅÅÅ-MM, index <i>.` |
+| 5 | `!Array.isArray(monthsData[i].items)` | `reportRows kräver en lista med poster, index <i>.` |
+| 6 | `!Array.isArray(monthsData[i].budgets)` | `reportRows kräver en lista med budgetar, index <i>.` |
+| 7 | `i > 0 && monthsData[i].month <= monthsData[i - 1].month` | `reportRows kräver månaderna i stigande ordning, index <i>.` |
+
+**Rad 7 är den som bär mest.** `perMonthOre`:s index *är* månaden: element noll
+hör till `months[0]`. Kommer indatan i fel ordning blir hela serien tyst
+omkastad, och diagrammet ritar en kurva som inte är användarens. Ett kast är
+därför enda hederliga svaret — det finns inget rätt svar att ge på en
+felsorterad serie.
+
+**Månaderna behöver inte vara varandras granne, bara stigande.** Servern
+producerar alltid en obruten serie, och `months` följer med i svaret, så en
+lucka är synlig för anroparen. Strikt stigande är allt som krävs för att
+indexet ska betyda något, och en strängjämförelse räcker eftersom formen
+ÅÅÅÅ-MM sorterar lexikografiskt som den sorterar kronologiskt.
+
+**`isPlainObject` importeras ur `src/core/entry.js`**, som äger begreppet och
+exporterar det. Inget handskrivet `typeof x === object` — den svagare formen
+släpper igenom en array och ett `Date` (`LARDOMAR.md` 2026-09-02).
+
+**`averageOre` räknas med `divideRoundHalfUp`** och `monthsData.length` som
+nämnare. Funktionen kastar när `2 * täljaren + nämnaren` lämnar det säkra
+heltalsområdet, och det är rätt beteende: en summa som inte går att dela exakt
+ska inte avrundas tyst.
 
 #### API-vägar
 
