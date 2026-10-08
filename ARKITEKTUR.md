@@ -10382,3 +10382,4 @@ låsmekanismen från steg 1 får något att låsa.
 | (84) | kortet visar stapel och procent | tre mål, rätt bredd |
 | (85) | Bas ser låsraden i stället för kortet | och knappen `Se planer` |
 | (86) | ett nått mål visas som klart | grön stapel, texten |
+| (87) | `+ Sätt in` ökar `savedOre` och ritar om raden | stapeln och procenten följer med |
