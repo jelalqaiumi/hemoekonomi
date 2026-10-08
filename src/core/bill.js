@@ -147,13 +147,18 @@ export function daysUntilDue(dueDate, today) {
 // periodräkningen och klampningen för den 29-31. Den här funktionen räknar
 // ingenting själv; den avgör bara VILKEN fråga nextDueDate ska svara på.
 //
-// Serien får den gamla förfallodagen som startDate. Det är hela datamodellen:
-// raden är alltid den nästa obetalda, och den ursprungliga förfallodagen lagras
-// inte (PLAN.md beslut 4). Följden är att en klampning blir bestående — en
-// månadsräkning som förfaller 2026-01-31 flyttas till 2026-02-28, och nästa
-// betalning flyttar den till 2026-03-28 och inte till 2026-03-31. Det är ingen
-// avvikelse från "klampningen smittar inte vidare" i schedule.js, som gäller en
-// serie med ett bevarat startdatum: här finns inget sådant att räkna från.
+// Serien får anchorDate som startDate — aldrig dueDate. anchorDate är den
+// ursprungliga förfallodagen, intervallets fas, och den ändras inte av en
+// betalning (ARKITEKTUR.md, "Klampningen ska inte fastna — en ankardag
+// bevaras"). Därmed gäller "klampningen smittar inte vidare" i schedule.js
+// också här: en månadsräkning med anchorDate 2026-01-31 ger serien
+// 2026-01-31 -> 2026-02-28 -> 2026-03-31 -> 2026-04-30 -> 2026-05-31, och
+// februari drar inte med sig resten av året till den 28:e.
+//
+// Mutationen series.startDate: bill.anchorDate -> bill.dueDate ger EXIT=1 och
+// faller nextBillDueDate bevarar ursprungsdagen genom en hel serie betalningar
+// i tests/bill.test.js samt (R4) klampningen fastnar inte: ursprungsdagen
+// bevaras genom hela serien i tests/bills.test.js.
 //
 // Frågan ställs från den senare av två dagar:
 //   - afterPaid, en hel period efter den gamla förfallodagen. Den dragning som
@@ -179,7 +184,7 @@ export function nextBillDueDate(bill, today) {
   if (!Object.hasOwn(MONTHS_PER_PERIOD, bill.interval)) {
     throw new RangeError(`nextBillDueDate kräver ett känt interval, fick "${String(bill.interval)}".`);
   }
-  const series = { interval: bill.interval, startDate: bill.dueDate };
+  const series = { interval: bill.interval, startDate: bill.anchorDate };
   const afterPaid = addMonthsClamped(bill.dueDate, MONTHS_PER_PERIOD[bill.interval]);
   const from = compareIsoDates(today, afterPaid) > 0 ? today : afterPaid;
   return nextDueDate(series, from);

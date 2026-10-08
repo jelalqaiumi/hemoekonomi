@@ -197,17 +197,20 @@ test('(R4) en månadsräkning den 31 januari flyttas till den sista februari', (
   assert.equal(markBillPaid(ANVANDARE, 'b-2028', '2028-01-31', { db, now: NU }).dueDate, '2028-02-29');
 });
 
-test('(R4) klampningen blir bestående, eftersom raden inte bär sitt ursprungliga datum', (t) => {
+test('(R4) klampningen smittar inte vidare: anchor_date bär den ursprungliga dagen', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
-  // Följden av datamodellen: bara den nästa obetalda raden lagras, så det finns
-  // inget ursprungligt startdatum att räkna från nästa gång. En andra betalning
-  // ger därför 2026-03-28 och inte 2026-03-31. Det står utskrivet i
-  // nextBillDueDate och är prövat här, så att ingen senare byggare tror att
-  // "klampningen smittar inte vidare" i schedule.js gäller också här.
+  // Raden bar först bara sin nästa förfallodag, och då fastnade klampningen:
+  // februari kortade ned den 31:a till den 28:e, och mars gav 28 i stället för
+  // 31. Användaren valde att ursprungsdagen ska bevaras, så bills fick
+  // anchor_date — samma fält och samma skäl som templates.start_date, och
+  // nextDueDate klampar alltid från det och aldrig från föregående resultat.
+  // Kedjan nedan är hela beviset: februari kortar, mars ger tillbaka den 31:a.
   skapa(db, 'b-31', { dueDate: '2026-01-31', interval: 'monthly' });
   assert.equal(markBillPaid(ANVANDARE, 'b-31', '2026-01-31', { db, now: NU }).dueDate, '2026-02-28');
-  assert.equal(markBillPaid(ANVANDARE, 'b-31', '2026-02-28', { db, now: NU }).dueDate, '2026-03-28');
+  assert.equal(markBillPaid(ANVANDARE, 'b-31', '2026-02-28', { db, now: NU }).dueDate, '2026-03-31');
+  assert.equal(markBillPaid(ANVANDARE, 'b-31', '2026-03-31', { db, now: NU }).dueDate, '2026-04-30');
+  assert.equal(markBillPaid(ANVANDARE, 'b-31', '2026-04-30', { db, now: NU }).dueDate, '2026-05-31');
 });
 
 // ---------------------------------------------------------------------------

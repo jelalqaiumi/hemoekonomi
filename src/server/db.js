@@ -211,6 +211,15 @@ CREATE TABLE IF NOT EXISTS budgets (
 -- raden är alltså alltid den nästa obetalda, och historiken över betalda
 -- räkningar lagras inte (PLAN.md beslut 4).
 --
+-- anchor_date är intervallets fas: den ursprungliga förfallodagen, som styr
+-- vilken dag i månaden serien återkommer på. Samma roll som templates.start_date
+-- har för en mall. Den sätts till den första förfallodagen när räkningen skapas
+-- och ändras aldrig av en betalning — bara när användaren själv ändrar
+-- förfallodagen genom PUT. Utan den skulle en klampning bli bestående: en
+-- månadsräkning den 31 januari flyttas till den 28 februari, och nästa betalning
+-- hade då räknat från den 28:e och gett den 28 mars i stället för den 31
+-- (ARKITEKTUR.md, "Klampningen ska inte fastna — en ankardag bevaras").
+--
 -- Inget eget idx_: ARKITEKTUR.md:s SQL-block är bindande ordagrant och har
 -- ingen indexrad, till skillnad från login_codes, sessions och templates ovan.
 CREATE TABLE IF NOT EXISTS bills (
@@ -219,6 +228,7 @@ CREATE TABLE IF NOT EXISTS bills (
   name          TEXT NOT NULL,
   amount_ore    INTEGER NOT NULL CHECK (amount_ore > 0),
   due_date      TEXT NOT NULL CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  anchor_date   TEXT NOT NULL CHECK (anchor_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   interval      TEXT CHECK (interval IS NULL OR interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
   remind_days   INTEGER NOT NULL DEFAULT 3 CHECK (remind_days >= 0 AND remind_days <= 30),
   paid_at       TEXT,
@@ -258,6 +268,25 @@ const ADD_OCCURRED_ON_COLUMN_SQL =
 
 const ADD_NOTE_COLUMN_SQL = 'ALTER TABLE month_items ADD COLUMN note TEXT;';
 
+// Kolumnen bills.anchor_date [rättelsen till steg 3], på samma två ställen och
+// av samma skäl som de tre ovan.
+//
+// Två satser i en exec: SQLite kräver ett DEFAULT som inte är NULL när en
+// NOT NULL-kolumn läggs till, och ett ADD COLUMN skriver inte om befintliga
+// rader. Förvalet '1970-01-01' är därför bara det värde som står i schemat
+// mellan de två satserna; UPDATE-raden sätter anchor_date = due_date för varje
+// befintlig rad direkt efteråt, och det är rätt värde: en räkning som aldrig
+// betalats har sin ursprungliga dag kvar i due_date (ARKITEKTUR.md,
+// "Migreringen"). Steget körs bara när kolumnen saknas, så UPDATE:n kan inte
+// skriva över en anchor_date som redan bär sitt värde.
+//
+// Körd på Node v24.19.0: ALTER TABLE ADD COLUMN tar emot både NOT NULL DEFAULT
+// och CHECK på den nya kolumnen, och ett INSERT med anchor_date 'x' faller
+// därefter med errstr 'constraint failed' också i den migrerade databasen.
+const ADD_ANCHOR_DATE_COLUMN_SQL =
+  `ALTER TABLE bills ADD COLUMN anchor_date TEXT NOT NULL DEFAULT '1970-01-01' CHECK (anchor_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');
+UPDATE bills SET anchor_date = due_date;`;
+
 // Varje steg körs bara när kolumnen saknas, och villkoret är kolumnen själv och
 // inte PRAGMA user_version: ALTER TABLE ADD COLUMN är ett fel om kolumnen redan
 // finns, och en databas som skapats av CREATE TABLE ovan har den från början.
@@ -270,7 +299,8 @@ const ADD_NOTE_COLUMN_SQL = 'ALTER TABLE month_items ADD COLUMN note TEXT;';
 const COLUMN_MIGRATIONS = Object.freeze([
   Object.freeze({ table: 'users', column: 'plan', sql: ADD_PLAN_COLUMN_SQL }),
   Object.freeze({ table: 'month_items', column: 'occurred_on', sql: ADD_OCCURRED_ON_COLUMN_SQL }),
-  Object.freeze({ table: 'month_items', column: 'note', sql: ADD_NOTE_COLUMN_SQL })
+  Object.freeze({ table: 'month_items', column: 'note', sql: ADD_NOTE_COLUMN_SQL }),
+  Object.freeze({ table: 'bills', column: 'anchor_date', sql: ADD_ANCHOR_DATE_COLUMN_SQL })
 ]);
 
 // PRAGMA table_info ger en rad per kolumn. Läses genom prepare().all(), som

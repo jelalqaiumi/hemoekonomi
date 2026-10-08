@@ -50,14 +50,30 @@ SELECT ${BILL_COLUMNS}
  WHERE user_id = ?
    AND id = ?`;
 
+// De tre fälten framflyttningen frågar om. anchor_date står inte i
+// BILL_COLUMNS, eftersom den inte ingår i svaret till gränssnittet: vyn visar
+// due_date, och ankardagen är intervallets fas och ingenting användaren läser.
+// ARKITEKTUR.md:s "Svarskropparna godkänns" räknar upp sju respektive nio fält,
+// och de talen står kvar.
+const SQL_BILL_SERIES_BY_ID = `
+SELECT interval, due_date, anchor_date
+  FROM bills
+ WHERE user_id = ?
+   AND id = ?`;
+
+// anchor_date skrivs med samma värde som due_date när räkningen skapas: den
+// första förfallodagen ÄR seriens ursprungliga dag.
 const SQL_INSERT_BILL = `
 INSERT INTO bills
-  (id, user_id, name, amount_ore, due_date, interval, remind_days, paid_at, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`;
+  (id, user_id, name, amount_ore, due_date, anchor_date, interval, remind_days, paid_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`;
 
+// anchor_date skrivs om här och bara här. Att användaren själv ändrar
+// förfallodagen är det enda som flyttar seriens fas; en betalning gör det
+// aldrig (ARKITEKTUR.md, "Klampningen ska inte fastna — en ankardag bevaras").
 const SQL_UPDATE_BILL = `
 UPDATE bills
-   SET name = ?, amount_ore = ?, due_date = ?, interval = ?, remind_days = ?
+   SET name = ?, amount_ore = ?, due_date = ?, anchor_date = ?, interval = ?, remind_days = ?
  WHERE user_id = ?
    AND id = ?`;
 
@@ -119,6 +135,7 @@ export function addBill(userId, draft, { db = getDatabase(), now = nowIso(), mak
     draft?.name,
     draft?.amountOre,
     draft?.dueDate,
+    draft?.dueDate,
     // ?? null av samma skäl som toMonth i months.js: ett utkast utan fältet ska
     // skriva NULL och inte undefined, som node:sqlite inte kan binda. En
     // engångsräkning har interval = null, och det är det normala fallet här.
@@ -139,6 +156,11 @@ export function addBill(userId, draft, { db = getDatabase(), now = nowIso(), mak
 // inte att betala den eller att ta tillbaka en betalning, och ett fält som
 // skrivs över av en väg som inte handlar om det är ett fält som tappas tyst.
 //
+// anchor_date står däremot där, och sätts till samma värde som due_date. Det är
+// den enda vägen i appen som flyttar seriens fas: att användaren själv ändrar
+// förfallodagen är ett nytt besked om vilken dag räkningen ska dras, medan en
+// betalning bara flyttar raden ett steg i den fas som redan gäller.
+//
 // Ingen läsning före skrivningen, av samma skäl som updateMonthItem i months.js
 // inte har någon: ett UPDATE mot ett id som ägs av någon annan matchar noll
 // rader, och läsningen efteråt svarar då null ändå.
@@ -146,6 +168,7 @@ export function updateBill(userId, billId, draft, { db = getDatabase() } = {}) {
   write(db, SQL_UPDATE_BILL, [
     draft?.name,
     draft?.amountOre,
+    draft?.dueDate,
     draft?.dueDate,
     draft?.interval ?? null,
     draft?.remindDays,
@@ -178,14 +201,18 @@ export function updateBill(userId, billId, draft, { db = getDatabase() } = {}) {
 export function markBillPaid(userId, billId, today, { db = getDatabase(), now = nowIso() } = {}) {
   requireToday('markBillPaid', today);
   return transaction(db, () => {
-    const bill = findBill(db, userId, billId);
-    if (bill === null) {
+    // Läses med anchor_date och inte genom findBill: framflyttningen frågar om
+    // seriens fas, och den kolumnen ingår inte i svaret till gränssnittet.
+    const rows = readRows(db, SQL_BILL_SERIES_BY_ID, [userId, billId]);
+    if (rows.length === 0) {
       return null;
     }
-    if (bill.interval === null) {
+    const row = rows[0];
+    if (row.interval === null) {
       write(db, SQL_MARK_BILL_PAID, [now, userId, billId]);
     } else {
-      write(db, SQL_MOVE_BILL_FORWARD, [nextBillDueDate(bill, today), userId, billId]);
+      const series = { interval: row.interval, dueDate: row.due_date, anchorDate: row.anchor_date };
+      write(db, SQL_MOVE_BILL_FORWARD, [nextBillDueDate(series, today), userId, billId]);
     }
     return findBill(db, userId, billId);
   });

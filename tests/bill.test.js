@@ -33,7 +33,7 @@ const NU = '2026-09-25T18:03:00.000Z';
 const ICKE_TAL = [-0.5, NaN, Infinity, -Infinity, '3', null, 1n, Symbol('x'), {}, [], new Date(), true];
 
 function bill(ändringar = {}) {
-  return {
+  const värden = {
     id: 'b1',
     name: 'Elräkning',
     amountOre: 85000,
@@ -43,6 +43,11 @@ function bill(ändringar = {}) {
     paidAt: null,
     ...ändringar
   };
+  // anchorDate förvalas till dueDate, eftersom det är vad addBill skriver för en
+  // ny räkning: den första förfallodagen ÄR seriens ursprungliga dag. Ett fall
+  // som prövar en bevarad ursprungsdag efter en eller flera betalningar sätter
+  // anchorDate själv, och spridningen nedan låter det värdet vinna.
+  return { anchorDate: värden.dueDate, ...värden };
 }
 
 // --- BILL_STATUSES -----------------------------------------------------------

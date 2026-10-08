@@ -10094,3 +10094,103 @@ sin plats.
 | (81) | kortet visar de tre utseendena | förfallen, påminnelse, kommande |
 | (82) | `Betald` flyttar fram en återkommande | den nya förfallodagen syns |
 | (83) | en betald engångsräkning försvinner ur listan | |
+
+---
+
+### Rättelser till steg 3 (bindande)
+
+Byggaren lämnade tillbaka fyra punkter. Användaren har avgjort de två som var
+hans att avgöra; de övriga två rättas här.
+
+#### Klampningen ska inte fastna — en ankardag bevaras
+
+Byggaren mätte och skrev ut följden av datamodellen: eftersom bara nästa obetalda
+datum lagras finns ingen ursprunglig dag att räkna från, och en räkning den 31
+januari glider till den 28:e och stannar där.
+
+```
+förföll 2026-01-31, betald 2026-01-31  ->  2026-02-28
+förföll 2026-02-28, betald 2026-02-28  ->  2026-03-28
+förföll 2026-03-28, betald 2026-03-28  ->  2026-04-28
+```
+
+**Användaren har valt att ursprungsdagen ska bevaras.** En hyra som dras den
+sista i månaden ska inte glida till den 28:e efter en februari.
+
+Lösningen finns redan i projektet: `templates.start_date` styr intervallets fas,
+och `nextDueDate` klampar alltid **från den ursprungliga dagen, aldrig från
+föregående klampade resultat**. `bills` får samma fält:
+
+```sql
+anchor_date TEXT NOT NULL CHECK (anchor_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+```
+
+`anchor_date` sätts till den första förfallodagen när räkningen skapas och
+**ändras aldrig av en betalning**. Den ändras bara när användaren själv ändrar
+förfallodagen genom `PUT`.
+
+`nextBillDueDate` ställer därmed sin fråga med `anchor_date` som `startDate` i
+stället för `dueDate`. Allt annat i funktionen står kvar — hoppet över passerade
+perioder vid en sen betalning är oförändrat och är byggarens konstruktion, som
+godkänns.
+
+Förväntat utfall efter rättningen, och ett obligatoriskt testfall:
+
+```
+2026-01-31 -> 2026-02-28 -> 2026-03-31 -> 2026-04-30 -> 2026-05-31
+```
+
+**Migreringen** sätter `anchor_date = due_date` för befintliga rader, vilket är
+rätt: en räkning som aldrig betalats har sin ursprungliga dag kvar i `due_date`.
+
+#### Dagtexterna med naturlig svenska
+
+Användaren har valt formen med `igår`, `idag` och `imorgon`. Funktionen bor i
+`src/core/bill.js` och byggs av gränssnittsuppdraget, som är det som får en
+anropare.
+
+| `daysUntil` | Text |
+|---|---|
+| `-2` eller lägre | `Förföll för <N> dagar sedan` |
+| `-1` | `Förföll igår` |
+| `0` | `Förfaller idag` |
+| `1` | `Förfaller imorgon` |
+| `2` eller högre | `Förfaller om <N> dagar` |
+
+`<N>` är absolutbeloppet. Varje rad ska ha ett eget testfall, och gränserna
+`-2`, `-1`, `0`, `1` och `2` prövas var för sig — det är där formen byter.
+
+#### API-tabellen räknar upp varje statuskod
+
+Byggaren påpekade att tabellen saknade koder som koden ger. Den rättas:
+
+| Metod och väg | Svar |
+|---|---|
+| `GET /api/rakningar/<ÅÅÅÅ-MM-DD>` | `200`, `400`, `401`, `403`, `500` |
+| `POST /api/rakningar` | `201`, `400`, `401`, `403`, `500` |
+| `PUT /api/rakningar/<id>` | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/rakningar/<id>/betald` | `200`, `400`, `401`, `403`, `404`, `500` |
+| `DELETE /api/rakningar/<id>` | `204`, `401`, `403`, `404`, `500` |
+
+`403` står på varje rad eftersom varje väg går genom `requireFeature`, även om
+grenen i dag inte är nåbar — `billReminders` finns i alla tre planerna.
+
+Texten byggaren skrev för ett ogiltigt `today` godkänns ordagrant:
+`Dagens datum måste anges som ÅÅÅÅ-MM-DD.`
+
+#### Svarskropparna godkänns som byggaren valde dem
+
+`POST` ger `201 { bill }` och `PUT` ger `200 { bill }` med sju fält, utan
+`status` och `daysUntil` — de två kräver ett `today` som kroppen inte bär. `GET`
+och `POST .../betald` ger nio respektive sju fält. Skillnaden står utskriven i
+koden, och det är rätt plats.
+
+#### `tests/bill.test.js` får sin kravlista
+
+Filen prövar kärnans egna exporter, som varje modul i `src/core/` ska ha enligt
+`LARDOMAR.md` 2026-08-18. Fallen numreras `(BI1)` och framåt — `BI` för bill, så
+att de inte krockar med `(B1)` för `budget.js` eller `(BU1)` för budgeten.
+
+Kravlistan skrivs av det uppdrag som nästa gång rör filen; tills dess står fallen
+onumrerade, vilket är rätt enligt `LARDOMAR.md` 2026-09-14: ett nummer utan punkt
+är sämre än inget nummer.
