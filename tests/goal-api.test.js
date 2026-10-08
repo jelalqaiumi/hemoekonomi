@@ -1,4 +1,4 @@
-// Sparmålens fem API-vägar [steg 4]. Kravlistan (S11), (S12) och — det här stegets
+// Sparmålens fem API-vägar [steg 4]. Kravlistan (SM11), (SM12) och — det här stegets
 // huvudsak — (P8) och (P9) i ARKITEKTUR.md.
 //
 // (P8) och (P9) stod i kravlistan för steg 1 och lämnades som obyggbara då:
@@ -298,10 +298,10 @@ test('(P9) Plus får svar på alla fem vägarna, inte bara på läsvägen', asyn
 });
 
 // ---------------------------------------------------------------------------
-// (S11) De fem vägarna: statuskoderna i tabellen.
+// (SM11) De fem vägarna: statuskoderna i tabellen.
 // ---------------------------------------------------------------------------
 
-test('(S11) POST /api/sparmal ger 201 med sparmålet', async (t) => {
+test('(SM11) POST /api/sparmal ger 201 med sparmålet', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
 
@@ -320,7 +320,7 @@ test('(S11) POST /api/sparmal ger 201 med sparmålet', async (t) => {
   assert.equal(antalMal(db), 1);
 });
 
-test('(S11) POST /api/sparmal tar emot ett mål utan slutdatum', async (t) => {
+test('(SM11) POST /api/sparmal tar emot ett mål utan slutdatum', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res } = await call('POST', '/api/sparmal', { cookie, body: { name: 'Resa', targetSek: '12000' } });
@@ -329,7 +329,7 @@ test('(S11) POST /api/sparmal tar emot ett mål utan slutdatum', async (t) => {
   assert.equal(antalMal(db), 1);
 });
 
-test('(S11) POST /api/sparmal ger 400 med fieldErrors och skriver ingen rad', async (t) => {
+test('(SM11) POST /api/sparmal ger 400 med fieldErrors och skriver ingen rad', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
 
@@ -348,7 +348,7 @@ test('(S11) POST /api/sparmal ger 400 med fieldErrors och skriver ingen rad', as
   assert.equal(antalMal(db), 0);
 });
 
-test('(S11) GET /api/sparmal/<datum> ger 200 med listan och de tio fälten', async (t) => {
+test('(SM11) GET /api/sparmal/<datum> ger 200 med listan och de tio fälten', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const mitt = userId(db, EPOST);
@@ -377,7 +377,7 @@ test('(S11) GET /api/sparmal/<datum> ger 200 med listan och de tio fälten', asy
   ]);
 });
 
-test('(S11) GET /api/sparmal/<datum> ger 200 med en tom lista utan sparmål', async (t) => {
+test('(SM11) GET /api/sparmal/<datum> ger 200 med en tom lista utan sparmål', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res } = await call('GET', `/api/sparmal/${IDAG}`, { cookie });
@@ -385,7 +385,7 @@ test('(S11) GET /api/sparmal/<datum> ger 200 med en tom lista utan sparmål', as
   assert.deepEqual(res.body, { goals: [] });
 });
 
-test('(S11) GET /api/sparmal/<datum> ger 400 för ett led som inte är ett datum', async (t) => {
+test('(SM11) GET /api/sparmal/<datum> ger 400 för ett led som inte är ett datum', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   // '2026-02-30' matchar mönstret utan att vara ett datum, så raden prövar att
@@ -397,7 +397,7 @@ test('(S11) GET /api/sparmal/<datum> ger 400 för ett led som inte är ett datum
   }
 });
 
-test('(S11) PUT /api/sparmal/<id> ger 200, och 404 för ett okänt eller någon annans id', async (t) => {
+test('(SM11) PUT /api/sparmal/<id> ger 200, och 404 för ett okänt eller någon annans id', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res: skapat } = await call('POST', '/api/sparmal', { cookie, body: UTKAST });
@@ -428,7 +428,7 @@ test('(S11) PUT /api/sparmal/<id> ger 200, och 404 för ett okänt eller någon 
   assert.equal(trasigt.res.body.fieldErrors.length, 2);
 });
 
-test('(S11) DELETE /api/sparmal/<id> ger 204, och 404 för ett okänt eller någon annans id', async (t) => {
+test('(SM11) DELETE /api/sparmal/<id> ger 204, och 404 för ett okänt eller någon annans id', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res: skapat } = await call('POST', '/api/sparmal', { cookie, body: UTKAST });
@@ -454,7 +454,7 @@ test('(S11) DELETE /api/sparmal/<id> ger 204, och 404 för ett okänt eller någ
   assert.equal(antalMal(db), 1, 'hennes mål finns kvar');
 });
 
-test('(S11) POST /api/sparmal/<id>/insattning ger 201, också för ett uttag', async (t) => {
+test('(SM11) POST /api/sparmal/<id>/insattning ger 201, också för ett uttag', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res: skapat } = await call('POST', '/api/sparmal', { cookie, body: UTKAST });
@@ -478,7 +478,7 @@ test('(S11) POST /api/sparmal/<id>/insattning ger 201, också för ett uttag', a
   assert.equal(läst.res.body.goals[0].savedOre, 234050);
 });
 
-test('(S11) POST /api/sparmal/<id>/insattning ger 400 för noll och för ett datum som inte finns', async (t) => {
+test('(SM11) POST /api/sparmal/<id>/insattning ger 400 för noll och för ett datum som inte finns', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res: skapat } = await call('POST', '/api/sparmal', { cookie, body: UTKAST });
@@ -494,11 +494,11 @@ test('(S11) POST /api/sparmal/<id>/insattning ger 400 för noll och för ett dat
   assert.deepEqual(datum.res.body.fieldErrors, [{ field: 'madeOn', message: 'Datum måste anges som ÅÅÅÅ-MM-DD.' }]);
 
   // Ingen rad nådde databasen: valideringen står före datalagret. Noll är dessutom
-  // avvisat av schemats CHECK som sista utpost — den spärren prövas av (S9).
+  // avvisat av schemats CHECK som sista utpost — den spärren prövas av (SM9).
   assert.equal(antalInsattningar(db), 0);
 });
 
-test('(S11) POST /api/sparmal/<id>/insattning ger 404 för ett okänt eller någon annans mål', async (t) => {
+test('(SM11) POST /api/sparmal/<id>/insattning ger 404 för ett okänt eller någon annans mål', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
 
@@ -518,7 +518,7 @@ test('(S11) POST /api/sparmal/<id>/insattning ger 404 för ett okänt eller någ
   assert.equal(hennesLista.res.body.goals[0].savedOre, 0, 'hennes savedOre är oförändrad');
 });
 
-test('(S11) en metod som inte stöds ger 405 på var och en av sparmålens tre adresser', async (t) => {
+test('(SM11) en metod som inte stöds ger 405 på var och en av sparmålens tre adresser', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
   const { res: skapat } = await call('POST', '/api/sparmal', { cookie, body: UTKAST });
@@ -547,10 +547,10 @@ test('(S11) en metod som inte stöds ger 405 på var och en av sparmålens tre a
 });
 
 // ---------------------------------------------------------------------------
-// (S12) Nedgradering raderar inget.
+// (SM12) Nedgradering raderar inget.
 // ---------------------------------------------------------------------------
 
-test('(S12) ett sparmål skapat på Plus är kvar efter ned- och uppgradering', async (t) => {
+test('(SM12) ett sparmål skapat på Plus är kvar efter ned- och uppgradering', async (t) => {
   const { db, call } = await apiDatabase(t);
   const cookie = await loggaInSomPlus(db, call);
 

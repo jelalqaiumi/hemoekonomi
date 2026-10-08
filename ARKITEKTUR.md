@@ -10355,25 +10355,25 @@ låsmekanismen från steg 1 får något att låsa.
 
 | # | Fall | Kräver |
 |---|---|---|
-| (S1) | `savedOre` summerar insättningar | inklusive ett negativt uttag |
-| (S2) | `leftOre` är aldrig negativ | ett överskridet mål ger noll |
-| (S3) | `percent` klipps i båda ändar | noll som lägst, 100 som högst |
-| (S4) | `perMonthOre` utan slutdatum är `null` | och `monthsLeft` också |
-| (S5) | `monthsLeft` noll ger hela `leftOre` | ingen division med noll |
-| (S6) | de fyra statusvärdena | ett fall per rad, i ordning |
-| (S7) | `klart` vinner över `forsenat` | ett nått mål med passerat datum är klart |
-| (S8) | en annan användares mål syns inte | |
-| (S9) | insättning noll avvisas | `CHECK` håller |
-| (S10) | ett borttaget mål tar sina insättningar med sig | `ON DELETE CASCADE` |
+| (SM1) | `savedOre` summerar insättningar | inklusive ett negativt uttag |
+| (SM2) | `leftOre` är aldrig negativ | ett överskridet mål ger noll |
+| (SM3) | `percent` klipps i båda ändar | noll som lägst, 100 som högst |
+| (SM4) | `perMonthOre` utan slutdatum är `null` | och `monthsLeft` också |
+| (SM5) | `monthsLeft` noll ger hela `leftOre` | ingen division med noll |
+| (SM6) | de fyra statusvärdena | ett fall per rad, i ordning |
+| (SM7) | `klart` vinner över `forsenat` | ett nått mål med passerat datum är klart |
+| (SM8) | en annan användares mål syns inte | |
+| (SM9) | insättning noll avvisas | `CHECK` håller |
+| (SM10) | ett borttaget mål tar sina insättningar med sig | `ON DELETE CASCADE` |
 
 `tests/goal-api.test.js`:
 
 | # | Fall | Kräver |
 |---|---|---|
-| (S11) | de fem vägarna | statuskoderna i tabellen |
+| (SM11) | de fem vägarna | statuskoderna i tabellen |
 | **(P8)** | **Bas får `403` på en sparmålsväg** | med `feature` och `requiredPlan` i svaret |
 | **(P9)** | **Plus får `200` på samma väg** | |
-| (S12) | nedgradering raderar inget | mål skapat på Plus, ned till Bas, upp igen: målet kvar |
+| (SM12) | nedgradering raderar inget | mål skapat på Plus, ned till Bas, upp igen: målet kvar |
 
 `tests/app.test.js`:
 

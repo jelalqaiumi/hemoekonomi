@@ -1,5 +1,5 @@
 // Datalagret för sparmålen, src/server/goals.js, plus tabellerna goals och
-// goal_deposits i src/server/db.js [steg 4]. Kravlistan (S1) till (S10) i
+// goal_deposits i src/server/db.js [steg 4]. Kravlistan (SM1) till (SM10) i
 // ARKITEKTUR.md under "Kravlista [steg 4]".
 //
 // Varje testfall öppnar sin egen databas i minnet, så att inget fall kan se en rad
@@ -58,10 +58,10 @@ function enda(db, { userId = ANVANDARE, today = IDAG } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// (S1) savedOre summerar insättningarna, inklusive ett negativt uttag.
+// (SM1) savedOre summerar insättningarna, inklusive ett negativt uttag.
 // ---------------------------------------------------------------------------
 
-test('(S1) savedOre summerar insättningarna, inklusive ett negativt uttag', (t) => {
+test('(SM1) savedOre summerar insättningarna, inklusive ett negativt uttag', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-buffert');
@@ -90,10 +90,10 @@ test('(S1) savedOre summerar insättningarna, inklusive ett negativt uttag', (t)
 });
 
 // ---------------------------------------------------------------------------
-// (S2) leftOre är aldrig negativ: ett överskridet mål ger noll.
+// (SM2) leftOre är aldrig negativ: ett överskridet mål ger noll.
 // ---------------------------------------------------------------------------
 
-test('(S2) leftOre är aldrig negativ: ett överskridet mål ger noll kvar', (t) => {
+test('(SM2) leftOre är aldrig negativ: ett överskridet mål ger noll kvar', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-resa', { targetOre: 1000000 });
@@ -114,10 +114,10 @@ test('(S2) leftOre är aldrig negativ: ett överskridet mål ger noll kvar', (t)
 });
 
 // ---------------------------------------------------------------------------
-// (S3) percent klipps i båda ändar: noll som lägst, 100 som högst.
+// (SM3) percent klipps i båda ändar: noll som lägst, 100 som högst.
 // ---------------------------------------------------------------------------
 
-test('(S3) percent klipps i båda ändar', (t) => {
+test('(SM3) percent klipps i båda ändar', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
 
@@ -153,10 +153,10 @@ test('(S3) percent klipps i båda ändar', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// (S4) perMonthOre utan slutdatum är null, och monthsLeft också.
+// (SM4) perMonthOre utan slutdatum är null, och monthsLeft också.
 // ---------------------------------------------------------------------------
 
-test('(S4) ett mål utan slutdatum har monthsLeft null och perMonthOre null', (t) => {
+test('(SM4) ett mål utan slutdatum har monthsLeft null och perMonthOre null', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-utan', { targetDate: null });
@@ -183,10 +183,10 @@ test('(S4) ett mål utan slutdatum har monthsLeft null och perMonthOre null', (t
 });
 
 // ---------------------------------------------------------------------------
-// (S5) monthsLeft noll ger hela leftOre som perMonthOre. Ingen division med noll.
+// (SM5) monthsLeft noll ger hela leftOre som perMonthOre. Ingen division med noll.
 // ---------------------------------------------------------------------------
 
-test('(S5) monthsLeft noll ger hela leftOre som perMonthOre', (t) => {
+test('(SM5) monthsLeft noll ger hela leftOre som perMonthOre', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
 
@@ -229,10 +229,10 @@ test('(S5) monthsLeft noll ger hela leftOre som perMonthOre', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// (S6) De fyra raderna i statustabellen, en rad i taget och i ordning.
+// (SM6) De fyra raderna i statustabellen, en rad i taget och i ordning.
 // ---------------------------------------------------------------------------
 
-test('(S6) de fyra raderna i statustabellen, en rad i taget', (t) => {
+test('(SM6) de fyra raderna i statustabellen, en rad i taget', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
 
@@ -262,7 +262,7 @@ test('(S6) de fyra raderna i statustabellen, en rad i taget', (t) => {
   }
 });
 
-test('(S6) ett slutdatum som är idag är pagaende och inte forsenat', (t) => {
+test('(SM6) ett slutdatum som är idag är pagaende och inte forsenat', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   // Rad 3 är "har passerat", inte "idag eller tidigare": ett mål som går ut i dag
@@ -274,10 +274,10 @@ test('(S6) ett slutdatum som är idag är pagaende och inte forsenat', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// (S7) klart vinner över forsenat.
+// (SM7) klart vinner över forsenat.
 // ---------------------------------------------------------------------------
 
-test('(S7) ett nått mål med passerat slutdatum är klart, inte forsenat', (t) => {
+test('(SM7) ett nått mål med passerat slutdatum är klart, inte forsenat', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   // Slutdatumet låg 2026-09-30 och är passerat, alltså är rad 3 i tabellen sann —
@@ -294,10 +294,10 @@ test('(S7) ett nått mål med passerat slutdatum är klart, inte forsenat', (t) 
 });
 
 // ---------------------------------------------------------------------------
-// (S8) En annan användares mål syns inte, och går inte att röra.
+// (SM8) En annan användares mål syns inte, och går inte att röra.
 // ---------------------------------------------------------------------------
 
-test('(S8) en annan användares sparmål syns inte och går inte att röra', (t) => {
+test('(SM8) en annan användares sparmål syns inte och går inte att röra', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-mitt', { name: 'Mitt mål' });
@@ -327,10 +327,10 @@ test('(S8) en annan användares sparmål syns inte och går inte att röra', (t)
 });
 
 // ---------------------------------------------------------------------------
-// (S9) En insättning på noll avvisas: CHECK (amount_ore <> 0) håller.
+// (SM9) En insättning på noll avvisas: CHECK (amount_ore <> 0) håller.
 // ---------------------------------------------------------------------------
 
-test('(S9) en insättning på noll avvisas av schemats CHECK', (t) => {
+test('(SM9) en insättning på noll avvisas av schemats CHECK', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-buffert');
@@ -368,10 +368,10 @@ test('(S9) en insättning på noll avvisas av schemats CHECK', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// (S10) Ett borttaget mål tar sina insättningar med sig: ON DELETE CASCADE.
+// (SM10) Ett borttaget mål tar sina insättningar med sig: ON DELETE CASCADE.
 // ---------------------------------------------------------------------------
 
-test('(S10) ett borttaget sparmål tar sina insättningar med sig', (t) => {
+test('(SM10) ett borttaget sparmål tar sina insättningar med sig', (t) => {
   const db = freshDatabase();
   t.after(() => db.close());
   skapa(db, 'g-bort');
