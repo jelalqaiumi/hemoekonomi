@@ -275,6 +275,18 @@ const GOAL_LOCKED = document.querySelector('#goal-locked');
 const GOAL_LOCKED_TEXT = document.querySelector('#goal-locked-text');
 const SHOW_PLANS = document.querySelector('#show-plans');
 
+// Insättningsformuläret [steg 4], det + Sätt in i en målrad öppnar. Belopp och
+// datum, och ingenting mer: valideringen av de två fälten ägs av
+// validateDepositDraft i src/core/goal.js genom
+// POST /api/sparmal/<id>/insattning, och app.js prövar varken tecknet eller
+// datumet självt.
+const DEPOSIT_FORM = document.querySelector('#deposit-form');
+const DEPOSIT_AMOUNT_FIELD = document.querySelector('#deposit-amount');
+const DEPOSIT_DATE_FIELD = document.querySelector('#deposit-date');
+const DEPOSIT_FORM_ERROR = document.querySelector('#deposit-form-error');
+const DEPOSIT_SUBMIT = document.querySelector('#deposit-submit');
+const DEPOSIT_CANCEL = document.querySelector('#deposit-cancel');
+
 // Fälten i formuläret, i samma ordning som validateMonthItemDraft rapporterar
 // dem. Fältet kind står inte här: slaget kommer från vilken lista knappen satt i
 // och är inget fält, så ett fieldError för kind har inget element att skrivas
@@ -340,6 +352,12 @@ let billSubmitInProgress = false;
 // Samma spärr för sparmålsformuläret [steg 4], av samma skäl: Enter i ett fält
 // skickar formuläret direkt, förbi den avstängda knappen.
 let goalSubmitInProgress = false;
+// Samma spärr för insättningsformuläret [steg 4], av samma skäl.
+let depositSubmitInProgress = false;
+// Målet knappen + Sätt in gällde, satt när formuläret öppnas och läst av
+// submitDeposit. Formuläret hör till kortet och inte till raden, så id:t kan inte
+// läsas ur något element - samma lösning och samma skäl som editingId ovan.
+let depositGoalId = null;
 // Om formuläret står i läget Bara <månad>. Satt av setMonthOnlyLayout och läst av
 // updateSingleFields, som behöver både det här läget och kryssrutans: blocket med
 // Datum och Kommentar döljs av vilket som helst av de två, och ett villkor som
@@ -833,6 +851,10 @@ const GOAL_BAR_HEIGHT = 6;
 // raden börjar med den — med och utan månadstakt.
 const GOAL_LEFT_PREFIX = 'Kvar ';
 
+// Knappen i varje målrad [steg 4]. Texten står ordagrant i ARKITEKTUR.md under
+// "Gränssnittet" i sparmålsavsnittet.
+const GOAL_DEPOSIT_LABEL = '+ Sätt in';
+
 // Statusens egen text. Nycklarna är värden ur GOAL_STATUSES, och ett testfall
 // kräver att varje nyckel står i listan: en status som inte finns ger ingen text
 // i stället för en text ingen stilregel känner.
@@ -956,13 +978,17 @@ function goalNoteText(status) {
   return Object.hasOwn(GOAL_NOTES, status) ? GOAL_NOTES[status] : '';
 }
 
-// En rad i sparmålskortet: namn, sparat av mål, stapel, procent, Kvar-raden och
-// statusens egen text.
+// En rad i sparmålskortet: namn, sparat av mål, stapel, procent, Kvar-raden,
+// statusens egen text och knappen + Sätt in.
 //
 // Varje tal kommer ur svarets egna fält. De sex räknade fälten — savedOre,
 // leftOre, percent, monthsLeft, perMonthOre och status — räknas av goalProgress i
 // src/core/goal.js och aldrig här: app.js subtraherar inget målbelopp, dividerar
 // ingen månadstakt och klipper ingen procent.
+//
+// Knappen skickar inget anrop själv: den öppnar kortets insättningsformulär och
+// lämnar med vilket mål den gällde. Knappens egen disabled behövs därför inte —
+// det är formulärets Spara som spärras under anropet.
 function goalRow(goal) {
   const row = document.createElement('li');
   row.className = goalClassName(goal.status);
@@ -974,7 +1000,10 @@ function goalRow(goal) {
     goalBar(percent, goal.status),
     cell('goal-percent', goalPercentText(percent)),
     cell('goal-left', goalLeftText(goal)),
-    cell('goal-note', goalNoteText(goal.status))
+    cell('goal-note', goalNoteText(goal.status)),
+    actionButton('goal-deposit', GOAL_DEPOSIT_LABEL, () => {
+      openDepositForm(goal.id);
+    })
   );
   return row;
 }
@@ -1133,6 +1162,88 @@ async function submitGoal(button) {
   } finally {
     button.disabled = false;
     goalSubmitInProgress = false;
+  }
+}
+
+// Insättningsformuläret [steg 4]: belopp och datum för ett av målen.
+//
+// goalId kommer från knappen som öppnade formuläret och sparas i depositGoalId:
+// formuläret är kortets och inte radens, så vägen kan inte byggas ur något
+// element i formuläret.
+//
+// reset() körs före allt annat och inte bara för tomma fält: ett + Sätt in på en
+// annan rad öppnar samma formulär, och utan nollställningen hade beloppet från
+// det förra målet stått kvar i fältet och gått vidare till det nya målet.
+function openDepositForm(goalId) {
+  depositGoalId = goalId;
+  DEPOSIT_FORM.reset();
+  DEPOSIT_FORM_ERROR.textContent = '';
+  DEPOSIT_FORM.hidden = false;
+}
+
+function closeDepositForm() {
+  DEPOSIT_FORM.hidden = true;
+  DEPOSIT_FORM.reset();
+  DEPOSIT_FORM_ERROR.textContent = '';
+}
+
+// Sparar en insättning. De två fälten skickas som de står, och valideringen ägs
+// av validateDepositDraft i src/core/goal.js genom
+// POST /api/sparmal/<id>/insattning — app.js prövar varken beloppet eller datumet
+// självt.
+//
+// Ett NEGATIVT belopp är giltigt: det är ett uttag ur sparandet, och
+// checkDepositAmountSek tillåter det med flit och avvisar bara noll. Ingen rad
+// här och inget attribut i index.html hindrar minustecknet, för då hade uttag
+// varit omöjliga från gränssnittet trots att datalagret stöder dem. Att en andra
+// kontroll här dessutom hade gett två kedjor för samma fält med olika svar står i
+// LARDOMAR.md 2026-08-18.
+//
+// Fältfelen visas i formulärets enda felruta, samma val och samma skäl som i de
+// tre andra formulären: svarets error är det första felets text, och egna
+// felrutor hade krävt ett id som inte kan heta error-amountSek, eftersom
+// postformuläret redan äger det.
+//
+// Lyckas sparningen hämtas målen om. Det är inte en artighet utan hela poängen:
+// svaret på en insättning bär insättningen och inget av målets sex räknade fält,
+// så raden ritas om ur GET /api/sparmal — stapeln, procenten och Kvar-raden
+// följer med samma tal. En rad som stod kvar på det gamla savedOre hade sett ut
+// som en sparning som inte gick fram.
+async function submitDeposit(button) {
+  DEPOSIT_FORM_ERROR.textContent = '';
+
+  button.disabled = true;
+  depositSubmitInProgress = true;
+  try {
+    let response;
+    try {
+      response = await fetch(`/api/sparmal/${depositGoalId}/insattning`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountSek: DEPOSIT_AMOUNT_FIELD.value,
+          madeOn: DEPOSIT_DATE_FIELD.value
+        })
+      });
+    } catch {
+      DEPOSIT_FORM_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (response.status === 201) {
+      closeDepositForm();
+      await loadGoals();
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    DEPOSIT_FORM_ERROR.textContent = generalText(await readJson(response));
+  } finally {
+    button.disabled = false;
+    depositSubmitInProgress = false;
   }
 }
 
@@ -2196,6 +2307,23 @@ GOAL_FORM.addEventListener('submit', (event) => {
     return;
   }
   void submitGoal(GOAL_SUBMIT);
+});
+
+// Insättningsformuläret [steg 4]. Det öppnas av + Sätt in i en målrad och har
+// därför ingen egen knapp i kortet; Avbryt stänger det utan att skicka något
+// anrop.
+DEPOSIT_CANCEL.addEventListener('click', () => {
+  closeDepositForm();
+});
+
+DEPOSIT_FORM.addEventListener('submit', (event) => {
+  event.preventDefault();
+  // Samma spärr och samma skäl som de fyra andra formulärens: Enter i ett fält
+  // skickar formuläret direkt, förbi den avstängda knappen.
+  if (depositSubmitInProgress) {
+    return;
+  }
+  void submitDeposit(DEPOSIT_SUBMIT);
 });
 
 BILL_FORM.addEventListener('submit', (event) => {

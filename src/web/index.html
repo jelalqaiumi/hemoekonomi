@@ -398,6 +398,38 @@
               <button type="button" class="secondary" id="goal-cancel">Avbryt</button>
             </form>
 
+            <!-- Insättningsformuläret [steg 4]: det + Sätt in i en målrad
+                 öppnar. Belopp och datum, inget mer. Dolt från början; app.js
+                 sätter hidden och håller vilket mål knappen gällde.
+                 Formuläret hör till kortet och inte till raden, av samma skäl
+                 som de tre andra formulären står här och inte byggs i
+                 JavaScript: ett formulär per rad hade betytt inmatningsfält och
+                 etiketter skrivna i app.js.
+                 Beloppet är type="text" med inputmode="decimal" och har INGET
+                 min: ett negativt belopp är ett uttag ur sparandet och är
+                 giltigt - checkDepositAmountSek i src/core/goal.js tillåter det
+                 med flit och avvisar bara noll. Ett min="0" hade gjort uttag
+                 omöjliga från gränssnittet trots att datalagret stöder dem.
+                 Datumet är obligatoriskt, till skillnad från sparmålets
+                 slutdatum: en insättning utan dag går inte att placera i tiden
+                 (checkMadeOn i src/core/goal.js). -->
+            <form id="deposit-form" novalidate hidden>
+              <div class="field">
+                <label for="deposit-amount">Belopp (kr)</label>
+                <input id="deposit-amount" name="amountSek" type="text" inputmode="decimal" autocomplete="off" />
+              </div>
+
+              <div class="field">
+                <label for="deposit-date">Datum</label>
+                <input id="deposit-date" name="madeOn" type="date" autocomplete="off" />
+              </div>
+
+              <p class="form-error" id="deposit-form-error" role="alert"></p>
+
+              <button type="submit" class="primary" id="deposit-submit">Spara</button>
+              <button type="button" class="secondary" id="deposit-cancel">Avbryt</button>
+            </form>
+
             <ul id="goal-list" class="item-list"></ul>
           </section>
 

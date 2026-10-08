@@ -21,7 +21,7 @@
 import { billStatus, daysUntilDue, nextBillDueDate, validateBillDraft } from '../../core/bill.js';
 import { monthTotals, sumByKind } from '../../core/budget.js';
 import { CATEGORIES } from '../../core/entry.js';
-import { goalProgress, validateGoalDraft } from '../../core/goal.js';
+import { goalProgress, validateDepositDraft, validateGoalDraft } from '../../core/goal.js';
 import { compareIsoDates, compareMonths, firstDayOfMonth, isValidIsoDate, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
 import { FEATURES, hasFeature, isPlanKey, planFor, PLAN_LABELS } from '../../core/plans.js';
@@ -44,6 +44,7 @@ import { DEMO } from './demolage.js';
 //   invalidPlan      MESSAGES.invalidPlan i src/server/api.js
 //   invalidToday     MESSAGES.invalidToday i src/server/api.js
 //   billNotFound     MESSAGES.billNotFound i src/server/api.js
+//   goalNotFound     MESSAGES.goalNotFound i src/server/api.js
 export const SERVER_TEXTS = Object.freeze({
   notLoggedIn: 'Du är inte inloggad.',
   unknownCode: 'Koden stämmer inte. Begär en ny kod och försök igen.',
@@ -55,7 +56,12 @@ export const SERVER_TEXTS = Object.freeze({
   // Räkningarnas två texter [steg 3]. invalidToday gäller både datumet i GET:ens
   // sökväg och today i kroppen till betald - samma fält med samma regel.
   invalidToday: 'Dagens datum måste anges som ÅÅÅÅ-MM-DD.',
-  billNotFound: 'Räkningen finns inte.'
+  billNotFound: 'Räkningen finns inte.',
+  // Sparmålets text [steg 4]. Samma sträng som MESSAGES.goalNotFound i
+  // src/server/api.js, och gäller både ett mål som aldrig funnits och ett som
+  // tillhör någon annan - demon har bara en användare, så bara det första fallet
+  // är nåbart här.
+  goalNotFound: 'Sparmålet finns inte.'
 });
 
 // Vägarna, med samma adresser som src/server/api.js.
@@ -77,11 +83,13 @@ const ITEM_MONTH_SEGMENT = 'manad';
 const BILLS_PATH = '/api/rakningar';
 const BILL_PATH_PREFIX = '/api/rakningar/';
 const BILL_PAID_SEGMENT = 'betald';
-// Sparmålens vägar [steg 4]. Samma adresser som src/server/api.js. Insättningens
-// väg står inte här: ingenting i gränssnittet anropar den ännu, och en väg utan
-// anropare är byggd i förtid (ARKITEKTUR.md, "Teststrategi").
+// Sparmålens vägar [steg 4]. Samma adresser som src/server/api.js.
 const GOALS_PATH = '/api/sparmal';
 const GOAL_PATH_PREFIX = '/api/sparmal/';
+// Sista ledet i /api/sparmal/<id>/insattning. Vägen kom hit när knappen + Sätt in
+// byggdes: utan den gör knappen ingenting i den publicerade demon, som är den
+// version de flesta ser.
+const GOAL_DEPOSIT_SEGMENT = 'insattning';
 // Funktionsnyckeln sparmålens vägar kräver. Står som en konstant och inte som en
 // sträng på två ställen, av samma skäl som adresserna ovan.
 const GOALS_FEATURE = 'savingsGoals';
@@ -165,6 +173,24 @@ function billPaidIdFromPath(pathname) {
   }
   const parts = pathname.slice(BILL_PATH_PREFIX.length).split('/');
   if (parts.length !== 2 || parts[0] === '' || parts[1] !== BILL_PAID_SEGMENT) {
+    return null;
+  }
+  return parts[0];
+}
+
+// Id:t i /api/sparmal/<id>/insattning [steg 4], eller null när sökvägen inte har
+// den formen. Samma regler som goalDepositFromPath i src/server/api.js: exakt två
+// led, och det andra ska vara insattning.
+//
+// Vägen går inte att matcha med segmentAfter, som avvisar varje led som innehåller
+// ett snedstreck - det är just det som gör att /api/sparmal/<id> och den här vägen
+// inte kan förväxlas med varandra.
+function goalDepositIdFromPath(pathname) {
+  if (!pathname.startsWith(GOAL_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(GOAL_PATH_PREFIX.length).split('/');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] !== GOAL_DEPOSIT_SEGMENT) {
     return null;
   }
   return parts[0];
@@ -1054,6 +1080,56 @@ export function createDemoFetch({
     // först och kortet efter ett byte till Plus - det är hela poängen med att
     // seed-datan börjar på Bas.
     //
+    // POST /api/sparmal/<id>/insattning [steg 4]. Prövas före den enkla
+    // /api/sparmal/<led> nedan, precis som i api.js: den längre vägen är den mer
+    // specifika, och segmentAfter svarar null för en sökväg med två led, så de två
+    // matchningarna kan inte båda vara sanna.
+    //
+    // Kroppens två fält ägs av validateDepositDraft i src/core/goal.js. Beloppet
+    // får vara NEGATIVT - ett uttag ur sparandet - och får inte vara noll; båda
+    // reglerna står där och inte här.
+    //
+    // Insättningen läggs platt i state.goalDeposits med goalId, precis som
+    // tabellen goal_deposits har den: demon speglar schemat och inte en bekvämare
+    // form. Målets savedOre räknas aldrig om här - det är toDemoGoal som summerar
+    // insättningarna vid nästa GET, så den nya summan går genom goalProgress i
+    // src/core/goal.js precis som serverns gör.
+    //
+    // Svaret är de fyra fälten addDeposit i src/server/goals.js svarar med, och
+    // inte målet efteråt: ett 201 beskriver det som skapades, och gränssnittet
+    // hämtar listan om för att se det nya savedOre.
+    const depositGoalId = goalDepositIdFromPath(pathname);
+    if (depositGoalId !== null) {
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      const utanFunktion = kraverFunktion();
+      if (utanFunktion !== null) {
+        return utanFunktion;
+      }
+      if (method !== 'POST') {
+        return metodStods();
+      }
+      const result = validateDepositDraft(draftFrom(body));
+      if (!result.ok) {
+        return fieldErrorSvar(result.errors);
+      }
+      // Målet läses efter valideringen, samma ordning som api.js: där ligger
+      // kontrollen inne i addDeposit, alltså efter validateDepositDraft.
+      if (!state.goals.some((goal) => goal.id === depositGoalId)) {
+        return svar(404, { error: SERVER_TEXTS.goalNotFound });
+      }
+      const deposit = {
+        id: makeId(),
+        goalId: depositGoalId,
+        amountOre: result.value.amountOre,
+        madeOn: result.value.madeOn
+      };
+      state.goalDeposits.push(deposit);
+      return sparaOch(svar(201, { deposit }));
+    }
+
     // GET /api/sparmal/<ÅÅÅÅ-MM-DD>. Prövas före den enkla /api/sparmal nedan,
     // precis som i api.js.
     const goalToday = segmentAfter(pathname, GOAL_PATH_PREFIX);

@@ -391,9 +391,31 @@ export function createDom() {
     skapa('button', 'goal-submit', { type: 'submit', textContent: 'Spara' }),
     skapa('button', 'goal-cancel', { type: 'button', textContent: 'Avbryt' })
   );
+  // Insättningsformuläret [steg 4], det + Sätt in i en målrad öppnar. Två fält
+  // och ingen egen knapp i kortet: knappen står i raden och byggs av app.js.
+  // Fälten är registrerade i formulärets elements, så att reset() tömmer dem -
+  // app.js läser dem som element, men nollställningen går genom formuläret.
+  const depositForm = new FakeForm('deposit-form');
+  depositForm.hidden = true;
+  registry.set('deposit-form', depositForm);
+  const depositFalt = Object.freeze([
+    { name: 'amountSek', id: 'deposit-amount', tagName: 'input' },
+    { name: 'madeOn', id: 'deposit-date', tagName: 'input' }
+  ]);
+  for (const { name, id, tagName } of depositFalt) {
+    const falt = skapa(tagName, id);
+    depositForm.append(falt);
+    depositForm.registrera(name, falt);
+  }
+  depositForm.append(
+    skapa('p', 'deposit-form-error', { className: 'form-error' }),
+    skapa('button', 'deposit-submit', { type: 'submit', textContent: 'Spara' }),
+    skapa('button', 'deposit-cancel', { type: 'button', textContent: 'Avbryt' })
+  );
   goalCard.append(
     skapa('button', 'add-goal', { type: 'button', className: 'add', textContent: '+ Nytt sparmål' }),
     goalForm,
+    depositForm,
     skapa('ul', 'goal-list', { className: 'item-list' })
   );
   monthView.append(goalCard);

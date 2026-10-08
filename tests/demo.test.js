@@ -140,7 +140,9 @@ test('(D3) varje svensk text attrappen svarar med är ägarens, tecken för teck
     ['invalidPlan', SERVER_TEXTS.invalidPlan],
     // Räkningarnas två texter [steg 3].
     ['invalidToday', SERVER_TEXTS.invalidToday],
-    ['billNotFound', SERVER_TEXTS.billNotFound]
+    ['billNotFound', SERVER_TEXTS.billNotFound],
+    // Sparmålets text [steg 4].
+    ['goalNotFound', SERVER_TEXTS.goalNotFound]
   ]) {
     assert.equal(api.includes(`${nyckel}: '${text}'`), true, `${nyckel} i src/server/api.js`);
   }
@@ -1446,6 +1448,122 @@ test('POST /api/sparmal kräver behörighet innan kroppen ens läses', async () 
   });
   assert.equal(svar.status, 403);
   assert.equal((await json(svar)).requiredPlan, 'plus');
+});
+
+// Insättningens väg [steg 4], den knappen + Sätt in anropar. Vägen har två led, så
+// den kan inte matcha segmentAfter och kan därmed inte förväxlas med
+// GET /api/sparmal/<ÅÅÅÅ-MM-DD>.
+const INSATTNINGSVAG = '/api/sparmal/demo-mal-buffert/insattning';
+
+async function sattIn(fetch, url, kropp) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(kropp)
+  });
+}
+
+test('en insättning i demoläget ökar savedOre och överlever en omladdning', async () => {
+  const storage = createStorage();
+  const { fetch } = riggning({ storage });
+  await bytTillPlus(fetch);
+
+  const fore = await json(await fetch(SPARMALSVAG));
+  const buffertFore = fore.goals.find((mal) => mal.name === 'Buffert');
+  assert.equal(buffertFore.savedOre, 2840000);
+  assert.equal(buffertFore.percent, 56);
+
+  const skapad = await sattIn(fetch, INSATTNINGSVAG, { amountSek: '2500', madeOn: IDAG });
+  assert.equal(skapad.status, 201);
+  // Svaret är de fyra fälten addDeposit i src/server/goals.js svarar med, och
+  // beloppet kommer tillbaka i ÖREN: sekToOre i src/core/money.js är enda stället
+  // ett kronbelopp blir öre, och validateDepositDraft anropar den.
+  const { deposit } = await json(skapad);
+  assert.deepEqual(Object.keys(deposit).sort(), ['amountOre', 'goalId', 'id', 'madeOn']);
+  assert.equal(deposit.amountOre, 250000);
+  assert.equal(deposit.goalId, 'demo-mal-buffert');
+  assert.equal(deposit.madeOn, IDAG);
+
+  // Målets savedOre räknas aldrig om av skrivvägen: summan kommer ur toDemoGoal
+  // vid nästa GET, alltså genom goalProgress i src/core/goal.js.
+  const efter = await json(await fetch(SPARMALSVAG));
+  const buffertEfter = efter.goals.find((mal) => mal.name === 'Buffert');
+  assert.equal(buffertEfter.savedOre, 2840000 + 250000);
+  assert.equal(buffertEfter.leftOre, 5000000 - 3090000);
+  assert.equal(buffertEfter.percent, 61);
+
+  // Ett NEGATIVT belopp är ett uttag ur sparandet och är giltigt: summan sjunker.
+  const uttag = await sattIn(fetch, INSATTNINGSVAG, { amountSek: '-1000', madeOn: IDAG });
+  assert.equal(uttag.status, 201);
+  assert.equal((await json(uttag)).deposit.amountOre, -100000);
+  const sistaSvaret = await json(await fetch(SPARMALSVAG));
+  assert.equal(
+    sistaSvaret.goals.find((mal) => mal.name === 'Buffert').savedOre,
+    2840000 + 250000 - 100000
+  );
+
+  // En omladdning: ett nytt tillstånd läst ur samma lagring. Båda raderna sparades.
+  const omladdad = riggning({ storage });
+  const { goals } = await json(await omladdad.fetch(SPARMALSVAG));
+  assert.equal(goals.find((mal) => mal.name === 'Buffert').savedOre, 2990000);
+});
+
+test('demons insättningsväg kräver session, behörighet, rätt metod, ett giltigt belopp och ett mål som finns', async () => {
+  const { fetch, state } = riggning();
+
+  // Bas: 403 före valideringen, så en tom kropp ger 403 och inte 400. Samma
+  // ordning som api.js och som sparmålens övriga vägar.
+  const nekad = await sattIn(fetch, INSATTNINGSVAG, {});
+  assert.equal(nekad.status, 403);
+  assert.equal((await json(nekad)).requiredPlan, 'plus');
+
+  await bytTillPlus(fetch);
+
+  // Metoden prövas efter behörigheten.
+  const felMetod = await fetch(INSATTNINGSVAG, { method: 'GET' });
+  assert.equal(felMetod.status, 405);
+  assert.equal((await json(felMetod)).error, SERVER_TEXTS.methodNotAllowed);
+
+  // Noll avvisas, och texten är validerarens egen: ett belopp som är noll är
+  // meningslöst, medan ett negativt är ett uttag. Texten säger just det.
+  const noll = await sattIn(fetch, INSATTNINGSVAG, { amountSek: '0', madeOn: IDAG });
+  assert.equal(noll.status, 400);
+  const nollkropp = await json(noll);
+  assert.deepEqual(
+    nollkropp.fieldErrors.map((fel) => fel.field),
+    ['amountSek']
+  );
+  assert.equal(
+    nollkropp.error,
+    'Beloppet får inte vara 0 kr. Skriv ett minustecken framför för ett uttag.'
+  );
+
+  // Båda fälten prövas, aldrig bara det första: fältordningen ägs av
+  // validateDepositDraft i src/core/goal.js.
+  const tom = await sattIn(fetch, INSATTNINGSVAG, {});
+  assert.equal(tom.status, 400);
+  assert.deepEqual(
+    (await json(tom)).fieldErrors.map((fel) => fel.field),
+    ['amountSek', 'madeOn']
+  );
+
+  // Ett mål som inte finns ger 404 med serverns text, och valideringen gick
+  // igenom först - annars hade svaret varit 400.
+  const okant = await sattIn(fetch, '/api/sparmal/demo-mal-saknas/insattning', {
+    amountSek: '100',
+    madeOn: IDAG
+  });
+  assert.equal(okant.status, 404);
+  assert.equal((await json(okant)).error, SERVER_TEXTS.goalNotFound);
+
+  // Och inget av de fem anropen lade till någon insättning.
+  assert.equal(state.goalDeposits.length, 7);
+
+  // Sessionen prövas FÖRE behörigheten: en utloggad får 401 och inte 403.
+  state.loggedIn = false;
+  const utanSession = await sattIn(fetch, INSATTNINGSVAG, { amountSek: '100', madeOn: IDAG });
+  assert.equal(utanSession.status, 401);
+  assert.equal((await json(utanSession)).error, SERVER_TEXTS.notLoggedIn);
 });
 
 test('ett sparat tillstånd utan goals kasseras, och demon läser om seed-datan', async () => {

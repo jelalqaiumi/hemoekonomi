@@ -706,6 +706,26 @@ button.bill-paid:hover {
   padding: 0.65rem 0.6rem;
 }
 
+/* Knappen + Sätt in i en målrad [steg 4]. Den löper över båda kolumnerna och
+   ligger till vänster: raden är ett rutnät med 1fr auto, och utan regeln hade
+   knappen hamnat i den första kolumnen och dragits ut till hela dess bredd.
+   Formen är knappen Betald:s - en bekräftande handling och ingen borttagning -
+   och det här blocket sätter bara placeringen. */
+button.goal-deposit {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--kant);
+  border-radius: var(--radie-knapp);
+  background: var(--yta);
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+button.goal-deposit:hover {
+  border-color: var(--lank);
+}
+
 /* Låsraden [steg 4]: det en Bas-användare ser i stället för kortet. Kortet och
    raden är två syskon i index.html, och app.js visar exakt ett av dem - raden är
    bekvämlighet och aldrig spärren, som ligger i requireFeature på servern. */
