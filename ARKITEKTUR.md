@@ -10560,11 +10560,24 @@ Rad 5 prövar **exakt en nyckel**, inte bara att en av dem finns. En cell med
 båda hade låtit `toCsv` välja tyst, och det valet är hela poängen med att
 cellen deklarerar sin typ.
 
-**`-0` normaliseras och kastar inte.** `csvAmountSek(-0)` ger `0,00`. Noll ören
-är ett giltigt belopp i en rapport — en kategori kan vara noll en månad — och
-`Number.isSafeInteger(-0)` är sant, så en spärr hade inte fångat det ändå.
-`normalizeZero` i `money.js` är ägaren och importeras; ingen andra kopia skrivs
-(`LARDOMAR.md` 2026-09-02).
+**`-0` ger `0,00` och kastar inte.** Noll ören är ett giltigt belopp i en
+rapport — en kategori kan vara noll en månad — och `Number.isSafeInteger(-0)`
+är sant, så en spärr hade inte fångat det ändå.
+
+**Garantin ligger i formen, inte i ett anrop.** Strängen byggs ur tecken och
+magnitud var för sig, och `-0 < 0` är falskt medan `Math.abs(-0)` är `0`, så
+`-0,00` går inte att producera.
+
+Ett `normalizeZero` ur `money.js` krävdes här först, med ägarskälet i
+`LARDOMAR.md` 2026-09-02. Kravet är struket, och skälet är mätt: ingen indata
+skilde anropet från dess borttagande — `mutation: normalizeZero(ore) -> ore ger
+EXIT=0, fail 0`. Det som håller invarianten är testfallet. Mätt genom att skriva
+om formen till den enda sort som bevarar tecknet, `Intl.NumberFormat`, som ger
+minustecknet U+2212 för `-0` där `toFixed` och `String` ger `0.00` och `0`:
+`mutation: sign-och-magnitud -> Intl ger EXIT=1, fail 17`.
+
+En rad som ingen indata kan skilja från sin egen frånvaro tas bort, även när
+den ser ut som en ägarskapsdeklaration (`LARDOMAR.md` 2026-09-04).
 
 **`csvText` citerar inte.** Citeringen gör `toCsv` för varje cell, eftersom den
 regeln är gemensam för text och belopp. `csvText` äger bara apostrofen. Två
