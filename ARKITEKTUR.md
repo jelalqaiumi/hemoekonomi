@@ -10616,6 +10616,8 @@ Två namn för två skilda ansvar.
 | 5 | `!Array.isArray(monthsData[i].items)` | `reportRows kräver en lista med poster, index <i>.` |
 | 6 | `!Array.isArray(monthsData[i].budgets)` | `reportRows kräver en lista med budgetar, index <i>.` |
 | 7 | `i > 0 && monthsData[i].month <= monthsData[i - 1].month` | `reportRows kräver månaderna i stigande ordning, index <i>.` |
+| 8 | `!isPlainObject(monthsData[i].budgets[j])` | `reportRows kräver ett objekt per budgetrad, index <i> rad <j>.` |
+| 9 | `!Number.isSafeInteger(monthsData[i].budgets[j].amountOre)` | `reportRows kräver ett belopp i heltal ören per budgetrad, index <i> rad <j>.` |
 
 **Rad 7 är den som bär mest.** `perMonthOre`:s index *är* månaden: element noll
 hör till `months[0]`. Kommer indatan i fel ordning blir hela serien tyst
@@ -10628,6 +10630,36 @@ producerar alltid en obruten serie, och `months` följer med i svaret, så en
 lucka är synlig för anroparen. Strikt stigande är allt som krävs för att
 indexet ska betyda något, och en strängjämförelse räcker eftersom formen
 ÅÅÅÅ-MM sorterar lexikografiskt som den sorterar kronologiskt.
+
+**Rad 8 och 9 tillkom i del 2, efter en mätning.** Modulen filtrerade först bort
+budgetrader som inte var objekt i stället för att kasta. Byggaren lämnade
+tillbaka att filtret inte gick att fälla med någon mutation, och mätningen visade
+ett större problem än det: filtret fångade bara *icke-objekt*, så en budgetrad
+med skräp i beloppet gick rakt in i svaret.
+
+Kört, med 5 000 kr spenderat och `amountOre: abc` som tak:
+
+```
+spenderat:        500000 ören
+taket i svaret:   "abc"
+overBudgetMonths: 0
+jämförelsen:      500000 > "abc" är false
+```
+
+Appen svarade alltså att användaren **höll** budgeten. Det är den värsta sorten
+fel i en budgetapp — ett lugnande svar som inte är sant — och det är tyst.
+
+Det avgörande skälet är ändå symmetrin: i samma element behandlades `items` och
+`budgets` efter motsatta regler. Mätt: `items: [null]` ger
+`monthTotals kräver poster som objekt.` och `items: [{ amountOre: abc }]` ger
+`monthTotals kräver ett belopp i heltal ören.`, medan `budgets: [null]` tystnade
+och `budgets: [{ amountOre: abc }]` svarade `budgetPerMonthOre: ["abc"]`. Två
+listor i samma objekt ska prövas lika strikt.
+
+`category` prövas däremot inte. En okänd kategori matchar ingen rad och faller
+därmed ur rapporten av sig själv, precis som en post med samma fel — och varje
+skrivväg i `src/server/` prövar fältet med `checkCategory`, så databasen kan inte
+producera en sådan rad.
 
 **`isPlainObject` importeras ur `src/core/entry.js`**, som äger begreppet och
 exporterar det. Inget handskrivet `typeof x === object` — den svagare formen
@@ -10718,12 +10750,12 @@ schedules `(S)`; rapportens heter `(RA)`, eftersom `(R)` ägs av
 | (RA14) | `overBudgetMonths` på båda sidor om gränsen | lika med taket räknas inte |
 | (RA15) | `largest` vid lika summa | den tidigare i radordningen |
 | (RA16) | tom rapport | `rows` tom, `largest` null, inget kast |
-| (RA17) | taket ärvs ur `readOverview` | `count` utanför ger samma meddelandeform |
 
 `tests/report-api.test.js`:
 
 | # | Fall | Kräver |
 |---|---|---|
+| (RA17) | taket ärvs ur `readOverview` | `readReport` med `count` utanför ger samma meddelandeform |
 | (RA18) | båda vägarna | statuskoderna i tabellen |
 | (RA19) | Bas får `403` på båda | samma kropp som sparmålens |
 | (RA20) | Plus får `200` på båda | och CSV-vägen `text/csv` |
