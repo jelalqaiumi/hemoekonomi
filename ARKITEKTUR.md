@@ -10656,6 +10656,26 @@ Det avgörande skälet är ändå symmetrin: i samma element behandlades `items`
 och `budgets: [{ amountOre: abc }]` svarade `budgetPerMonthOre: ["abc"]`. Två
 listor i samma objekt ska prövas lika strikt.
 
+**`amountOre: -0` normaliseras, och det är mitt beslut, inte en följd av rad 9.**
+`Number.isSafeInteger(-0)` är sant, så värdet passerar spärren och
+`budgetPerMonthOre` bar `-0` när byggaren lämnade tillbaka fyndet. `JSON` visar
+det som `0`, så det är osynligt i svaret, men `Object.is(värdet, -0)` är `true`.
+Ett `Number.is*`-predikat är aldrig en spärr mot `-0` (`LARDOMAR.md`
+2026-09-02), och samma lärdom förbjuder en exporterad funktion i `src/core/`
+att returnera värdet.
+
+`budgetPerMonthOre` bär därför `normalizeZero(line.amountOre)`. Valet är att
+normalisera och inte att kasta, eftersom `budgets` har `CHECK (amount_ore > 0)`
+och värdet alltså inte kan komma ur databasen — en tionde rad i tabellen hade
+varit en spärr mot en indata ingen skrivväg kan producera.
+
+**Svaret är motsatt det i `csv.js`, och skillnaden är mätbarheten.** Där togs
+`normalizeZero` bort, eftersom utdatan är en sträng byggd ur tecken och
+magnitud och `-0,00` därmed är strukturellt omöjlig: ingen indata skilde anropet
+från dess borttagande. Här är utdatan talet självt, så anropet är prövbart, och
+testfallet skrivs som `assert.equal(Object.is(värdet, -0), false)` — aldrig som
+`assert.equal(värdet, 0)`, som är sant för `-0`.
+
 `category` prövas däremot inte. En okänd kategori matchar ingen rad och faller
 därmed ur rapporten av sig själv, precis som en post med samma fel — och varje
 skrivväg i `src/server/` prövar fältet med `checkCategory`, så databasen kan inte
