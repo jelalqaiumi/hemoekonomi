@@ -10427,7 +10427,7 @@ sin tabell och fick lämna tillbaka den.
 #### Vad `readReport` svarar
 
 ```
-readReport(userId, endMonth, count) -> {
+readReport(userId, endMonth, count, { db }) -> {
   months: ['2026-05', ..., '2026-10'],
   rows: [ {
     kind, category,
@@ -10603,7 +10603,7 @@ satt av `budgetLines` i samma fil.
 längd — en hel felklass som försvinner när månaden bärs av samma element som
 sina poster. `months` i svaret härleds därför ur indatan och skickas inte in.
 
-`readReport(userId, endMonth, count)` i `src/server/reports.js` är den funktion
+`readReport(userId, endMonth, count, { db })` i `src/server/reports.js` är den funktion
 som läser databasen; `reportRows` är den rena formen och körs i webbläsaren.
 Två namn för två skilda ansvar.
 
@@ -10694,8 +10694,21 @@ ska inte avrundas tyst.
 
 | Metod och väg | Svar |
 |---|---|
-| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>` | `200` med rapporten. `400`. `401`. `403`. `500`. |
-| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv` | `200` med `text/csv`. `400`. `401`. `403`. `500`. |
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>` | `200` med rapporten. `400`. `401`. `403`. `404`. `500`. |
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv` | `200` med `text/csv`. `400`. `401`. `403`. `404`. `500`. |
+
+**`404` för ett `<N>` som inte är siffror, `400` för ett tal utanför taket.**
+Projektets regel för ett led i sökvägen är `segmentAfter`: ingen trimning, ingen
+avkodning och ingen normalisering — ett värde som inte matchar exakt finns inte.
+`/api/rapport/2026-10/abc` är alltså ingen adress och ger `404 Okänd adress.`,
+medan `/api/rapport/2026-10/99` är adressen med ett otillåtet antal och ger `400`.
+Båda statuskoderna står i tabellen ovan, enligt `LARDOMAR.md` 2026-09-07.
+
+**Texten för ett otillåtet antal är**
+`Antalet månader måste vara mellan <min> och <max>.`, interpolerad ur
+`OVERVIEW_MIN_MONTHS` och `OVERVIEW_MAX_MONTHS`, så att talen aldrig blir en
+tredje kopia. Datalagrets `RangeError` får aldrig nå klienten — samma skäl som
+`handleReadOverview` redan skriver ut för månaden.
 
 `N` står i sökvägen och inte i en frågesträng, av samma skäl som månaden gör det
 på varje annan väg: projektet har ingen frågeströmstolkning, och att införa en
@@ -10713,6 +10726,161 @@ som CSV hade gränssnittet inte kunnat läsa. Bara `200` är `text/csv`.
 **Filnamnet är rent ASCII.** En svensk bokstav i ett `Content-Disposition`-huvud
 kräver RFC 5987-kodning, och ett okodat huvud är ett trasigt svar.
 
+#### CSV-filens innehåll (bindande)
+
+Byggaren i del 3 lämnade tillbaka att det här avsnittet saknades, och hade
+rätt: `toCsv` tar typade celler, men ingenting sa vad rapportens rader och
+kolumner är i filen. En sökning efter `toCsv` i `src/` gav en enda träff, ett
+ord i en kommentar — de tre exporterna i `csv.js` hade alltså ingen anropare.
+
+**Formen är lång, inte bred: en rad per `(kind, category, månad)`.**
+
+```
+Slag;Kategori;Månad;Belopp;Tak;Över tak
+```
+
+Sex kolumner, alltid sex, oavsett hur lång serien är.
+
+Tre skäl, och det första avgör:
+
+**1. Taket är per månad.** `budgetPerMonthOre` är en lista (beslut 4 ovan), och
+i en bred form med en kolumn per månad ryms den inte — den hade krävt en andra
+tabell i samma fil eller en andra radgrupp. I en lång form är taket bara en till
+kolumn på samma rad, och hela problemet försvinner.
+
+**2. Kolumnantalet är fast.** En bred form har `months.length + 3` kolumner, och
+en fil vars kolumnantal beror på indatan är svår att både läsa och pröva.
+
+**3. Ett kalkylblad vill ha det så.** Den långa formen är den som går att
+pivotera, filtrera och summera. Det är hela skälet att filen finns.
+
+**Summa och snitt står inte i filen.** Skärmtabellen visar dem; filen bär
+rådatan, och `SUMMA` och `MEDEL` finns i kalkylbladet. En fil som bär både
+detaljen och sammanfattningen tvingar läsaren att räkna ut vilken av dem en rad
+är.
+
+| Kolumn | Innehåll | Celltyp |
+|---|---|---|
+| `Slag` | `ITEM_KIND_LABELS[kind]` | text |
+| `Kategori` | `CATEGORY_LABELS[category]` | text |
+| `Månad` | månaden som ÅÅÅÅ-MM | text |
+| `Belopp` | `perMonthOre[i]` | belopp |
+| `Tak` | `budgetPerMonthOre[i]`, eller **tom** när taket är `null` | belopp eller text |
+| `Över tak` | `Ja`, `Nej`, eller **tom** när taket är `null` | text |
+
+**Månaden skrivs ÅÅÅÅ-MM och aldrig som ett månadsnamn.** Formen sorterar
+lexikografiskt som den sorterar kronologiskt, och ett namn hade dessutom varit
+språkberoende i en fil som ska gå att läsa maskinellt.
+
+**Ett saknat tak ger en tom cell, aldrig `0`.** Noll vore ett tak på noll
+kronor, vilket är något helt annat än inget tak. Samma skäl gör `Över tak` tom:
+utan ett tak finns ingen gräns att ligga över, och `Nej` hade påstått att det
+fanns en.
+
+**Rubrikraden är text mot användaren och står ordagrant ovan.** Den är därmed
+bunden av (D3) i `tests/demo.test.js` på samma villkor som varje annan svensk
+sträng demons attrapp svarar med.
+
+#### En egen modul: `src/core/report-csv.js`
+
+Mappningen från rapport till celler får en **egen kärnmodul**, inte en ny export
+i `report.js` och inte en funktion i `src/server/`.
+
+**Den måste ligga i `src/core/`,** och det följer av ett beslut som redan står i
+det här avsnittet: demoläget ersätter `globalThis.fetch` och publiceras på en
+statisk värd, så attrappen måste svara på CSV-vägen, och attrappen kan bara nå
+`src/core/`. Låg mappningen i `src/server/` kunde demon inte producera filen,
+och en handskriven kopia i `demo-fetch.js` hade varit två ställen som glider
+isär.
+
+**Varför inte en andra export i `report.js`:** den modulen äger rapportens
+*form*, och det här är dess *dokumentlayout* — två frågor, två ägare. Dessutom
+är `report.js` färdig och verifierad med full täckning och 25 mutationer, och
+att öppna den för ett nytt ansvar hade krävt att allt det görs om.
+
+En export:
+
+```
+reportCsvRows(report) -> [[cell, ...], ...]   // rubrikraden först
+```
+
+Cellerna är `{ text }` och `{ amountOre }`, alltså precis det `toCsv` tar emot.
+**Modulen importerar inte `csv.js`** och känner varken till avgränsare, BOM
+eller citering. Det är hela poängen med typade celler: layouten vet vad en cell
+*betyder*, formatet vet hur den *skrivs*.
+
+`ITEM_KIND_LABELS` byggs i `src/core/item.js`, som det här dokumentet redan
+namnger som dess ägare. Konstanten har väntat på sin första anropare sedan
+etapp 1, och CSV-filen är den.
+
+#### Ingångsspärrar i `src/core/report-csv.js` — bindande, första träff vinner
+
+| # | Villkor, skrivet som i koden | Meddelande |
+|---|---|---|
+| 1 | `!isPlainObject(report)` | `reportCsvRows kräver en rapport som objekt.` |
+| 2 | `!Array.isArray(report.months)` | `reportCsvRows kräver en lista med månader.` |
+| 3 | `!Array.isArray(report.rows)` | `reportCsvRows kräver en lista med rader.` |
+| 4 | `!isPlainObject(report.rows[i])` | `reportCsvRows kräver ett objekt per rad, index <i>.` |
+| 5 | `report.rows[i].perMonthOre.length !== report.months.length` | `reportCsvRows kräver ett belopp per månad, index <i>.` |
+| 6 | `report.rows[i].budgetPerMonthOre.length !== report.months.length` | `reportCsvRows kräver ett tak per månad, index <i>.` |
+
+**Rad 5 och 6 är de som bär.** Layouten läser `perMonthOre[i]` och
+`budgetPerMonthOre[i]` för varje månad i `months`. Är en lista kortare blir
+cellen `undefined`, och en `undefined` som når `csvAmountSek` kastar där i
+stället — med ett meddelande som pekar ut fel modul. Samma skäl som
+`LARDOMAR.md` 2026-09-02 ger för `monthlyOre`.
+
+Rad 5 och 6 förutsätter att fälten är listor, så de prövas med
+`Array.isArray` före längden: en `perMonthOre` som saknas har ingen `length`
+att jämföra, och ett uttryck som läser `undefined.length` kastar `TypeError`
+i stället för modulens `RangeError`.
+
+`reportCsvRows` prövar **inte** `kind` och `category` mot sina listor. En nyckel
+utanför `ITEM_KIND_LABELS` eller `CATEGORY_LABELS` kan inte uppstå:
+`reportRows` bygger varje rad ur `ITEM_KINDS` och `CATEGORIES`, och en rapport
+som inte kommer därifrån avvisas redan av rad 1 till 4.
+
+#### Kravlista för `tests/report-csv.test.js` [steg 5]
+
+| # | Fall | Kräver |
+|---|---|---|
+| (RA24) | rubrikraden ordagrant | sex celler i ordningen ovan |
+| (RA25) | en rad per `(kind, category, månad)` | tre månader och två rader ger sex datarader |
+| (RA26) | ett saknat tak ger en tom cell | aldrig `0` |
+| (RA27) | `Över tak` är `Ja`, `Nej` eller tom | tom när taket är `null`, gränsen prövad på båda sidor |
+| (RA28) | de svenska namnen kommer ur sina ägare | `ITEM_KIND_LABELS` och `CATEGORY_LABELS` |
+| (RA29) | en tom rapport ger bara rubrikraden | en rad, inget kast |
+| (RA30) | rundgång genom `toCsv` | varje beloppscell i filen är läsbar tillbaka |
+
+Spärrtabellens sex rader får egna testfall **utan** `(RA)`-nummer — tabellen är
+deras facit, samma val som del 1 och del 2 gjorde och som var rätt.
+
+`ITEM_KIND_LABELS` får sitt testfall i `tests/item.test.js`, som har en egen
+numrerad serie: det blir nästa nummer i den serien, och inget `(RA)`.
+
+#### Ingångsspärrar i `src/server/reports.js` — bindande, första träff vinner
+
+Skriven före koden. Byggaren i del 3 lämnade tillbaka att den saknades, och hade
+rätt: `readReport` är en modul som kastar, och `readOverview` har sin tabell i
+det här dokumentet sedan etapp 5 — formen fanns, den fattades bara här.
+
+| # | Villkor, skrivet som i koden | Meddelande |
+|---|---|---|
+| 1 | `!isValidIsoMonth(endMonth)` | `readReport kräver en månad på formen ÅÅÅÅ-MM, fick "<v>".` |
+| 2 | `!Number.isInteger(count) || count < OVERVIEW_MIN_MONTHS || count > OVERVIEW_MAX_MONTHS` | `readReport kräver ett antal månader mellan <min> och <max>, fick "<v>".` |
+
+Rad 2 ger **samma meddelandeform** som `readOverview` rad 2, vilket är vad
+(RA17) kräver. Talen läses ur de två konstanterna, som exporteras ur
+`src/server/months.js` i del 3 — `1` och `36` står aldrig skrivna i
+`reports.js`.
+
+**`reportRows` nio rader ärvs genom anropet och kopieras inte.** `readReport`
+skriver ingen egen kontroll av `items`, `budgets`, månadsordningen eller
+budgetradernas form: den bygger listan och lämnar den till `reportRows`, som
+äger frågan. En andra kopia hade varit två facit (`LARDOMAR.md` 2026-09-02).
+
+`readReport` gör **ingen egen `SELECT`**. Den går genom `readMonth`, som redan
+bär `user_id = ?` på varje fråga.
 #### Gränssnittet
 
 Ett kort `Rapport` i månadsvyn, under sparmålskortet. Tre knappar för perioden
