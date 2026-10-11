@@ -3904,3 +3904,55 @@ sin sanning på en framtida byggnad ("finns inte förrän ..."). Skriv i ställe
 utfallet efter bygget, eller skriv kravet som en rad i kravlistan, vilket
 beslutsloggen själv föreskriver på rad 11733–11736.
 **⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — dokumentation: "inte byggda" om sparmål, rapporter och planer står kvar på tre ställen, varav ett visas för användaren
+**Vad gick fel:** Tre texter säger att funktioner som är byggda inte finns:
+(1) HTML-kommentaren i `src/web/index.html` rad 90–94 säger att "sparmål, delat
+hushåll, rapporter, Mina funktioner och prioriterad support - är inte byggda
+ännu"; (2) `ARKITEKTUR.md` rad 9437–9442, "Det demon inte visar", säger att
+"prisplaner, behörighet, sparmål, räkningspåminnelser, delat hushåll och Mina
+funktioner är **inte byggda**" och att "En planväxlare ... byggs inte"; (3)
+`NOT_BUILT_TEXT` i `src/web/demo/banner.js` rad 29–30 säger samma sak i
+bannerns hjälptext, som visas för besökaren så snart `DEMO` är sann. Planer,
+behörighet (`requireFeature` och demons `kraverFunktion`), sparmål, räkningar
+med påminnelse och rapporten är byggda, både i appen och i demon:
+`src/web/demo/demo-fetch.js` har `PLAN_PATH` (rad 89), `BILLS_PATH` (rad 99),
+`GOALS_PATH` (rad 103) och `REPORT_PATH_PREFIX` (rad 116). Kommentaren i (1)
+kom in i commit `044f72d` (enligt `git log -S "är inte byggda ännu"`) och har
+stått kvar genom steg 4 och 5.
+**Varför:** Alla tre beskriver projektets läge när de skrevs ("ännu", "byggs
+inte") och är alltså samma sorts åldrande påstående som posterna 2026-09-04
+(`Kvar i paket N`) och 2026-09-12 (framtidspåståenden om paket 7). Sökningarna
+som de posterna föreskriver körs mot `ARKITEKTUR.md`, inte mot kommentarer i
+`src/web/` eller mot användarvända konstanter. `banner.js` säger själv att
+texten är "Samma uppräkning som ARKITEKTUR.md under 'Det demon inte visar'".
+Två kopior av samma påstående åldrades därför tillsammans, och ingen av dem har
+ett test.
+**Regel framåt:** När ett steg bygger en funktion som tidigare var bortvald,
+kör `grep -rniE "inte byggd|inte byggt|byggs inte|ännu" src ARKITEKTUR.md README.md`
+och läs varje träff som nämner funktionen. En användarvänd konstant som räknar
+upp vad som "inte är byggt" (`NOT_BUILT_TEXT`) ska ha ett test som jämför
+uppräkningen mot `FEATURE_LABELS` och de vägar demon svarar på. Konkret ska
+arkitekten skriva om "Det demon inte visar" så att bara delat hushåll, Mina
+funktioner, prioriterad support och betalning står kvar. Därefter rättar
+byggaren `NOT_BUILT_TEXT` och HTML-kommentaren efter den.
+
+### 2026-10-11 — dokumentation: README säger att alla sökvägar utom / och /app ger 404 utan innehåll
+**Vad gick fel:** `README.md` rad 550–552 ("En felstavad adress ger en blank
+sida") säger "Andra sökvägar än `/` och `/app` svarar `404` utan innehåll". En
+körning mot en server på port 3197 med databas och datafil i scratchpad gav
+`GET /apps` → `404` och `0` byte, men `GET /tema.css` → `200` (8209 byte) och
+`GET /api/finnsinte` → `404` med kroppen `{"error":"Okänd adress."}`.
+`STATIC_ROUTES` i `src/server/server.js` rad 51–60 serverar dessutom
+`/landning.css`, `/style.css`, `/app.js` och `/priser.js`, och `/core/`,
+`/demo/` och `/bilder/` serveras också.
+**Varför:** Meningen generaliserade det användaren ser (en felstavad sidadress
+ger en blank sida) till ett påstående om servern, utan att routningen lästes.
+Dokumentatorn kunde inte köra servern, och påståendet skrevs därför ur
+resonemang i stället för ur en körning. Det är samma grundorsak som posten
+2026-08-18 om testkommandot.
+**Regel framåt:** Ett påstående i `README.md` om vad servern svarar ska avgränsas
+till det som prövats, och den som granskar ska köra minst en adress per
+grupp i `STATIC_ROUTES`, `/core/`, `/api/` och en okänd sidadress. Här räcker
+lydelsen "En felstavad sidadress, till exempel `/apps`, svarar `404` utan
+innehåll, så webbläsaren visar en tom sida."
