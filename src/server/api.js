@@ -5,11 +5,13 @@
 // Den här filen gör ingen parseFloat, ingen Number() och ingen trimning av ett
 // belopp — råvärdet ur anropets JSON skickas vidare orört.
 import { validateBillDraft } from '../core/bill.js';
+import { toCsv } from '../core/csv.js';
 import { isValidIsoDate, isValidIsoMonth, nowIso } from '../core/dates.js';
 import { createEntry } from '../core/entry.js';
 import { validateDepositDraft, validateGoalDraft } from '../core/goal.js';
 import { validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
 import { FEATURES, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../core/plans.js';
+import { reportCsvRows, reportFileName } from '../core/report-csv.js';
 import {
   AUTH_MESSAGES,
   clearedSessionCookie,
@@ -26,6 +28,8 @@ import { addBill, markBillPaid, readBills, removeBill, updateBill } from './bill
 import { getDatabase } from './db.js';
 import { addDeposit, addGoal, readGoals, removeGoal, updateGoal } from './goals.js';
 import {
+  OVERVIEW_MAX_MONTHS,
+  OVERVIEW_MIN_MONTHS,
   addMonthItem,
   addTemplate,
   changeTemplateFrom,
@@ -39,6 +43,7 @@ import {
   skipMonth,
   updateMonthItem
 } from './months.js';
+import { readReport } from './reports.js';
 import { loadEntries, updateEntries } from './storage.js';
 
 // Ägs här och läses av server.js för rad S1 ("Ett trasigt anrop får inte döda
@@ -73,7 +78,13 @@ const MESSAGES = Object.freeze({
   // den inte är entryNotFound: det är ett sparmål som inte finns. Samma text för
   // "finns inte" och "tillhör någon annan", med flit — och samma text för ett
   // okänt mål på insättningsvägen, eftersom det är samma fråga.
-  goalNotFound: 'Sparmålet finns inte.'
+  goalNotFound: 'Sparmålet finns inte.',
+  // Rapportens text för ett otillåtet antal månader [steg 5], under "API-vägar"
+  // i avsnittet om diagram och rapporter i ARKITEKTUR.md. Talen interpoleras ur
+  // taket i months.js och står aldrig skrivna här, så att de inte blir en tredje
+  // kopia. Datalagrets RangeError får aldrig nå klienten: den namnger en
+  // funktion i datalagret och är inte text avsedd för användaren.
+  invalidReportCount: `Antalet månader måste vara mellan ${OVERVIEW_MIN_MONTHS} och ${OVERVIEW_MAX_MONTHS}.`
 });
 
 const API_PREFIX = '/api/';
@@ -139,6 +150,24 @@ const GOAL_PATH_PREFIX = '/api/sparmal/';
 // samma svenska ord hade kunnat glida isär.
 const GOAL_DEPOSIT_SEGMENT = 'insattning';
 
+// Rapportens två vägar [steg 5]: /api/rapport/<ÅÅÅÅ-MM>/<N> och
+// /api/rapport/<ÅÅÅÅ-MM>/<N>/csv. Adressen är svensk, precis som månadens.
+//
+// N står i sökvägen och inte i en frågesträng: projektet har ingen
+// frågeströmstolkning, och att införa en är en ny indatayta för ett tal som ryms
+// i sökvägen (ARKITEKTUR.md).
+const REPORT_PATH_PREFIX = '/api/rapport/';
+// Sista ledet i CSV-vägen. Står som en konstant och inte som en literal i
+// matchningen, av samma skäl som BILL_PAID_SEGMENT.
+const REPORT_CSV_SEGMENT = 'csv';
+// Formen för N: ett tal i kanonisk form, alltså 0 eller en siffra 1-9 följd av
+// valfria siffror. Ett led som inte matchar är ingen adress och ger 404 Okänd
+// adress, medan ett tal utanför taket är adressen med ett otillåtet antal och ger
+// 400 (ARKITEKTUR.md, "API-vägar" för rapporterna). Ingen trimning, inget tecken
+// och inga inledande nollor: 012 hade annars varit en andra adress för samma
+// rapport, och det är den normalisering segmentAfter-regeln förbjuder.
+const REPORT_COUNT_PATTERN = /^(0|[1-9][0-9]*)$/;
+
 // Inloggningens fyra vägar [etapp 2].
 const AUTH_CODE_PATH = '/api/auth/kod';
 const AUTH_LOGIN_PATH = '/api/auth/logga-in';
@@ -154,6 +183,21 @@ function sendJson(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text)
+  });
+  res.end(text);
+}
+
+// Projektets första svar som inte är JSON [steg 5]: CSV-filen på rapportens väg.
+// Bara ett 200 går hit. Varje fel på samma väg svarar med JSON genom sendJson,
+// eftersom en 403 eller 400 som kom som CSV inte hade gått att läsa för
+// gränssnittet (ARKITEKTUR.md).
+//
+// filename skickas in som rent ASCII av anroparen och skrivs därför in okodat.
+function sendCsv(res, filename, text) {
+  res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
     'Content-Length': Buffer.byteLength(text)
   });
   res.end(text);
@@ -299,6 +343,30 @@ function goalDepositFromPath(pathname) {
     return null;
   }
   return parts[0];
+}
+
+// Leden i /api/rapport/<ÅÅÅÅ-MM>/<N> och /api/rapport/<ÅÅÅÅ-MM>/<N>/csv, eller
+// null när sökvägen inte har någon av de två formerna [steg 5]. Samma regler som
+// segmentAfter: ingen trimning, ingen avkodning, och ett tomt led är ingen väg
+// alls.
+//
+// Månaden prövas inte här utan i hanteraren, precis som för /api/manad/<månad>:
+// vägen finns, och en månad som inte är en månad ska ge 400 med månadens text.
+// N prövas däremot här, mot sin form och inte mot taket: ett N som inte är
+// siffror är ingen adress, medan taket är hanterarens fråga.
+function reportFromPath(pathname) {
+  if (!pathname.startsWith(REPORT_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(REPORT_PATH_PREFIX.length).split('/');
+  const csv = parts.length === 3 && parts[2] === REPORT_CSV_SEGMENT;
+  if (parts.length !== 2 && !csv) {
+    return null;
+  }
+  if (parts[0] === '' || !REPORT_COUNT_PATTERN.test(parts[1])) {
+    return null;
+  }
+  return { month: parts[0], count: Number(parts[1]), csv };
 }
 
 // Returnerar true om anropet hanterades, false om det inte var en /api-väg.
@@ -513,6 +581,18 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   if (overviewMonth !== null) {
     if (req.method === 'GET') {
       handleReadOverview(req, res, now, overviewMonth);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  // Rapportens två vägar [steg 5]. Båda är GET; vilken av dem anropet gäller
+  // avgörs av sökvägens sista led.
+  const report = reportFromPath(pathname);
+  if (report !== null) {
+    if (req.method === 'GET') {
+      handleReadReport(req, res, now, report);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -871,6 +951,58 @@ function handleReadOverview(req, res, now, month) {
     return;
   }
   sendJson(res, 200, { months: result.months, savedThisYear: result.savedThisYear });
+}
+
+// GET /api/rapport/<ÅÅÅÅ-MM>/<N> och GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv
+// [steg 5]. 200 med rapporten respektive med CSV-filen, 400 vid fel månadsformat
+// eller ett antal utanför taket, 401 utan session, 403 utan behörighet, 500 vid
+// DatabaseError. 404 ges redan av routningen, för ett N som inte är siffror.
+//
+// En hanterare för båda vägarna: de har samma kedja fram till svaret, och två
+// kopior av den hade kunnat glida isär. Ordningen är den bindande: sessionen,
+// behörigheten, månadsspärren, antalet, sedan datalagret.
+//
+// Båda går genom requireFeature med 'reports'. Spärren sitter här på servern;
+// att gränssnittet döljer kortet för en Bas-användare är aldrig skyddet.
+//
+// Fel svarar alltid med JSON, också på CSV-vägen. Bara 200 är text/csv.
+function handleReadReport(req, res, now, report) {
+  const session = sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const denied = requireFeature(session, 'reports');
+  if (denied !== null) {
+    sendJson(res, 403, denied);
+    return;
+  }
+  // Månaden och antalet prövas här fastän readReport prövar dem igen: en ogiltig
+  // indata ska bli ett 400 med svensk text ur MESSAGES, aldrig ett 500 med ett
+  // RangeError-meddelande som namnger en funktion i datalagret. Samma skäl som
+  // handleReadOverview.
+  if (!isValidIsoMonth(report.month)) {
+    sendJson(res, 400, { error: MESSAGES.invalidMonth });
+    return;
+  }
+  if (report.count < OVERVIEW_MIN_MONTHS || report.count > OVERVIEW_MAX_MONTHS) {
+    sendJson(res, 400, { error: MESSAGES.invalidReportCount });
+    return;
+  }
+  let result;
+  try {
+    result = readReport(session.userId, report.month, report.count);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (report.csv) {
+    // Filen byggs ur rapporten med kärnans två ägare: reportCsvRows äger
+    // layouten och toCsv formatet. Filnamnet ägs av reportFileName i samma
+    // kärnmodul, som gränssnittet sätter på nedladdningen.
+    sendCsv(res, reportFileName(report.month), toCsv(reportCsvRows(result)));
+    return;
+  }
+  sendJson(res, 200, { months: result.months, rows: result.rows, largest: result.largest });
 }
 
 // DELETE /api/poster/<id>. 204, 401, 404 om posten inte finns eller tillhör

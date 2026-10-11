@@ -14,10 +14,11 @@ import {
 } from '/core/bill.js';
 import { isValidIsoDate, monthLabel, monthName, monthOfIsoDate, shiftMonth, todayIso } from '/core/dates.js';
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
-import { ITEM_KINDS } from '/core/item.js';
+import { ITEM_KINDS, ITEM_KIND_LABELS } from '/core/item.js';
 import { GOAL_STATUSES, PERCENT_FULL, PERCENT_MIN } from '/core/goal.js';
 import { FEATURE_LABELS, PLANS, PLAN_LABELS } from '/core/plans.js';
 import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
+import { reportFileName } from '/core/report-csv.js';
 
 // Text mot användaren som varken kommer från servern eller från src/core/ står
 // ordagrant i ARKITEKTUR.md och får inte skrivas om. Uppräkningen bär inget antal
@@ -28,6 +29,8 @@ import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
 // exempel när servern inte svarar alls.
 const GENERAL_ERROR = 'Det gick inte att nå appens server. Försök igen.';
 const CHART_EMPTY_TEXT = 'Inga utgifter att visa i diagrammet ännu.';
+// Rapportkortets tomtext [steg 5], användarens beslut F4 i ARKITEKTUR.md.
+const REPORT_EMPTY_TEXT = 'Inget att visa för perioden.';
 // SVG:ns <title>. role="img" plus en title gör diagrammet läsbart med
 // skärmläsare.
 const CHART_TITLE = 'Utgifter per kategori';
@@ -275,6 +278,36 @@ const GOAL_LOCKED = document.querySelector('#goal-locked');
 const GOAL_LOCKED_TEXT = document.querySelector('#goal-locked-text');
 const SHOW_PLANS = document.querySelector('#show-plans');
 
+// Rapportkortet och dess låsrad [steg 5]. Båda bär hidden i index.html, av samma
+// skäl som sparmålens: vilket av de två som syns avgörs av svaret på
+// GET /api/rapport och aldrig av en gissning om användarens plan.
+const REPORT_CARD = document.querySelector('#report-card');
+const REPORT_CHART = document.querySelector('#report-chart');
+const REPORT_CHART_EMPTY = document.querySelector('#report-chart-empty');
+const REPORT_ROWS = document.querySelector('#report-rows');
+const REPORT_EMPTY = document.querySelector('#report-empty');
+const REPORT_DOWNLOAD = document.querySelector('#report-download');
+const REPORT_LOCKED = document.querySelector('#report-locked');
+const REPORT_LOCKED_TEXT = document.querySelector('#report-locked-text');
+const REPORT_SHOW_PLANS = document.querySelector('#report-show-plans');
+// Rapportens egen felrad [steg 5 del 3]. #month-error delas av månadens,
+// räkningarnas, sparmålens och ändringarnas vägar, och rapporten varken skriver
+// eller tömmer det: en tömning vid rapportens 200 hade tagit bort deras fel,
+// eftersom rapporten hämtas sist vid start (ARKITEKTUR.md, "När rapporten
+// hämtas").
+const REPORT_ERROR = document.querySelector('#report-error');
+
+// Periodernas längd i månader [steg 5]. Talen står bara här: varje knapp slås upp
+// med sitt id ur listan, och ingen av siffrorna skrivs någon annanstans i filen.
+// Att de ligger inom serverns tak hålls av testfall (90), eftersom taket bor i
+// src/server/months.js, som webbläsaren inte når.
+const REPORT_PERIODS = Object.freeze([3, 6, 12]);
+// Perioden vid start, användarens beslut F3.
+const REPORT_DEFAULT_PERIOD = 12;
+const REPORT_PERIOD_BUTTONS = new Map(
+  REPORT_PERIODS.map((count) => [count, document.querySelector(`#report-period-${count}`)])
+);
+
 // Insättningsformuläret [steg 4], det + Sätt in i en målrad öppnar. Belopp och
 // datum, och ingenting mer: valideringen av de två fälten ägs av
 // validateDepositDraft i src/core/goal.js genom
@@ -363,6 +396,11 @@ let depositGoalId = null;
 // Datum och Kommentar döljs av vilket som helst av de två, och ett villkor som
 // läste bara det ena hade visat fälten igen så snart det andra ändrades.
 let monthOnlyLayout = false;
+// Perioden och slutmånaden för den rapport som syns [steg 5]. Båda skrivs först
+// när ett svar är 200, så att ett misslyckat byte lämnar kvar den rapport
+// användaren ser — och så att nedladdningen gäller just den.
+let reportCount = REPORT_DEFAULT_PERIOD;
+let reportMonth = null;
 
 function fieldErrorElement(field) {
   return document.querySelector(`#error-${field}`);
@@ -654,9 +692,9 @@ function renderLists(items) {
 // sker därför här — i heltal ören och utan att röra något av summeringens fyra
 // element, som alltid kommer ur svaret.
 //
-// Ordningen är fallande belopp, så att den största kategorin ligger först och kan
-// bli stapeln som fyller bredden. Sorteringen är stabil, så två lika belopp
-// behåller svarets ordning.
+// Funktionen grupperar och ingenting mer. Ordningen och urvalet ägs av
+// renderChart sedan steg 5, så att månadens och rapportens diagram följer samma
+// regler.
 function expensesByCategory(items) {
   const sums = new Map();
   for (const item of items) {
@@ -666,9 +704,7 @@ function expensesByCategory(items) {
     const earlier = sums.get(item.category) ?? 0;
     sums.set(item.category, earlier + oreFromResponse(item.amountOre));
   }
-  return [...sums]
-    .map(([category, amountOre]) => ({ category, amountOre }))
-    .sort((a, b) => b.amountOre - a.amountOre);
+  return [...sums].map(([category, amountOre]) => ({ category, amountOre }));
 }
 
 function svgElement(name, attributes) {
@@ -682,18 +718,31 @@ function svgElement(name, attributes) {
 // Stapeldiagram över utgifter per kategori, som inline-SVG app.js bygger. Ingen
 // bildfil, inget bibliotek, inget canvas.
 //
-// Stapelns längd är kategorins andel av den STÖRSTA kategorin, så att den största
-// alltid fyller bredden. Andel av totalen skulle göra alla staplar korta när en
-// kategori dominerar.
-function renderChart(items) {
-  CHART.replaceChildren();
+// Målet och staplarna kommer som argument [steg 5]: månadsvyn och rapportkortet
+// ritar med samma funktion, och ingen andra diagramfunktion finns. bars är
+// [{ category, amountOre }]. Funktionen äger fyra regler, och ingen av dem står
+// någon annanstans i filen:
+//
+// 1. Urvalet: bara staplar med ett belopp över noll ritas. En utgiftsrad med tak
+//    men utan belopp har ingenting att rita, och en ensam stapel på noll hade
+//    gett en division med noll i skalningen.
+// 2. Ordningen: fallande belopp. Sorteringen är stabil, så två lika belopp
+//    behåller indatans ordning.
+// 3. Skalningen: stapelns längd är kategorins andel av den STÖRSTA stapel som
+//    ritas, så att den största alltid fyller bredden. Andel av totalen skulle
+//    göra alla staplar korta när en kategori dominerar.
+// 4. Tomläget: inga staplar kvar efter urvalet ger tomtexten.
+function renderChart(chartElement, emptyElement, allBars) {
+  chartElement.replaceChildren();
 
-  const bars = expensesByCategory(items);
+  const bars = allBars
+    .filter((bar) => bar.amountOre > 0)
+    .sort((a, b) => b.amountOre - a.amountOre);
   if (bars.length === 0) {
-    CHART_EMPTY.textContent = CHART_EMPTY_TEXT;
+    emptyElement.textContent = CHART_EMPTY_TEXT;
     return;
   }
-  CHART_EMPTY.textContent = '';
+  emptyElement.textContent = '';
 
   const largest = bars[0].amountOre;
   const svg = svgElement('svg', {
@@ -729,7 +778,7 @@ function renderChart(items) {
     svg.append(label, amount, rect);
   }
 
-  CHART.append(svg);
+  chartElement.append(svg);
 }
 
 // En rad i budgetkortet [steg 2]: kategorin, taket och vad som är kvar av det.
@@ -1022,9 +1071,12 @@ function renderGoals(goals) {
 // Kortet syns och låsraden döljs. Båda bär hidden i index.html, så ingetdera syns
 // före det första svaret: vilket av de två som gäller avgörs av hämtningen och
 // aldrig av en gissning om användarens plan.
-function showGoalCard() {
-  GOAL_LOCKED.hidden = true;
-  GOAL_CARD.hidden = false;
+//
+// En funktion för både sparmålen och rapporten [steg 5]: kortet och låsraden
+// kommer som argument, så att växlingen har en ägare.
+function showCard(card, locked) {
+  locked.hidden = true;
+  card.hidden = false;
 }
 
 // Låsradens text, byggd ur 403-svarets feature och requiredPlan.
@@ -1037,7 +1089,10 @@ function showGoalCard() {
 // En nyckel som inte står i tabellerna ger den tomma strängen och aldrig sin
 // engelska nyckel, samma regel och samma skäl som renderPlan följer för en okänd
 // plan.
-function goalLockedText(body) {
+//
+// Gemensam för sparmålens och rapportens låsrad [steg 5]: texten har en ägare,
+// och requiredPlan läses ur svaret, där servern räknat det med planFor.
+function lockedText(body) {
   const { feature, requiredPlan } = body;
   if (!Object.hasOwn(FEATURE_LABELS, feature) || !Object.hasOwn(PLAN_LABELS, requiredPlan)) {
     return '';
@@ -1050,10 +1105,13 @@ function goalLockedText(body) {
 // Raden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på var och en av
 // sparmålens fem vägar, och det är requireFeature i src/server/api.js som håller.
 // Ett kort som inte syns hindrar ingenting.
-function showGoalLock(body) {
-  GOAL_CARD.hidden = true;
-  GOAL_LOCKED_TEXT.textContent = goalLockedText(body);
-  GOAL_LOCKED.hidden = false;
+//
+// Kortet, låsraden och textelementet kommer som argument [steg 5], så att
+// sparmålen och rapporten går genom samma funktion.
+function showLocked(card, locked, textElement, body) {
+  card.hidden = true;
+  textElement.textContent = lockedText(body);
+  locked.hidden = false;
 }
 
 // Hämtar sparmålen och ritar om kortet, eller visar låsraden när svaret är 403.
@@ -1084,7 +1142,7 @@ async function loadGoals() {
   const body = await readJson(response);
 
   if (response.status === 403) {
-    showGoalLock(body);
+    showLocked(GOAL_CARD, GOAL_LOCKED, GOAL_LOCKED_TEXT, body);
     return;
   }
 
@@ -1094,7 +1152,190 @@ async function loadGoals() {
   }
 
   renderGoals(Array.isArray(body.goals) ? body.goals : []);
-  showGoalCard();
+  showCard(GOAL_CARD, GOAL_LOCKED);
+}
+
+// Rapportkortet [steg 5]: uppdelningen bakom månadssummorna över en period,
+// ritad med samma diagram som månaden och med en tabellrad per (kind, category).
+// Inget tal räknas här utöver antalet månader med tak i en rad; varje belopp
+// kommer ur svaret och läses med oreFromResponse.
+
+// En tabellrad i rapportkortet. Sex celler, i kolumnrubrikernas ordning i
+// index.html.
+//
+// Taket är slutmånadens tak, alltså det sista elementet i budgetPerMonthOre
+// (beslut F1), och Över taket är "<n> av <m>", där m är antalet månader som har
+// ett tak (beslut F2). "Har ett tak" prövas med Number.isSafeInteger och inte med
+// !== null: ett undefined eller ett NaN ur ett trasigt svar ska ge en tom cell
+// och aldrig texten NaN (LARDOMAR.md 2026-10-10). För income och saving är varje
+// tak null, så båda cellerna blir tomma utan någon gren på kind.
+function reportRow(row) {
+  const tr = document.createElement('tr');
+  tr.className = 'report-row';
+
+  const budgets = Array.isArray(row.budgetPerMonthOre) ? row.budgetPerMonthOre : [];
+  const lastBudget = budgets[budgets.length - 1];
+  const monthsWithBudget = budgets.filter((budget) => Number.isSafeInteger(budget)).length;
+
+  tr.append(
+    cell('report-kind', ITEM_KIND_LABELS[row.kind], 'td'),
+    cell('report-category', CATEGORY_LABELS[row.category], 'td'),
+    cell('report-average', formatSek(oreFromResponse(row.averageOre)), 'td'),
+    cell('report-total', formatSek(oreFromResponse(row.totalOre)), 'td'),
+    cell('report-budget', Number.isSafeInteger(lastBudget) ? formatSek(lastBudget) : '', 'td'),
+    cell('report-over', monthsWithBudget === 0 ? '' : `${row.overBudgetMonths} av ${monthsWithBudget}`, 'td')
+  );
+  return tr;
+}
+
+// Ritar ett 200-svar på GET /api/rapport/<månad>/<count>.
+//
+// Diagrammet är utgifterna per kategori över perioden: bara utgiftsrader, med
+// totalOre som stapelns värde, så att stapeln och kolumnen Summa visar samma tal.
+// largest i svaret läses inte — den väljs bland alla tre slag, och renderChart
+// skalar mot den största utgift som ritas.
+//
+// Perioden och slutmånaden skrivs här och bara här, efter ett 200: markeringen
+// av periodknapparna och nedladdningens adress gäller då den rapport som syns.
+function renderReport(body, count) {
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+
+  const bars = rows
+    .filter((row) => row.kind === EXPENSE)
+    .map((row) => ({ category: row.category, amountOre: oreFromResponse(row.totalOre) }));
+  renderChart(REPORT_CHART, REPORT_CHART_EMPTY, bars);
+
+  REPORT_ROWS.replaceChildren(...rows.map(reportRow));
+  // Båda grenarna, så att en rapport med rader efter en tom tar bort texten.
+  REPORT_EMPTY.textContent = rows.length === 0 ? REPORT_EMPTY_TEXT : '';
+
+  reportCount = count;
+  reportMonth = currentMonth;
+  for (const [period, button] of REPORT_PERIOD_BUTTONS) {
+    button.setAttribute('aria-pressed', period === count ? 'true' : 'false');
+  }
+}
+
+// Hämtar rapporten för currentMonth och count månader bakåt, och ritar kortet
+// eller visar låsraden.
+//
+// 403 är inget fel här, av samma skäl som för sparmålen: det är det normala
+// svaret för en plan utan rapporter, och det skrivs därför aldrig som ett fel.
+// Varje annat svar än 200 och 403 får serverns text i rapportens egen felrad,
+// #report-error, som 200 och 403 tömmer. #month-error rörs aldrig här. Ingen av
+// felvägarna tömmer kortet, rör låsraden eller flyttar markeringen — vyn
+// nollställs aldrig av ett fel.
+async function loadReport(count = reportCount) {
+  let response;
+  try {
+    response = await fetch(`/api/rapport/${currentMonth}/${count}`);
+  } catch {
+    REPORT_ERROR.textContent = GENERAL_ERROR;
+    return;
+  }
+
+  if (sessionExpired(response)) {
+    return;
+  }
+
+  const body = await readJson(response);
+
+  // 403 är det normala svaret för Bas och inget fel, så ett tidigare rapportfel
+  // ska inte stå kvar bredvid låsraden.
+  if (response.status === 403) {
+    REPORT_ERROR.textContent = '';
+    showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body);
+    return;
+  }
+
+  if (response.status !== 200) {
+    REPORT_ERROR.textContent = generalText(body);
+    return;
+  }
+
+  REPORT_ERROR.textContent = '';
+  renderReport(body, count);
+  showCard(REPORT_CARD, REPORT_LOCKED);
+}
+
+// Den enda vägen att hämta om månaden efter start: månaden först, därefter
+// rapporten för samma månad. En ändring av en post eller ett tak ändrar
+// rapportens tal, och ett kort som visar de gamla talen bredvid en lista med de
+// nya är det fel totalerna rättades för (LARDOMAR.md 2026-09-22).
+async function loadMonthAndReport() {
+  await loadMonth();
+  await loadReport();
+}
+
+// Klick på en periodknapp. Knappen spärras under anropet, samma regel som varje
+// annan knapp som skickar ett anrop.
+async function changeReportPeriod(count, button) {
+  button.disabled = true;
+  try {
+    await loadReport(count);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// Hämta som CSV. Filen hämtas med fetch och sparas genom en Blob och ett
+// <a download> som app.js skapar — aldrig genom en länk till API-vägen, som hade
+// kringgått fetch, gett 404 i demon och öppnat ett 403 som JSON i en flik.
+//
+// Adressen gäller rapporten som SYNS, reportMonth och reportCount, och inte
+// currentMonth: ett misslyckat månadsbyte kan ha flyttat currentMonth utan att
+// kortet följde med.
+//
+// Kroppen läses med blob() och aldrig med text(): filen ska nå disken byte för
+// byte som servern skrev den, och avkodningen i text() tar bort den inledande BOM
+// som Excel behöver. Filnamnet byggs med reportFileName, samma export som servern
+// sätter Content-Disposition med; huvudet läses inte här.
+//
+// Objekt-URL:en återkallas inte: ett återkallande direkt efter click() kan
+// avbryta nedladdningen i en webbläsare som läser adressen asynkront.
+async function downloadReport(button) {
+  button.disabled = true;
+  try {
+    let response;
+    try {
+      response = await fetch(`/api/rapport/${reportMonth}/${reportCount}/csv`);
+    } catch {
+      REPORT_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    if (sessionExpired(response)) {
+      return;
+    }
+
+    if (response.status !== 200) {
+      const body = await readJson(response);
+      if (response.status === 403) {
+        REPORT_ERROR.textContent = '';
+        showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body);
+        return;
+      }
+      REPORT_ERROR.textContent = generalText(body);
+      return;
+    }
+
+    let blob;
+    try {
+      blob = await response.blob();
+    } catch {
+      REPORT_ERROR.textContent = GENERAL_ERROR;
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = reportFileName(reportMonth);
+    link.click();
+    // En lyckad nedladdning tar bort ett tidigare rapportfel.
+    REPORT_ERROR.textContent = '';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 // Sparmålsformuläret [steg 4]: namn, målbelopp och ett valfritt slutdatum. Egna
@@ -1251,7 +1492,7 @@ function renderMonth(body) {
   const items = Array.isArray(body.items) ? body.items : [];
   renderTotals(body.totals ?? {});
   renderLists(items);
-  renderChart(items);
+  renderChart(CHART, CHART_EMPTY, expensesByCategory(items));
   // budgets står i svaret sedan steg 2. Ett 200 utan fältet ger ett tomt kort i
   // stället för ett kast, samma regel som items ovan.
   renderBudgets(Array.isArray(body.budgets) ? body.budgets : []);
@@ -1340,7 +1581,7 @@ async function changeMonth(month, button) {
   currentMonth = month;
   button.disabled = true;
   try {
-    await loadMonth();
+    await loadMonthAndReport();
   } finally {
     button.disabled = false;
   }
@@ -1522,7 +1763,7 @@ async function submitForm(button) {
 
     if (response.status === okStatus) {
       closeForm();
-      await loadMonth();
+      await loadMonthAndReport();
       return;
     }
 
@@ -1587,7 +1828,7 @@ async function submitBudget(button) {
 
     if (response.status === 200) {
       closeBudgetForm();
-      await loadMonth();
+      await loadMonthAndReport();
       return;
     }
 
@@ -1692,7 +1933,7 @@ async function submitBill(button) {
 // ingen månadspost, så att hämta månaden om hade varit ett anrop utan verkan på
 // det som ändrades. Parametern och inte en andra kopia av funktionen - de två
 // vägarna är samma väg sånär som på vilken lista som ritas om.
-async function sendChange(button, { url, method, body, okStatus, reload = loadMonth }) {
+async function sendChange(button, { url, method, body, okStatus, reload = loadMonthAndReport }) {
   button.disabled = true;
   try {
     let response;
@@ -2165,6 +2406,10 @@ async function loadMe() {
     // månadsbyte hade gett samma svar. Hämtningen avgör dessutom vilket av
     // kortet och låsraden som syns — 403 betyder en plan utan sparmål.
     void loadGoals();
+    // Rapporten hämtas sist [steg 5], så att de fyra första anropen behåller
+    // sina platser. Utan await av samma skäl som de två ovan, och funktionen
+    // hanterar själv varje felväg.
+    void loadReport();
     return;
   }
 
@@ -2297,6 +2542,23 @@ GOAL_CANCEL.addEventListener('click', () => {
 
 SHOW_PLANS.addEventListener('click', () => {
   void showPlan(SHOW_PLANS);
+});
+
+// Rapportkortets knappar [steg 5]. Se planer i rapportens låsrad går genom samma
+// hanterare som sparmålens, showPlan. Varje periodknapp hämtar sin period, och
+// Hämta som CSV laddar ned den rapport som syns.
+REPORT_SHOW_PLANS.addEventListener('click', () => {
+  void showPlan(REPORT_SHOW_PLANS);
+});
+
+for (const [count, button] of REPORT_PERIOD_BUTTONS) {
+  button.addEventListener('click', () => {
+    void changeReportPeriod(count, button);
+  });
+}
+
+REPORT_DOWNLOAD.addEventListener('click', () => {
+  void downloadReport(REPORT_DOWNLOAD);
 });
 
 GOAL_FORM.addEventListener('submit', (event) => {

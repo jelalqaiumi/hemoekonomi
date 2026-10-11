@@ -47,6 +47,13 @@ const FROZEN_DAY_SPECIFIER = `'${new URL('./frozen-dates.js', import.meta.url).h
 // instanser — och inte om den nyckel som råkade ligga närmast.
 let appLaddad = false;
 
+// Förvalet för loadApp:s createObjectURL. Ett fall som inte bett om en attrapp
+// och ändå når en nedladdning fälls här, i stället för att Nodes egen
+// URL.createObjectURL tyst ger en adress.
+function forvaldCreateObjectURL() {
+  throw new Error('createObjectURL anropades utan attrapp');
+}
+
 class FakeElement {
   constructor(tagName, id = '') {
     this.tagName = tagName;
@@ -432,6 +439,37 @@ export function createDom() {
   );
   monthView.append(goalLocked);
 
+  // Rapportkortet och dess låsrad [steg 5], i index.html:s ordning: direkt efter
+  // sparmålens låsrad och före diagramkortet. Båda bär hidden från början, precis
+  // som index.html skriver attributet. Periodknapparna bär aria-pressed="false"
+  // från början av samma skäl: app.js sätter markeringen först när ett svar är
+  // 200.
+  //
+  // Varje nytt id i index.html betyder ett nytt FakeElement här: testfallet som
+  // jämför de två listorna fäller ett glömt element.
+  const reportCard = skapa('section', 'report-card', { className: 'card', hidden: true });
+  for (const count of [3, 6, 12]) {
+    const knappen = skapa('button', `report-period-${count}`, { type: 'button', className: 'secondary', textContent: `${count} mån` });
+    knappen.setAttribute('aria-pressed', 'false');
+    reportCard.append(knappen);
+  }
+  reportCard.append(
+    skapa('div', 'report-chart', { className: 'chart' }),
+    skapa('p', 'report-chart-empty', { className: 'empty-state' }),
+    skapa('tbody', 'report-rows'),
+    skapa('p', 'report-empty', { className: 'empty-state' }),
+    skapa('button', 'report-download', { type: 'button', className: 'secondary', textContent: 'Hämta som CSV' })
+  );
+  monthView.append(reportCard);
+  const reportLocked = skapa('section', 'report-locked', { className: 'card', hidden: true });
+  reportLocked.append(
+    skapa('span', 'report-locked-text'),
+    skapa('button', 'report-show-plans', { type: 'button', className: 'secondary', textContent: 'Se planer' })
+  );
+  monthView.append(reportLocked);
+  // Rapportens felrad, utanför båda sektionerna precis som i index.html.
+  monthView.append(skapa('p', 'report-error', { className: 'form-error' }));
+
   monthView.append(
     skapa('div', 'chart', { className: 'chart' }),
     skapa('p', 'chart-empty', { className: 'empty-state' }),
@@ -470,13 +508,27 @@ export function createDom() {
     skapa('p', 'plan-error', { className: 'form-error' })
   );
 
+  // Varje klick på en länk app.js skapar [steg 5], i tur och ordning, som
+  // { href, download }. Nedladdningen av rapporten är det enda ställe app.js
+  // skapar ett a-element, och klicket är det enda som visar vilken fil
+  // webbläsaren hade sparat.
+  const klick = [];
+
   const document = {
     querySelector(selector) {
       assert.equal(selector.startsWith('#'), true, `DOM-attrappen stöder inte selektorn ${selector}`);
       return registry.get(selector.slice(1)) ?? null;
     },
     createElement(tagName) {
-      return new FakeElement(tagName, '');
+      const element = new FakeElement(tagName, '');
+      if (tagName === 'a') {
+        element.href = '';
+        element.download = '';
+        element.click = () => {
+          klick.push({ href: element.href, download: element.download });
+        };
+      }
+      return element;
     },
     // Diagrammet byggs med createElementNS: document.createElement('svg') ger i
     // webbläsaren ett HTML-element som inte ritas som en SVG, så namnrymden är
@@ -491,6 +543,7 @@ export function createDom() {
 
   return {
     document,
+    klick,
     form,
     loginView,
     monthView,
@@ -520,6 +573,10 @@ export async function idsFranIndexHtml() {
 export function createFetch(plan) {
   const anrop = [];
 
+  // Svarsobjektet har ingen text() [steg 5]: app.js ska läsa CSV-filen med
+  // blob(), och ett response.text() ska kasta i testet i stället för att passera
+  // (ARKITEKTUR.md, "Nedladdningen"). blob() ger planens Blob, och för ett svar
+  // utan en avvisar den med TypeError, precis som när kroppen inte går att läsa.
   const svarsobjekt = (svar) => ({
     status: svar.status,
     json: async () => {
@@ -529,6 +586,12 @@ export function createFetch(plan) {
         throw new SyntaxError('Unexpected token in JSON');
       }
       return svar.json;
+    },
+    blob: async () => {
+      if (!(svar.blob instanceof Blob)) {
+        throw new TypeError('svaret har ingen Blob');
+      }
+      return svar.blob;
     }
   });
 
@@ -579,7 +642,12 @@ export async function flush(varv = 50) {
 //
 // Returvärdet bär modulen och bytDag, den väg ett testfall sätter en annan dag
 // mitt i ett fall utan att självt importera hjälpfilen.
-export async function loadApp(t, { document, fetch, idag }) {
+//
+// createObjectURL [steg 5] sätts som URL.createObjectURL före importen. Förvalet
+// kastar, så att ett fall som inte väntar sig en nedladdning fälls av en.
+// Bara den statiska metoden byts, aldrig globalThis.URL: laddaren själv och
+// testfilerna använder new URL(...).
+export async function loadApp(t, { document, fetch, idag, createObjectURL = forvaldCreateObjectURL }) {
   // Prövas innan något tillstånd rörs: varken globalThis, laddarens dag eller
   // en after-hook får hinna ändras av ett anrop som ska avvisas.
   if (appLaddad) {
@@ -614,6 +682,7 @@ export async function loadApp(t, { document, fetch, idag }) {
 
   const tidigareDocument = globalThis.document;
   const tidigareFetch = globalThis.fetch;
+  const tidigareCreateObjectURL = URL.createObjectURL;
   const aterstallDag = snapshotFrozenDay();
   // Ordningen är bindande (ARKITEKTUR.md, krav 8): flaggan prövas först, hooken
   // registreras därefter, och flaggan sätts sist. En flagga som sätts före
@@ -624,11 +693,15 @@ export async function loadApp(t, { document, fetch, idag }) {
     appLaddad = false;
     globalThis.document = tidigareDocument;
     globalThis.fetch = tidigareFetch;
+    // I samma hook som document, fetch och dagen och inte i en egen: node:test
+    // kör after-hookar i registreringsordning (LARDOMAR.md 2026-09-22).
+    URL.createObjectURL = tidigareCreateObjectURL;
     aterstallDag();
   });
   appLaddad = true;
   globalThis.document = document;
   globalThis.fetch = fetch;
+  URL.createObjectURL = createObjectURL;
   // Dagen sätts före importen: app.js har ett await på toppnivå som renderar
   // kortet redan under laddningen.
   setFrozenDay(idag);

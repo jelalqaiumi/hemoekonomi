@@ -3528,3 +3528,379 @@ den läsas om mot den nya omgivningen innan den klistras in: en mening som
 beskriver ett reguljärt uttryck beskriver inte en lista med strängar. Innehåller
 meningen själv en escape ska raden köras genom `cat -A` efter kopieringen, så att
 en escape som tappats bort syns.
+
+### 2026-10-10 — test: U+FEFF står rått i två nya testfiler, under kommentarer som säger att tecknet står som escape
+**Vad gick fel:** Återfall av posterna 2026-09-11, 2026-09-14 (U+2013 stod rått)
+och 2026-09-23 (kommentaren påstår escaper). `tests/report-csv.test.js` rad 30–32
+lyder "U+FEFF BYTE ORDER MARK och U+000D U+000A, skrivna som escaper. Ett rått
+tecken här går inte att se i en genomläsning" och följs av
+`const BOM = '<rått U+FEFF>';`. `tests/report-api.test.js` rad 621–624 säger
+"Escaperna står för tecken som inte syns" ovanför rubrikraden, som börjar med
+samma råa tecken, och rad 659 i samma fil har det också. Sökningen
+`grep -rn $'\xef\xbb\xbf' src tests`, rörledd genom `cat -v`, ger `M-oM-;M-?` på
+exakt de tre raderna, och de två filerna har noll förekomster av escapen
+(`grep -c 'uFEFF'` ger `0` för båda). Del 1:s `tests/csv.test.js` skriver samma
+tecken som escape (`grep -c` ger `1`), så del 3 gick bakåt jämfört med sin egen
+förlaga.
+**Varför:** Sökkommandot som posten 2026-09-14 föreskriver räknar upp tre
+kodpunkter (U+00A0, U+2013, U+2212), och U+FEFF var inte en av dem. Regeln gällde
+"varje icke-ASCII-tecken", men kontrollen var skriven för en sluten lista, så det
+fjärde osynliga tecken projektet använder hamnade utanför. Kommentaren kopierades
+från förlagan och står nu ovanför ett värde som inte längre är en escape. Det är
+samma glidning som posten 2026-09-23 beskriver, och den syns inte i en
+genomläsning.
+**Regel framåt:** Sök efter osynliga tecken med ett mönster som täcker *alla*
+tecken utanför ASCII i strängliteraler, inte med en lista över kodpunkter: kör
+`grep -nP "'[^']*[^\x00-\x7F][^']*'" <ändrade filer>` och läs varje träff.
+Bokstäver i svenska ord står kvar, medan U+FEFF, U+00A0, U+2013, U+2212, U+200B
+och varje annat tecken som inte syns byts mot escapen. Lägg dessutom till
+`\xef\xbb\xbf` i alterneringen från posten 2026-09-14 och kör den innan paketet
+lämnas vidare. Konkret här: `const BOM = '\uFEFF';` i `tests/report-csv.test.js`
+och `'\uFEFF'` i `tests/report-api.test.js` rad 624 och 659.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-10 — test: textspärren mot talen 1 och 36 i reports.js går förbi med 3 * 12
+**Vad gick fel:** Testet `talen 1 och 36 står aldrig skrivna som tak i
+src/server/reports.js` (`tests/report-api.test.js` rad 256–269) läser källtexten
+med tre villkor: att `\b36\b` inte finns, att `count` inte jämförs med en siffra,
+och en `includes` av den exakta texten
+`count < OVERVIEW_MIN_MONTHS || count > OVERVIEW_MAX_MONTHS`. Mutationen kördes i
+en kopia av trädet: villkoret byttes mot `count > TAK` med `const TAK = 3 * 12;`,
+och den exakta texten flyttades till en kommentar på raden ovanför. Hela sviten
+gav då `ℹ tests 1098`, `ℹ fail 0` och `EXIT=0`. Talet står alltså skrivet i
+`reports.js` igen, nu i en annan stavning, utan att något test faller. Inget
+beteendetest kan märka det, eftersom båda stavningarna ger samma tal.
+**Varför:** Spärren söker efter *stavningar* av talet (`36`, `count > <siffra>`)
+i stället för att kräva *bindningen*, alltså att jämförelsen läser
+`OVERVIEW_MAX_MONTHS`. `includes`-kontrollen matchar texten var den än står, även
+i en kommentar. Det är samma grundorsak som posterna 2026-09-07
+(`saveEntries as X`) och 2026-09-12 (de fetstilta paketmarkörerna): en spärr som
+bara har prövats med de stavningar den själv är skriven för.
+**Regel framåt:** En textspärr som ska kräva att ett namn används ska ta bort
+kommentarerna innan den matchar, med
+`källa.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')`, och därefter
+kräva att jämförelsen står med namnet, inte bara att en siffra saknas. Innan
+spärren räknas som skriven ska den ha prövats med minst tre stavningar: literalen
+`36`, ett uttryck som `3 * 12` och en lokal konstant med kravtexten kvar i en
+kommentar. Varje stavning ska ge `EXIT=1`, och kryssraden klistras in i
+redovisningen.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-10 — test: tre delvillkor i rapportens nya kod överlever mutation
+**Vad gick fel:** Tre mutationer kördes en i taget i en kopia av trädet, och var
+och en gav `ℹ tests 1098`, `ℹ fail 0` och `EXIT=0` på hela sviten:
+(1) `budgetOre === null ? { text: EMPTY } : { amountOre: budgetOre }` i
+`src/core/report-csv.js` (kolumnen Tak) bytt mot `budgetOre == null`;
+(2) samma byte i villkoret för kolumnen Över tak;
+(3) `if (req.method === 'GET')` före `handleReadReport` i `src/server/api.js`
+bytt mot `if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'DELETE')`.
+Med (1) och (2) blir ett tak som är `undefined` en tyst tom cell i filen. Med
+originalkoden kastar `toCsv` i stället
+`csvAmountSek kräver ett säkert heltal öre.`, vilket är det testet
+`(RA30) ett belopp som inte är ett öretal släpps vidare och fälls av csvAmountSek`
+säger att filen gör — men testet prövar bara kolumnen Belopp, aldrig kolumnen
+Tak. Med (3) får `PATCH` och `HEAD` mot rapportvägarna `200` i stället för `405`,
+eftersom 405-testet bara skickar `POST`, `PUT` och `DELETE`. Däremot prövar
+`tests/bill-api.test.js` rad 360 och `tests/plan-api.test.js` rad 344 `PATCH`.
+**Varför:** Byggarens 78 mutationer prövade värden och felmeddelanden, inte de
+villkor som skiljer `null` från `undefined` eller `GET` från alla andra metoder.
+Testdatan för kolumnen Tak innehöll bara `null` och giltiga tal, och testet för
+metoderna bara de tre som en annan väg i samma fil använder. Tionde gången ett
+delvillkor i projektet visar sig sakna skydd av något test.
+**Regel framåt:** Ett villkor som skiljer ut ett *enda* värde (`=== null`,
+`=== 'GET'`) ska ha ett testfall med det närliggande värde villkoret *inte* ska
+släppa förbi: `undefined` för `=== null`, `PATCH` och `HEAD` för `=== 'GET'`.
+Konkret ska `(RA30)`-fallet för skadade tal också köras med värden i kolumnen Tak
+(`budgetPerMonthOre: [undefined]` och `[NaN]`), och 405-testet för rapportvägarna
+ska ha `PATCH` och `HEAD` i metodlistan. Mutationerna `=== null` → `== null` och
+`=== 'GET'` → "allt utom POST, PUT och DELETE" ska ge `EXIT=1` med kryssraden
+inklistrad.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-10 — process: två val på rapportvägen byggdes och låstes i test utan att ARKITEKTUR.md avgjort dem
+**Vad gick fel:** `ARKITEKTUR.md` rad 10697–10715 säger att `<N>` följer
+`segmentAfter`-regeln, "ingen trimning, ingen avkodning och ingen normalisering —
+ett värde som inte matchar exakt finns inte", men tar inte ställning till
+inledande nollor. `reportFromPath` i `src/server/api.js` läser `N` med `Number()`
+efter `/^[0-9]+$/`, så `/api/rapport/2026-10/012` och `/api/rapport/2026-10/0012`
+ger samma `200` med tolv månader som `/12`, medan `/00` ger `400`. Testet
+`(RA18) gränserna 1 och 36 och ett tal med inledande nolla ger 200` i
+`tests/report-api.test.js` rad 477–488 gör det valet bindande. På samma sätt säger
+tabellen bara "`200` med rapporten", medan `handleReadReport` svarar
+`{ months, rows, largest }`. Den kroppen är det kontrakt som gränssnittet i punkt
+4 ska byggas mot, och den står inte i dokumentet. Byggaren redovisade båda valen
+öppet men byggde dem ändå, trots att `CLAUDE.md` säger "ändra `ARKITEKTUR.md`
+först, bygg sedan".
+**Varför:** Byggaren lämnade tillbaka punkt 4 eftersom specen hade hål, men
+bedömde att hålen i punkt 3 var små nog att fylla själv. Ett test som låser ett
+val som dokumentet inte gjort blir i praktiken ett andra facit: nästa arkitekt
+som skriver regeln möts av ett grönt test som kanske säger emot den. Det är samma
+ordningsfel som posten 2026-09-14 om testfall som byggdes utan sin rad i
+`ARKITEKTUR.md`.
+**Regel framåt:** Hittar byggaren ett fall som specen inte avgör — inledande
+nollor, svarskroppens fält, en statuskod — ska fallet lämnas tillbaka till
+arkitekten innan något test skrivs för det, precis som punkt 4 lämnades tillbaka.
+Ett "eget val" i redovisningen räknas som ett öppet hål, inte som ett beslut.
+Konkret ska arkitekten i `ARKITEKTUR.md` avgöra om `/012` ger `200` eller `404`
+(`segmentAfter`-principen talar för `404`, med mönstret `/^(0|[1-9][0-9]*)$/`)
+och skriva ut 200-kroppen på JSON-vägen som `{ months, rows, largest }`. Först
+därefter får testet på rad 477–488 stå kvar eller skrivas om.
+
+### 2026-10-10 — dokumentation: spärrtabellen för report-csv.js skriver rad 5 och 6 annorlunda än koden
+**Vad gick fel:** Tabellen "Ingångsspärrar i `src/core/report-csv.js`" i
+`ARKITEKTUR.md` rad 10818–10825 har kolumnrubriken "Villkor, skrivet som i
+koden" och anger rad 5 som
+`report.rows[i].perMonthOre.length !== report.months.length`. Koden i
+`checkReport` i `src/core/report-csv.js` lyder
+`!Array.isArray(report.rows[i].perMonthOre) || report.rows[i].perMonthOre.length !== report.months.length`,
+och rad 6 skiljer sig på samma sätt. Kommandot
+`sed -n 10816,10826p ARKITEKTUR.md | grep -c "Array.isArray(report.rows\[i\].perMonthOre)"`
+ger `0`. Stycket under tabellen (rad 10833–10836) kräver själv `Array.isArray`
+före längden, så filen ger två svar på hur villkoret ser ut. Koden följer
+stycket, så det är tabellen som är fel. Delvillkoret bär: mutationen som tar bort
+`Array.isArray` ur rad 5 ger `EXIT=1` med två fallerande testfall.
+**Varför:** Kravet på `Array.isArray` lades till som ett stycke under tabellen
+och inte på tabellraden. Det är samma fel som posterna 2026-08-23 (två facit i
+samma fil) och 2026-09-02 (`totalYearlyOre`-tabellen) beskriver. Tionde gången
+`ARKITEKTUR.md` innehåller ett påstående om koden som koden inte uppfyller.
+**Regel framåt:** Läggs ett delvillkor till i en spärrtabell med rubriken
+"skrivet som i koden" ska det skrivas *på tabellraden*, aldrig i ett stycke under
+tabellen. Kontrollen är mekanisk och körs efter varje ändring av tabellen: för
+varje rad, kör `grep -cF "<villkoret i tabellen>" <modulen>` och kräv minst `1`.
+Ett villkor som i koden sträcker sig över flera rader jämförs efter att
+radbrytningar och indrag normaliserats bort.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — dokumentation: steg 5 lämnades vidare med sju "inte körd"- och "Byggaren ska"-rader som redan är utförda
+**Vad gick fel:** Återfall av posten 2026-09-07 ("fem 'inte kört av
+arkitekten'-markörer står kvar i ARKITEKTUR.md fast körningen är gjord").
+Beslutsloggen för steg 5 del 3 och avsnittet "Nedladdningen" säger fortfarande
+att fyra saker är okörda eller ska göras: rad 11251 ("arkitekten har ingen
+körning bakom det; byggaren kör ..."), rad 11582–11583 ("Läsningen är inte körd
+... **Byggaren ska** ... asserta längden"), rad 11612 och 11623 ("**Byggaren
+ska** låta (95):s andra argument ..." och "Talen 14 till 17 är arkitektens
+räkning ..., inte körda"), rad 11635 ("**byggaren ska** döpa om dem") och rad
+11674–11675 ("arkitektens läsning och inte körd: **byggaren ska** pröva det").
+Alla fyra är utförda och stämmer: `tests/app.test.js` rad 4675, 4684, 4692 och
+4703 asserterar `anrop.length` 8, 11, 14 och 17 med de föreskrivna
+meddelandena; `(D15)` står på `tests/demo.test.js` rad 1729 och `(RA37)` på
+`tests/report-api.test.js` rad 382; granskarens körning av
+`new Response(String.fromCharCode(0xFEFF) + 'a').text()` gav längden `1`, alltså
+att `text()` tar bort BOM:en; och `grep -rnI $'\xef\xbb\xbf'` mot en `.js`-fil i
+scratchpad vars första rad börjar med de tre byten gav en träffrad. Utfallen
+står ingenstans i `ARKITEKTUR.md`.
+**Varför:** Rättningarna skrevs "innan granskaren kör", som order i presens, och
+samma mekanism som posterna 2026-09-04 (`Kvar i paket N`) och 2026-09-07 ("I
+dagens", "inte kört av arkitekten") beskriver gjorde dem falska i samma stund
+byggaren utförde dem. Beslutsloggen säger sedan 2026-09-07 att mekanismen "inte
+kört av arkitekten" avskaffades, men den kom tillbaka med andra ord ("inte
+körd", "arkitektens räkning", "ingen körning bakom det"). Den sökning posten
+2026-09-07 föreskriver, `grep -n "inte kört\|inte körd\|arkitektens läsning"`,
+träffar bara en del av raderna, eftersom den är skriven för de stavningar som
+fanns då.
+**Regel framåt:** Innan ett paket lämnas vidare kör arkitekten
+`awk 'NR>=<avsnittets första rad>' ARKITEKTUR.md | grep -nE "inte kör(t|d|da)|arkitektens (läsning|räkning)|ingen körning|[Bb]yggaren (ska|kör)"`
+och skriver om varje träff i dåtid med det körda utfallet och testets namn
+("Körd i steg 5 del 3: `<kommando>` gav `<utfall>`, testfall `<namn>`"), eller
+klistrar in körningen som visar att frågan fortfarande är öppen. Byggaren
+redovisar utfallet av varje "Byggaren ska"-rad med radnumret i `ARKITEKTUR.md`,
+så att arkitekten vet vilka rader som ska skrivas om. Ett utfall som bara står i
+en testfil eller i en logg i scratchpad räknas inte som redovisat.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — test: återställningen av URL.createObjectURL i loadApp skyddas av inget test
+**Vad gick fel:** Återfall av posten 2026-09-22 ("laddarens återställning av den
+frusna dagen ..."), vars regel säger att ett krav på att "återställa det
+tidigare värdet" räknas som oprövat tills det har körts. `ARKITEKTUR.md` rad
+11275–11279 kräver att `URL.createObjectURL` återställs "i **samma**
+`t.after`-hook som `document`, `fetch` och dagen". Mutationen i en kopia av
+trädet, där raden `URL.createObjectURL = tidigareCreateObjectURL;` i
+`tests/helpers/dom.js` rad 696 togs bort, gav `node --test tests/app.test.js`
+med `fail 0` och `EXIT=0`. Testet `(33) laddarens after-hook lämnar tillbaka
+globalThis efter ett avvisat andra anrop` (`tests/app.test.js` rad 1888–1895)
+prövar `globalThis.document` och `globalThis.fetch` men inte den tredje global
+laddaren nu byter. Förvalet är lika oskyddat: att byta
+`throw new Error('createObjectURL anropades utan attrapp')` på
+`tests/helpers/dom.js` rad 54 mot `return 'blob:x'` gav också `fail 0` och
+`EXIT=0`.
+**Varför:** Laddaren fick en ny global, men testet som prövar återställningen
+räknar upp sina globaler vid namn och lästes inte om när listan växte. Det är
+samma form som posten 2026-09-07 om `writeQueue`, där ett nytt namn söktes upp i
+koden men inte i det som beskriver koden. Specen säger *var* återställningen ska
+stå, men inte att den ska ha ett testfall, och mutationslistan för steg 5 har
+ingen rad för attrappen.
+**Regel framåt:** Varje global som `loadApp` sätter ska stå i testet för
+after-hooken. Konkret ska `(33) laddarens after-hook ...` också kräva
+`URL.createObjectURL === CREATE_OBJECT_URL_FORE_TESTERNA`, med konstanten läst
+överst i filen på samma sätt som `FETCH_FORE_TESTERNA`, och mutationen som tar
+bort `URL.createObjectURL = tidigareCreateObjectURL;` ska ge `EXIT=1` med den
+kryssraden. Förvalet ska ha ett eget fall: ett test som klickar på
+`report-download` utan att skicka `createObjectURL` ska få den kastade texten.
+När en global läggs till i laddaren ska raderna med `tidigare` i
+`tests/helpers/dom.js` och testet för after-hooken läsas mot varandra, och varje
+global ska finnas i båda.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — test: nedladdningen kan läsa förvalsperioden i stället för reportCount utan att något test faller
+**Vad gick fel:** Återfall av posten 2026-09-16 ("datumkolumnen i kortet
+Kommande dragningar kan bytas mot startDate"). `downloadReport` i
+`src/web/app.js` rad 1290 hämtar
+`` `/api/rapport/${reportMonth}/${reportCount}/csv` ``, och specens (97) kräver
+just `<reportCount>`. Mutationen `${reportCount}` → `${REPORT_DEFAULT_PERIOD}`
+gav `node --test tests/app.test.js` med `fail 0` och `EXIT=0`. Det enda
+testfallet som laddar ned, `(97)` (`tests/app.test.js` rad 4780), gör det utan
+att först byta period, så `reportCount` är `12`, alltså lika med förvalet, i all
+testdata. För användaren betyder mutationen att den som väljer `3 mån` och
+klickar på `Hämta som CSV` får en fil med tolv månader.
+**Varför:** Testet prövar *vilken månad* nedladdningen gäller (efter ett
+misslyckat månadsbyte), men inte *vilken period*, och perioden har samma värde
+som förvalet i varje scenario. Två fält som är lika i all testdata går inte att
+skilja åt, vilket är regeln i posten 2026-09-16, och den lästes inte mot (97).
+**Regel framåt:** Ett testfall som prövar en adress ska byta varje led i
+adressen bort från sitt förval innan anropet görs. För (97) betyder det att
+klicka på `report-period-3`, svara `200` och därefter ladda ned, och kräva
+`` `${rapportvag(MANAD, 3)}/csv` ``. Mutationen `${reportCount}` →
+`${REPORT_DEFAULT_PERIOD}` i `downloadReport` ska stå i (97):s mutationskolumn
+och ge `EXIT=1` med (97):s kryssrad.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — test: kolumnrubrikerna i F2 kan skrivas om eller byta plats utan att något test faller
+**Vad gick fel:** Rubrikerna `Slag`, `Kategori`, `Snitt per månad`, `Summa`,
+`Tak` och `Över taket` är användarens beslut F2 och står i `src/web/index.html`
+rad 472. Ingen testfil innehåller rubriken `Snitt per månad` (sökningen över
+`tests` ger noll träffar). Två mutationer kördes i en kopia av trädet mot hela
+sviten: (a) de fyra sista rubrikerna bytta mot `Medel`, `Totalt`, `Budget` och
+`Över` gav `fail 0` och `EXIT=0`; (b) `<th>Slag</th><th>Kategori</th>` bytt mot
+`<th>Kategori</th><th>Slag</th>` gav också `fail 0` och `EXIT=0`. Med (b) står
+`Inkomst` och `Utgift` under rubriken `Kategori` och kategorinamnen under `Slag`,
+eftersom `reportRow` skriver cellerna i en fast ordning som inget kopplar till
+rubrikernas ordning.
+**Varför:** Kravlistans (90) räknar upp uppmärkningen som ska stå i `index.html`
+(id:n, `hidden`, knapparnas etiketter) men inte tabellhuvudet. (92) prövar
+cellernas klasser och ordning i attrappen, och attrappen har inget `thead`. Av
+F1 till F4 är rubrikerna det enda som saknar testfall, och de är också det enda
+som binder ihop två filer: ordningen i `index.html` och ordningen i `reportRow`.
+**Regel framåt:** Varje användarbeslut (F-punkt) ska ha minst ett testfall som
+kräver dess text ordagrant, och mutationen som ändrar texten ska stå i punktens
+mutationskolumn. Konkret ska (90) läsa `index.html` och kräva
+`<th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th>`
+ordagrant, och ordningen ska kopplas till cellerna genom en lista
+`[['Slag', 'report-kind'], ['Kategori', 'report-category'], ...]` som testet
+prövar mot både `index.html` och klasserna i (92). Mutationerna (a) och (b) ovan
+ska ge `EXIT=1` med (90):s kryssrad.
+
+### 2026-10-11 — gränssnitt: ett rapportfel står kvar i #month-error efter att ett nytt försök lyckats
+**Vad gick fel:** `loadReport` och `downloadReport` i `src/web/app.js` skriver
+serverns text i `#month-error` vid ett misslyckat svar (rad 1242 och 1306), men
+ingen av dem tömmer elementet vid ett senare `200` (rad 1246 anropar bara
+`renderReport` och sedan `showCard`). Scenariot kördes med den incheckade
+DOM-attrappen i en kopia av trädet. Ett klick på `6 mån` som svarade `500` gav
+`#month-error = "Det gick inte att läsa dina uppgifter. Försök igen."` och fyra
+rader. Ett därpå följande klick på `3 mån` som svarade `200` gav en rad och
+markeringen `["true","false","false"]`, men **samma text stod kvar i
+`#month-error`**. Användaren gör det texten ber om, försöker igen och lyckas,
+men ser fortfarande beskedet om att det misslyckades bredvid den nya rapporten.
+Texten försvinner först vid nästa lyckade hämtning av *månaden*.
+**Varför:** `#month-error` delas av månadens och rapportens hämtningar.
+Svarstabellen för `loadReport` (`ARKITEKTUR.md` rad 11104–11110) har en rad per
+svar som säger vad som *skrivs* vid ett fel, men ingen rad för vad som händer
+med elementet vid `200`. Månadens regel ("töms vid varje lyckad hämtning, och
+bara då") gäller månaden, och ingen tog ställning till om en lyckad rapport får
+tömma ett fel som kan ha kommit från månaden. Det är det tredje tillståndet som
+posten 2026-09-10 ("totalrutan och tomläget har ett tredje tillstånd som specen
+inte nämner") kräver en rad för: ett element som bara skrivs på felvägen.
+**Regel framåt:** När ett element delas av flera hämtningar ska specen ange, för
+varje hämtning, vad ett `200` gör med elementet och vems fel det får tömma.
+Arkitekten avgör det i svarstabellen för `loadReport` och i stegen för
+`downloadReport`. Två möjliga lösningar är att rapportens fel får ett eget
+element i kortet, eller att `#month-error` töms vid `200` bara om texten skrevs
+av rapporten. Testfallet är obligatoriskt: ett misslyckat periodbyte följt av
+ett lyckat ska asserta `#month-error` efter det andra svaret, och likadant en
+misslyckad nedladdning följd av en lyckad. Varje gång ett delat element får en
+ny `textContent`-tilldelning ska alla tilldelningar av det elementet räknas upp
+i specen, med vilken hämtning som skriver och vilken som tömmer.
+
+### 2026-10-11 — test: "#month-error skrivs och töms aldrig av rapporten" prövas bara för loadReports 200, inte för 403 och nedladdningen
+**Vad gick fel:** Återfall av posten 2026-09-23 ("de två 'oförändrad'-raderna i
+facittabellen ... skyddas av inget test"). `ARKITEKTUR.md` rad 11139 slår fast
+att `#month-error` "skrivs och töms aldrig av `loadReport` eller
+`downloadReport`", och rad 11152 att "En hämtning som pågår tömmer inte
+`#report-error`". Fyra mutationer som bryter de två meningarna kördes en i taget
+i en kopia av trädet, och alla gav `node --test tests/app.test.js` med
+`fail 0` och `EXIT=0`: (1) `MONTH_ERROR.textContent = '';` tillagt i
+`loadReport`s gren för `403` (`src/web/app.js` rad 1246); (2) samma rad
+tillagd efter `link.click()` i `downloadReport` (rad 1335); (3)
+`REPORT_ERROR.textContent = '';` först i `loadReport`, före `fetch`; (4) samma
+rad först i `downloadReport`. Mutation (1) träffar den vanligaste vägen i appen:
+en Bas-användare får alltid `403` på rapporten, och vid start hämtas rapporten
+sist, så ett `500` från räkningarnas eller sparmålens väg försvinner från
+skärmen så snart rapportens `403` kommer. Det är precis den risk
+beslutsloggen (rad 11741–11746) anger som skäl för `#report-error`, men
+testfallet `(100) ett 200 på rapporten tömmer inte ett fel från räkningarnas väg`
+(`tests/app.test.js` rad 5000) prövar den bara med svaret `200`.
+**Varför:** (100):s mutationskolumn har en rad för varje tilldelning som *finns*
+i koden, och `MONTH_ERROR` i `200`-grenen är den enda "inte tömma"-mutation den
+nämner. Garantin i rad 11139 gäller däremot varje gren i två funktioner. Att
+`#month-error` lämnas orört är ett utfall av typen "gör ingenting", och sådana
+utfall fälls bara av en mutation som *inför* handlingen i varje gren, vilket är
+regeln i posten 2026-09-23. Den tillämpades på en gren av fyra.
+**Regel framåt:** En mening som säger att ett element "aldrig" skrivs eller töms
+av en funktion ska ha en mutation per gren i funktionen som inför
+tilldelningen. Testet ska ställa elementet i ett icke-tomt läge före svaret.
+Konkret ska (100)(c) köras med rapportens svar `200` **och** `403`, och ett
+motsvarande fall för nedladdningen (`200` med Blob och `403`) ska kräva att
+räkningarnas text står kvar i `#month-error`. Mening rad 11152 ska ha ett fall
+där ett anrop hänger och `#report-error` asserteras innan svaret kommer, för
+både periodbyte och nedladdning. Mutationerna (1)–(4) ovan ska stå i (100):s
+mutationskolumn och ge `EXIT=1` med (100):s kryssrad.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-11 — test: den nya felraden #report-error kan tappa sin klass och sin role utan att något test faller
+**Vad gick fel:** `ARKITEKTUR.md` rad 11061 gör uppmärkningen
+`<p class="form-error" id="report-error" role="alert"></p>` bindande, och den
+står i `src/web/index.html` rad 491. Två mutationer i en kopia av trädet gav
+båda `node --test tests/app.test.js` med `fail 0` och `EXIT=0`:
+`class="form-error"` bytt mot `class="x"`, och `role="alert"` struket. Med den
+första visas rapportens fel utan felstilen. Med den andra läser en skärmläsare
+inte upp felet. Ingen testfil innehåller `id="report-error"` som uppmärkning,
+och kravlistans (90), som läser `index.html` för rapportens kort, räknar inte
+upp elementet.
+**Varför:** Regeln om statiska klasser i beslutsloggen (rad 11779–11799) gäller
+bara klasser vars selektor "ett paket lägger till i `style.css`". `.form-error`
+fanns före steg 5, så en klass som ett nytt element i steg 5 *använder* faller
+utanför. Regelns eget skäl är att "en omdöpt klass i `index.html` tappar stilen
+lika tyst som en omdöpt klass i `app.js`", och det gäller lika mycket ett nytt
+element med en gammal klass. Regeln går alltså att följa bokstavligt, men den är
+smalare än sitt skäl, vilket posten 2026-09-07 om millisekundförbudet varnar för.
+`role="alert"` är inget klassnamn och omfattas inte av någon regel alls.
+**Regel framåt:** Utlös regeln på *elementet* och inte på selektorn. Varje
+element som ett paket lägger till i `index.html` ska asserteras med sin hela
+öppnande tagg, alltså klass, id och varje attribut som påverkar stil eller
+tillgänglighet (`role`, `aria-*`, `hidden`), i det testfall som läser
+`index.html` för samma kort. Konkret ska (90) kräva
+`<p class="form-error" id="report-error" role="alert"></p>` ordagrant, och de
+två mutationerna ovan ska stå i (90):s mutationskolumn och ge `EXIT=1`.
+
+### 2026-10-11 — dokumentation: rättningen av de okörda ordrarna lade till en ny, som sökmönstret inte fångar
+**Vad gick fel:** Återfall av posten 2026-10-11 ("steg 5 lämnades vidare med sju
+'inte körd'- och 'Byggaren ska'-rader"), i samma omgång som rättade den.
+Beslutsloggen i `ARKITEKTUR.md` rad 11751–11754 säger "Uttrycken
+`REPORT_ERROR.textContent = …` i (88), (96), (98) och (100) finns inte i
+`src/web/app.js` förrän rättningen är byggd; sökningen per mutationsuttryck körs
+efter bygget." Rättningen är byggd: uttrycket står i `src/web/app.js` på rad
+1233, 1246, 1252, 1256, 1303, 1314, 1318, 1326 och 1335. Sökningens utfall står
+inte i dokumentet. Arkitektens egen kontroll, den rubrikförankrade sökningen på
+rad 11725–11727, ger ingen träff på meningen, eftersom den letar efter `inte
+kör(t|d|da)`, `arkitektens (läsning|räkning)`, `ingen körning` och
+`[Bb]yggaren (ska|kör)`. Meningen säger "förrän" och "körs efter bygget".
+**Varför:** Sökmönstret räknar upp stavningar av en order i stället för rollen
+"ett påstående om framtiden som blir falskt när det utförs". Det är samma fel
+som posten 2026-09-12 beskriver om paketmarkörer förankrade i typografi: en
+spärr prövad bara med de stavningar den själv är skriven för.
+**Regel framåt:** Sökningen efter okörda markörer ska också fånga tidsord som
+pekar framåt: lägg till `förrän|körs efter|ska köras|när .* är byggd` i
+alterneringen och läs varje träff. En mening i beslutsloggen får aldrig villkora
+sin sanning på en framtida byggnad ("finns inte förrän ..."). Skriv i stället
+utfallet efter bygget, eller skriv kravet som en rad i kravlistan, vilket
+beslutsloggen själv föreskriver på rad 11733–11736.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.

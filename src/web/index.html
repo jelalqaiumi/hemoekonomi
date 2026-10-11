@@ -450,6 +450,46 @@
             </p>
           </section>
 
+          <!-- Rapportkortet [steg 5]: uppdelningen bakom månadssummorna över en
+               period, med samma diagram som månaden och en tabellrad per slag och
+               kategori. Kortet och låsraden nedan bär hidden från början, av samma
+               skäl som sparmålens: vilket av de två som syns avgörs av svaret på
+               GET /api/rapport, aldrig av en gissning om planen.
+               Låsraden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på
+               båda rapportvägarna, och det är den spärren som håller. -->
+          <section class="card" id="report-card" hidden>
+            <h3>Rapport</h3>
+            <div class="report-periods">
+              <button type="button" class="secondary" id="report-period-3" aria-pressed="false">3 mån</button>
+              <button type="button" class="secondary" id="report-period-6" aria-pressed="false">6 mån</button>
+              <button type="button" class="secondary" id="report-period-12" aria-pressed="false">12 mån</button>
+            </div>
+            <div id="report-chart" class="chart"></div>
+            <p class="empty-state" id="report-chart-empty"></p>
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th>
+                </tr>
+              </thead>
+              <tbody id="report-rows"></tbody>
+            </table>
+            <p class="empty-state" id="report-empty"></p>
+            <button type="button" class="secondary" id="report-download">Hämta som CSV</button>
+          </section>
+          <section class="card" id="report-locked" hidden>
+            <h3>Rapport</h3>
+            <p class="locked-row">
+              <span class="lock-icon" aria-hidden="true">&#x1F512;</span>
+              <span id="report-locked-text"></span>
+              <button type="button" class="secondary" id="report-show-plans">Se planer</button>
+            </p>
+          </section>
+          <!-- Rapportens felrad [steg 5 del 3]: utanför både kortet och låsraden,
+               så att ett fel vid sidladdningen syns fast båda är dolda.
+               #month-error rörs aldrig av rapporten. -->
+          <p class="form-error" id="report-error" role="alert"></p>
+
           <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
                utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
                role="img" och en title, så att den går att läsa med skärmläsare. -->

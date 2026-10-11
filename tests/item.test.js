@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { INTERVALS, checkAmountSek } from '../src/core/entry.js';
-import { ITEM_KINDS, isItemKind, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../src/core/item.js';
+import { ITEM_KINDS, ITEM_KIND_LABELS, isItemKind, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../src/core/item.js';
 
 test('ITEM_KINDS är de tre slagen i tabellens ordning', () => {
   assert.deepEqual([...ITEM_KINDS], ['income', 'expense', 'saving']);
@@ -16,6 +16,25 @@ test('ITEM_KINDS är fryst', () => {
   assert.throws(() => {
     ITEM_KINDS.push('gift');
   }, TypeError);
+});
+
+// (V9) ITEM_KIND_LABELS [steg 5]: nästa nummer i filens egen serie, och inget
+// (RA), enligt kravlistan för tests/report-csv.test.js i ARKITEKTUR.md. Texterna
+// är tabellens under "Posttypen: inkomst, utgift eller sparande", tecken för
+// tecken som ägaren skriver dem. Nycklarna ska vara exakt ITEM_KINDS: en nyckel
+// som saknas ger en tom cell i CSV-filen, och en extra nyckel är ett slag som
+// inte finns.
+test('(V9) ITEM_KIND_LABELS ger det svenska namnet för exakt de tre slagen, och är fryst', () => {
+  assert.deepEqual({ ...ITEM_KIND_LABELS }, { income: 'Inkomst', expense: 'Utgift', saving: 'Sparande' });
+  assert.deepEqual(Object.keys(ITEM_KIND_LABELS), [...ITEM_KINDS]);
+  assert.equal(Object.isFrozen(ITEM_KIND_LABELS), true);
+  assert.throws(() => {
+    ITEM_KIND_LABELS.income = 'Lön';
+  }, TypeError);
+  assert.throws(() => {
+    ITEM_KIND_LABELS.gift = 'Gåva';
+  }, TypeError);
+  assert.equal(ITEM_KIND_LABELS.income, 'Inkomst');
 });
 
 test('isItemKind är true för varje värde i ITEM_KINDS', () => {

@@ -2910,7 +2910,7 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
     | Punkt | Testfall | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
     |---|---|---|
     | (32) | `laddarens byte av dag avvisar en dag som inte finns i kalendern` | `if (!isValidIsoDate(day)) {` → `if (false) {` |
-    | (33) | `ett andra loadApp i samma testfall avvisas`, `ett loadApp i ett underordnat test avvisas` och `laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra anrop` | `if (appLaddad) {` → `if (false) {` |
+    | (33) | `ett andra loadApp i samma testfall avvisas`, `ett loadApp i ett underordnat test avvisas` och `laddarens after-hook lämnar tillbaka globalThis efter ett avvisat andra anrop`; [steg 5 del 3, efter granskningen] dessutom `laddarens förval för URL.createObjectURL kastar sin text` | `if (appLaddad) {` → `if (false) {`; `URL.createObjectURL = tidigareCreateObjectURL;` struken i `tests/helpers/dom.js` (fälls av after-hook-fallet); `throw new Error('createObjectURL anropades utan attrapp');` i `tests/helpers/dom.js` → `return 'blob:x';` (fälls av förvalsfallet) |
 
     Fallet för (32) anropar laddarens väg för att byta dag och kräver hela
     meddelandet, inte bara feltypen, av samma skäl som gäller spärrarna i
@@ -2957,8 +2957,23 @@ rad 1 i tabellen "Beteende vid start" är omskriven efter det.
       inte står kvar — skrivet så att det går att uppfylla här. En assertion om
       att `fetch` bara *inte* är attrappen vore svagare: den passerar också om
       återställningen lägger tillbaka något tredje.
+    - `URL.createObjectURL` [steg 5 del 3, efter granskningen] asserteras på samma
+      sätt som `fetch`: filen håller `const CREATE_OBJECT_URL_FORE_TESTERNA =
+      URL.createObjectURL;` på modulnivå, och fallet kräver
+      `URL.createObjectURL === CREATE_OBJECT_URL_FORE_TESTERNA`. Varje global som
+      `loadApp` sätter står i den här listan; en ny global i laddaren läggs till
+      här i samma ändring (`LARDOMAR.md` 2026-10-11, återställningen av
+      URL.createObjectURL).
 
-    Mutationen i (33):s rad ska fälla **alla tre** fallen, och kryssraderna för
+    Förvalsfallet `laddarens förval för URL.createObjectURL kastar sin text` laddar
+    med `starta` utan `createObjectURL` och kräver att
+    `URL.createObjectURL(new Blob(['a']))` kastar `Error` med meddelandet
+    `createObjectURL anropades utan attrapp`, hela meddelandet. Anropet görs direkt
+    i testet och inte genom ett klick på `report-download`: ett kast inne i
+    `downloadReport` blir ett avvisat löfte som ingen väntar på, och utfallet
+    hade då berott på hur `node:test` rapporterar ohanterade avvisningar.
+
+    Mutationen `if (appLaddad) {` → `if (false) {` i (33):s rad ska fälla **alla tre** de första fallen, och kryssraderna för
     var och en ska stå i utfallet: utan spärren registrerar det andra anropet en
     andra hook vars ögonblicksbild togs efter det första anropet, och då lägger
     den sista hooken tillbaka det första anropets attrapper — `document` är satt
@@ -10475,9 +10490,18 @@ utgifter. Skrivs ut här så att nästa läsare inte undrar om det är ett bortf
 **6. `overBudgetMonths` räknar månader där taket finns *och* beloppet överstiger
 det.** Lika med taket är inte över det. Gränsen prövas på båda sidor.
 
-`largest` är raden med störst `totalOre`, till diagrammets skalning, och `null`
-för en tom rapport. Vid lika `totalOre` vinner den tidigare i radordningen, så
-svaret är entydigt.
+`largest` är raden med störst `totalOre` över **alla tre slag**, och `null` för
+en tom rapport. Vid lika `totalOre` vinner den tidigare i radordningen, så svaret
+är entydigt.
+
+**`largest` skalar inte diagrammet** (rättat i del 3, se "Beslutslogg [steg 5
+del 3]"). Den första lydelsen här sa "till diagrammets skalning", men diagrammet
+ritar bara utgifter, och `largest` väljs bland inkomster och sparande också — i
+en vanlig månad är den största raden lönen. Diagrammet skalar efter sin egen
+största stapel, och den regeln ägs av `renderChart`. **Ingen läsare i `src/web/`
+sedan steg 5 del 3 — fältet behålls därför att** det är en del av `reportRows`
+form, prövad i (RA15), och att stryka det kräver att `report.js` öppnas igen för
+en ändring som ingen indata gör synlig i appen.
 
 `today` behövs inte: en rapport är historik. **Ingen funktion i datalagret läser
 klockan.**
@@ -10694,15 +10718,76 @@ ska inte avrundas tyst.
 
 | Metod och väg | Svar |
 |---|---|
-| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>` | `200` med rapporten. `400`. `401`. `403`. `404`. `500`. |
-| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv` | `200` med `text/csv`. `400`. `401`. `403`. `404`. `500`. |
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>` | `200` med kroppen nedan. `400`. `401`. `403`. `404`. `405`. `500`. |
+| `GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv` | `200` med `text/csv`. `400`. `401`. `403`. `404`. `405`. `500`. |
 
-**`404` för ett `<N>` som inte är siffror, `400` för ett tal utanför taket.**
-Projektets regel för ett led i sökvägen är `segmentAfter`: ingen trimning, ingen
-avkodning och ingen normalisering — ett värde som inte matchar exakt finns inte.
-`/api/rapport/2026-10/abc` är alltså ingen adress och ger `404 Okänd adress.`,
-medan `/api/rapport/2026-10/99` är adressen med ett otillåtet antal och ger `400`.
-Båda statuskoderna står i tabellen ovan, enligt `LARDOMAR.md` 2026-09-07.
+**`405` stod inte i tabellen förrän del 3**, fast koden gav den från början:
+varje annan metod än `GET` mot en sökväg av rätt form får
+`405 { error: <methodNotAllowed> }`, före sessionen. Det gäller `POST`, `PUT`,
+`DELETE`, `PATCH` och `HEAD` — villkoret är `req.method === 'GET'` och inte en
+uppräkning av förbjudna metoder (`LARDOMAR.md` 2026-10-10, tre delvillkor). En
+sökväg av fel form ger `404` före metodfrågan, alltså `POST
+/api/rapport/2026-10/012` ger `404` och inte `405`.
+
+**Kroppen vid `200` på JSON-vägen (bindande).** Exakt tre nycklar, i den här
+formen och utan fler fält:
+
+```
+{
+  months:  string[],                      // ÅÅÅÅ-MM, äldst först, längd N
+  rows: [ {
+    kind:              'income' | 'expense' | 'saving',   // en nyckel ur ITEM_KINDS
+    category:          string,            // en nyckel ur CATEGORIES
+    perMonthOre:       number[],          // säkra heltal, längd N
+    totalOre:          number,            // säkert heltal
+    averageOre:        number,            // säkert heltal, divideRoundHalfUp(totalOre, N)
+    budgetPerMonthOre: (number | null)[], // säkra heltal eller null, längd N
+    overBudgetMonths:  number             // heltal, 0 till N
+  } ],
+  largest: { kind: string, category: string } | null
+}
+```
+
+Kroppen är `readReport`-svaret oförändrat: `handleReadReport` väljer ut de tre
+nycklarna och bygger ingenting själv, och varje rad har exakt de sju fält
+`reportRows` ger. Testfallet (RA32) kräver nycklarna med `Object.keys(...).sort()`
+på kroppen och på varje rad, så att ett fält som tillkommer i `report.js` inte
+tyst blir en del av API:t.
+
+**`JSON.stringify` skriver `NaN` som `null`, och det får stå oskyddat här.**
+Granskaren lyfte att JSON-vägen tyst skulle göra ett trasigt tal till `null`.
+Det är sant om formatet JSON, men inget tal i kroppen kan vara trasigt: varje
+belopp i `perMonthOre` och `totalOre` räknas av `sumByKind`, som kastar utanför
+det säkra heltalsområdet, `averageOre` av `divideRoundHalfUp`, som kastar på samma
+villkor, och taken prövas med `Number.isSafeInteger` i rad 9 i `report.js`
+spärrtabell. `overBudgetMonths` är en räknare som bara ökas med ett. Ett kast blir
+`500` med datalagrets text, aldrig ett `200` med `null`. En kontroll i `api.js`
+hade alltså varit en gren som ingen indata når, och en sådan gren tas bort i stället
+för att skrivas (`LARDOMAR.md` 2026-09-04). Ägaren till invarianten "varje tal i
+svaret är ett säkert heltal" är `reportRows`; gränssnittet läser talen med
+`oreFromResponse`, samma regel som varje annat kort.
+
+**`404` för ett `<N>` som inte är ett tal i kanonisk form, `400` för ett tal
+utanför taket.** Projektets regel för ett led i sökvägen är `segmentAfter`:
+ingen trimning, ingen avkodning och ingen normalisering — ett värde som inte
+matchar exakt finns inte. `/api/rapport/2026-10/abc` är alltså ingen adress och
+ger `404 Okänd adress.`, medan `/api/rapport/2026-10/99` är adressen med ett
+otillåtet antal och ger `400`. Båda statuskoderna står i tabellen ovan, enligt
+`LARDOMAR.md` 2026-09-07.
+
+**Inledande nollor ger `404` (beslutat i del 3).** Formen för `<N>` är
+
+```
+/^(0|[1-9][0-9]*)$/
+```
+
+och inte `/^[0-9]+$/`. `012` och `0012` är alltså ingen adress och ger `404
+Okänd adress.`; `00` likaså. `0` matchar formen och ger `400` med antalets text,
+eftersom den är ett tal i kanonisk form under taket. Koden före beslutet läste
+`Number('012')` och svarade `200` med tolv månader, vilket är just den
+normalisering regeln ovan förbjuder: två adresser för samma rapport. Testfallet
+`(RA18) gränserna 1 och 36 och ett tal med inledande nolla ger 200` skrivs därför
+om till (RA31) nedan, och dess påstående om `012` vänds.
 
 **Texten för ett otillåtet antal är**
 `Antalet månader måste vara mellan <min> och <max>.`, interpolerad ur
@@ -10725,6 +10810,15 @@ som CSV hade gränssnittet inte kunnat läsa. Bara `200` är `text/csv`.
 `Content-Disposition: attachment; filename="hemochekonomi-<ÅÅÅÅ-MM>.csv"`.
 **Filnamnet är rent ASCII.** En svensk bokstav i ett `Content-Disposition`-huvud
 kräver RFC 5987-kodning, och ett okodat huvud är ett trasigt svar.
+
+**Filnamnet har en ägare i kärnan: `reportFileName(endMonth)` i
+`src/core/report-csv.js`** (beslutat i del 3). `api.js` bygger huvudet med den,
+och gränssnittet sätter samma namn på nedladdningen med den. Två läsare behöver
+namnet, och gränssnittet når inte `src/server/`; att läsa huvudet i klienten
+hade krävt en tolkning av `Content-Disposition` och att demons attrapp svarar med
+huvuden, och en kopia av prefixet i `app.js` hade varit två facit. Konstanterna
+`REPORT_FILE_PREFIX` och `REPORT_FILE_SUFFIX` i `api.js` försvinner därmed till
+förmån för exporten.
 
 #### CSV-filens innehåll (bindande)
 
@@ -10798,11 +10892,17 @@ isär.
 är `report.js` färdig och verifierad med full täckning och 25 mutationer, och
 att öppna den för ett nytt ansvar hade krävt att allt det görs om.
 
-En export:
+Två exporter (den andra tillkom i del 3, se avsnittet om `sendCsv` ovan):
 
 ```
-reportCsvRows(report) -> [[cell, ...], ...]   // rubrikraden först
+reportCsvRows(report)    -> [[cell, ...], ...]   // rubrikraden först
+reportFileName(endMonth) -> string               // "hemochekonomi-<endMonth>.csv"
 ```
+
+`reportFileName` importerar `isValidIsoMonth` ur `src/core/dates.js`. Namnets
+början och slut står som två modullokala konstanter, `FILE_PREFIX =
+'hemochekonomi-'` och `FILE_SUFFIX = '.csv'`; ingen annan fil i `src/` får skriva
+`hemochekonomi-` eller `.csv` i ett filnamn.
 
 Cellerna är `{ text }` och `{ amountOre }`, alltså precis det `toCsv` tar emot.
 **Modulen importerar inte `csv.js`** och känner varken till avgränsare, BOM
@@ -10821,8 +10921,16 @@ etapp 1, och CSV-filen är den.
 | 2 | `!Array.isArray(report.months)` | `reportCsvRows kräver en lista med månader.` |
 | 3 | `!Array.isArray(report.rows)` | `reportCsvRows kräver en lista med rader.` |
 | 4 | `!isPlainObject(report.rows[i])` | `reportCsvRows kräver ett objekt per rad, index <i>.` |
-| 5 | `report.rows[i].perMonthOre.length !== report.months.length` | `reportCsvRows kräver ett belopp per månad, index <i>.` |
-| 6 | `report.rows[i].budgetPerMonthOre.length !== report.months.length` | `reportCsvRows kräver ett tak per månad, index <i>.` |
+| 5 | `!Array.isArray(report.rows[i].perMonthOre) \|\| report.rows[i].perMonthOre.length !== report.months.length` | `reportCsvRows kräver ett belopp per månad, index <i>.` |
+| 6 | `!Array.isArray(report.rows[i].budgetPerMonthOre) \|\| report.rows[i].budgetPerMonthOre.length !== report.months.length` | `reportCsvRows kräver ett tak per månad, index <i>.` |
+| 7 | `!isValidIsoMonth(endMonth)` (i `reportFileName`) | `reportFileName kräver en månad på formen ÅÅÅÅ-MM.` |
+
+Rad 1 till 6 gäller `reportCsvRows` och rad 7 `reportFileName`; de två
+funktionerna prövar var sin indata, så "första träff vinner" gäller inom varje
+funktion. Rad 5 och 6 står i koden över två rader, brutna före `||`; jämförelsen
+mot tabellen görs efter att radbrytningen och indraget normaliserats bort
+(`LARDOMAR.md` 2026-10-10). `\|\|` i tabellen är `||` i koden — tecknet är
+escapat därför att `|` annars avslutar tabellcellen.
 
 **Rad 5 och 6 är de som bär.** Layouten läser `perMonthOre[i]` och
 `budgetPerMonthOre[i]` för varje månad i `months`. Är en lista kortare blir
@@ -10830,10 +10938,22 @@ cellen `undefined`, och en `undefined` som når `csvAmountSek` kastar där i
 stället — med ett meddelande som pekar ut fel modul. Samma skäl som
 `LARDOMAR.md` 2026-09-02 ger för `monthlyOre`.
 
-Rad 5 och 6 förutsätter att fälten är listor, så de prövas med
-`Array.isArray` före längden: en `perMonthOre` som saknas har ingen `length`
-att jämföra, och ett uttryck som läser `undefined.length` kastar `TypeError`
-i stället för modulens `RangeError`.
+Varför `Array.isArray` står först i rad 5 och 6: en `perMonthOre` som saknas har
+ingen `length` att jämföra, och ett uttryck som läser `undefined.length` kastar
+`TypeError` i stället för modulens `RangeError`. Delvillkoret står på tabellraden
+och inte bara här — den första lydelsen hade det bara i det här stycket, och
+tabellen med rubriken "skrivet som i koden" sa då något annat än koden
+(`LARDOMAR.md` 2026-10-10, spärrtabellen för `report-csv.js`).
+
+**Rad 7 är ny i del 3.** Filnamnet går rakt in i `Content-Disposition` och i
+`download`-attributet. En månad som inte är `ÅÅÅÅ-MM` hade kunnat bära ett
+citattecken eller ett radbrott in i huvudet; spärren gör namnet till rent ASCII
+genom formen, inte genom en tillit till anroparen. Ingen väg i appen når raden i
+dag: `api.js` prövar månaden före anropet, och gränssnittet anropar med en månad
+som servern redan svarat `200` för. Raden finns därför att varje export i
+`src/core/` har en ingångsspärr med samma feltyp som modulens övriga
+(`LARDOMAR.md` 2026-09-02, `formatSek` utan ingångsspärr), och den prövas genom
+ett direkt anrop i (RA36).
 
 `reportCsvRows` prövar **inte** `kind` och `category` mot sina listor. En nyckel
 utanför `ITEM_KIND_LABELS` eller `CATEGORY_LABELS` kan inte uppstå:
@@ -10851,9 +10971,17 @@ som inte kommer därifrån avvisas redan av rad 1 till 4.
 | (RA28) | de svenska namnen kommer ur sina ägare | `ITEM_KIND_LABELS` och `CATEGORY_LABELS` |
 | (RA29) | en tom rapport ger bara rubrikraden | en rad, inget kast |
 | (RA30) | rundgång genom `toCsv` | varje beloppscell i filen är läsbar tillbaka |
+| (RA34) | ett skadat tak fälls av `csvAmountSek` [del 3] | `budgetPerMonthOre: [undefined]` och `[NaN]` kastar `csvAmountSek kräver ett säkert heltal öre.`; mutationerna `budgetOre === null` → `budgetOre == null` i kolumnen Tak och i kolumnen Över tak ska var för sig ge `EXIT=1` med det här fallets kryssrad (`LARDOMAR.md` 2026-10-10) |
+| (RA36) | `reportFileName` [del 3] | `reportFileName('2026-10')` ger `hemochekonomi-2026-10.csv` och varje tecken i svaret har en kodpunkt under 128; rad 7 prövas med `'2026-13'`, `'2026-1'`, `undefined`, `1n` och `Symbol('x')`, med hela meddelandet; mutationen som tar bort rad 7 ska ge `EXIT=1` |
 
-Spärrtabellens sex rader får egna testfall **utan** `(RA)`-nummer — tabellen är
-deras facit, samma val som del 1 och del 2 gjorde och som var rätt.
+(RA33) och (RA35) står i kravlistan för `tests/report-api.test.js`; numren
+delas mellan filerna i en serie, och luckorna i den här tabellen är därför
+avsiktliga.
+
+Spärrtabellens rad 1 till 6 får egna testfall **utan** `(RA)`-nummer — tabellen
+är deras facit, samma val som del 1 och del 2 gjorde och som var rätt. Rad 7
+prövas i (RA36), eftersom den tillkom tillsammans med en ny export som behöver
+ett eget lyckofall.
 
 `ITEM_KIND_LABELS` får sitt testfall i `tests/item.test.js`, som har en egen
 numrerad serie: det blir nästa nummer i den serien, och inget `(RA)`.
@@ -10881,31 +11009,336 @@ budgetradernas form: den bygger listan och lämnar den till `reportRows`, som
 
 `readReport` gör **ingen egen `SELECT`**. Den går genom `readMonth`, som redan
 bär `user_id = ?` på varje fråga.
+
 #### Gränssnittet
 
 Ett kort `Rapport` i månadsvyn, under sparmålskortet. Tre knappar för perioden
 (`3 mån`, `6 mån`, `12 mån`), diagrammet genom `renderChart`, och en tabell med
-en rad per `(kind, category)`: namn, snitt per månad, summa, och för utgifter
-taket och antalet månader det sprack.
+en rad per `(kind, category)`. En knapp `Hämta som CSV`.
 
-En knapp `Hämta som CSV`.
+Byggaren i del 3 lämnade tillbaka punkt 4 därför att det här avsnittet var för
+tunt att bygga efter, och hade rätt. Allt nedan är skrivet i del 3. Fyra val om
+vad användaren ser — F1 till F4 — är **användarens beslut**, fattade efter att
+arkitekten lagt fram dem som frågor; de är markerade med sitt nummer där de
+gäller. F1, F2 och F4 är arkitektens förslag oförändrade. F3 är det inte: den
+förvalda perioden är **12 månader**, inte de 6 som föreslogs.
 
-**Nedladdningen går genom `fetch` och en `Blob`, aldrig genom ett `<a href>`.**
-Två skäl, och det första är avgörande: demoläget ersätter `globalThis.fetch` och
-publiceras på en statisk värd, där ett riktigt HTTP-anrop inte finns att göra —
-en länk hade gett `404` i demon. Det andra är att bara `fetch` kan visa ett `403`
-i appens egen felruta i stället för att öppna en JSON-klump i en flik.
+##### Uppmärkningen i `index.html`
 
-**För en Bas-användare visas kortet inte alls**, utan låsraden
-`Diagram och rapporter ingår i Plus.` med knappen `Se planer`.
+Två sektioner, direkt efter `#goal-locked` och före diagramkortet `#chart`. Båda
+bär `hidden` från början, av samma skäl som sparmålens två: vilken av dem som
+syns avgörs av svaret, aldrig av en gissning om planen.
 
-**Låsraden är nu projektets andra, och ska därför ha en ägare.** Sparmålskortet
-byggde den första i steg 4. En handskriven kopia här vore två ställen som kan
-glida isär: bryt ut `lockRow(feature)` som läser `FEATURE_LABELS` och `planFor`,
-och låt sparmålskortet anropa samma funktion.
+```html
+<section class="card" id="report-card" hidden>
+  <h3>Rapport</h3>
+  <div class="report-periods">
+    <button type="button" class="secondary" id="report-period-3" aria-pressed="false">3 mån</button>
+    <button type="button" class="secondary" id="report-period-6" aria-pressed="false">6 mån</button>
+    <button type="button" class="secondary" id="report-period-12" aria-pressed="false">12 mån</button>
+  </div>
+  <div id="report-chart" class="chart"></div>
+  <p class="empty-state" id="report-chart-empty"></p>
+  <table class="report-table">
+    <thead>
+      <tr>
+        <th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th>
+      </tr>
+    </thead>
+    <tbody id="report-rows"></tbody>
+  </table>
+  <p class="empty-state" id="report-empty"></p>
+  <button type="button" class="secondary" id="report-download">Hämta som CSV</button>
+</section>
+<section class="card" id="report-locked" hidden>
+  <h3>Rapport</h3>
+  <p class="locked-row">
+    <span class="lock-icon" aria-hidden="true">&#x1F512;</span>
+    <span id="report-locked-text"></span>
+    <button type="button" class="secondary" id="report-show-plans">Se planer</button>
+  </p>
+</section>
+<p class="form-error" id="report-error" role="alert"></p>
+```
+
+`#report-error` står **utanför** båda sektionerna, direkt efter `#report-locked`
+och före `#chart` (tillagt i del 3 efter granskningen, se "Rapportens fel har ett
+eget element"): ett fel vid sidladdningen lämnar båda sektionerna dolda, och ett
+element inuti någon av dem hade då inte synts.
+
+Varje nytt id ovan betyder ett nytt `FakeElement` i `tests/helpers/dom.js`;
+testfallet som jämför attrappens id:n med `index.html` fäller ett glömt element.
+Kolumnrubrikerna är användarens beslut **F2**. `Slag` och `Kategori` är samma ord som
+CSV-filens rubrikrad, så att skärmen och filen kallar samma sak samma sak.
+
+##### Periodknapparna
+
+```
+const REPORT_PERIODS = Object.freeze([3, 6, 12]);   // i app.js
+const REPORT_DEFAULT_PERIOD = 12;                   // F3, användarens beslut
+let reportCount = REPORT_DEFAULT_PERIOD;            // senast visade period
+let reportMonth = null;                             // slutmånad för den senast visade rapporten
+```
+
+Knappen för `n` har id `report-period-<n>`; `app.js` slår upp den med
+`` document.querySelector(`#report-period-${n}`) `` för varje `n` i
+`REPORT_PERIODS` och skriver ingen av de tre siffrorna någon annanstans.
+Talen ligger inom taket `OVERVIEW_MIN_MONTHS` till `OVERVIEW_MAX_MONTHS`, men
+`app.js` kan inte läsa konstanterna — de bor i `src/server/months.js`, som
+webbläsaren inte når. Kopplingen hålls av ett testfall i stället, (90), samma
+mönster som `LARDOMAR.md` 2026-09-02 föreskriver för två listor som måste
+beskriva samma domän.
+
+**Slutmånaden är `currentMonth`.** Kortet står i månadsvyn och följer den månad
+vyn visar, som varje annat månadsbundet kort. Räkningar och sparmål gör det inte,
+därför att de hör till en dag; en rapport hör till månader.
+
+**Den valda knappen markeras med `aria-pressed`**, `"true"` på den valda och
+`"false"` på de två andra, satt med `setAttribute`. Inget eget klassnamn: attributet
+är både det skärmläsaren läser och det `style.css` väljer på
+(`.report-periods [aria-pressed="true"]`). Markeringen sätts **först när svaret
+är `200`** och visar alltså den period tabellen visar, aldrig den period som
+begärdes. `reportCount` och `reportMonth` uppdateras på samma rad och av samma
+skäl: ett misslyckat byte ska lämna kvar både rapporten och markeringen för den
+rapport som syns (vyn nollställs aldrig av ett fel).
+
+##### När rapporten hämtas
+
+```
+async function loadReport(count = reportCount)   // GET /api/rapport/<currentMonth>/<count>
+async function loadMonthAndReport()              // await loadMonth(); await loadReport();
+```
+
+1. **Vid sidladdningen**, i `loadMe`, sist — efter `void loadGoals()`, som
+   `void loadReport()`. Anropsordningen vid start blir `GET /api/mig`,
+   `GET /api/manad/<m>`, `GET /api/rakningar/<d>`, `GET /api/sparmal/<d>`,
+   `GET /api/rapport/<m>/12`. De fyra första står kvar på sina index.
+2. **Vid månadsbyte**: `changeMonth` anropar `loadMonthAndReport` i stället för
+   `loadMonth`.
+3. **Efter varje lyckad ändring som hämtar om månaden.** Varje anrop av
+   `loadMonth` utom det i `loadMe` byts mot `loadMonthAndReport`: postformulärets,
+   budgetformulärets och `sendChange`s förval för `reload`. En ändring av en post
+   eller ett tak ändrar rapportens tal, och ett kort som visade de gamla talen
+   bredvid en lista med de nya är exakt det `LARDOMAR.md` 2026-09-22 beskriver
+   (totaler som räknar med en post som är borta). Räkningar och sparmål hämtar om
+   sina egna kort och rör inte rapporten: ingen av dem är en månadspost.
+4. **Vid klick på en periodknapp**: knappen spärras, `loadReport(n)` körs, och
+   spärren hävs i ett `finally` — samma regel som varje annan knapp som skickar ett
+   anrop ("Knappen spärras under ett pågående anrop").
+
+**Svaren på `loadReport`**, i den här ordningen:
+
+| Svar | Vyn |
+|---|---|
+| `fetch` avvisas | `#report-error` får `GENERAL_ERROR`. Kortet, låsraden och markeringen oförändrade. |
+| `401` | `sessionExpired` — inloggningsvyn, ingen text. `#report-error` rörs inte. |
+| `403` | `#report-error` töms, därefter `showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body)`. `403` är det normala svaret för Bas och inget fel, så ett tidigare rapportfel ska inte stå kvar bredvid låsraden. |
+| annat än `200` | `#report-error` får `generalText(body)`. Kortet, låsraden och markeringen oförändrade. |
+| `200` | `#report-error` töms, därefter `renderReport(body, count)` och `showCard(REPORT_CARD, REPORT_LOCKED)`. |
+
+**`#month-error` skrivs och töms aldrig av `loadReport` eller `downloadReport`**
+(beslutat i del 3 efter granskningen, se "Rapportens fel har ett eget element" i
+beslutsloggen). Elementet delas av månadens, räkningarnas, sparmålens och
+ändringarnas vägar, och en tömning vid rapportens `200` hade tagit bort deras fel
+— vid start hämtas rapporten sist, så ett `500` på räkningarnas väg hade
+försvunnit så snart rapporten svarade. Tilldelningarna av de två elementen, per
+hämtning:
+
+| Element | Skrivs av | Töms av |
+|---|---|---|
+| `#report-error` | `loadReport` och `downloadReport` vid ett avvisat `fetch` och vid annat än `200`, `401` och `403`; `downloadReport` dessutom när `blob()` avvisar | `loadReport` vid `200` och `403`; `downloadReport` vid `403` och efter `link.click()` |
+| `#month-error` | månadens, räkningarnas, sparmålens och ändringarnas vägar, som före steg 5 | samma vägar, som före steg 5; aldrig rapportens |
+
+En hämtning som pågår tömmer inte `#report-error`: texten står kvar tills svaret
+kommit, samma regel som för `#month-error`.
+
+**Ett fel vid sidladdningen lämnar båda sektionerna dolda**, eftersom båda bär
+`hidden` från början och inget fel nollställer vyn. Det är det tredje tillståndet
+`LARDOMAR.md` 2026-09-10 kräver en rad för, och här är raden: kortet syns inte,
+låsraden syns inte, och `#report-error`, som står utanför båda, bär beskedet.
+Sparmålskortet har samma läge sedan steg 4, med `#month-error`.
+
+##### `renderReport(body, count)`
+
+```
+function renderReport(body, count)
+```
+
+1. `rows = Array.isArray(body.rows) ? body.rows : []`, `months` likaså.
+2. Diagrammet: `renderChart(REPORT_CHART, REPORT_CHART_EMPTY, bars)` där `bars` är
+   utgiftsraderna som `{ category, amountOre: oreFromResponse(row.totalOre) }`.
+3. Tabellen: `REPORT_ROWS.replaceChildren(...rows.map(reportRow))`.
+4. Tomtexten: `REPORT_EMPTY.textContent = rows.length === 0 ? REPORT_EMPTY_TEXT : ''`
+   — båda grenarna, så att en rapport med rader efter en tom tar bort texten.
+5. `reportCount = count`, `reportMonth = currentMonth`, markeringen av knapparna.
+
+`largest` läses inte (se "Vad `readReport` svarar").
+
+##### Diagrammet: `renderChart` får sitt mål och sina staplar som argument
+
+Den nya signaturen, som ersätter `renderChart(items)`:
+
+```
+renderChart(chartElement, emptyElement, bars)   // bars: [{ category, amountOre }]
+```
+
+`renderChart` äger fyra saker, och ingen av dem står någon annanstans i `app.js`:
+
+1. **Urvalet:** bara staplar med `amountOre > 0` ritas. En utgiftsrad med tak men
+   utan belopp (beslut 3) har ingenting att rita, och en stapel på noll är
+   dessutom en division med noll om den är den enda. Raden syns i tabellen.
+2. **Ordningen:** fallande `amountOre`, stabil sortering — flyttad hit ur
+   `expensesByCategory`, som numera bara grupperar.
+3. **Skalningen:** stapelns bredd är `Math.round((amountOre * CHART_WIDTH) /
+   största)`, där `största` är den största stapeln som *ritas*. Det är därför
+   `largest` ur svaret inte används: den väljs bland alla tre slag.
+4. **Tomläget:** inga staplar kvar efter urvalet ger `CHART_EMPTY_TEXT` i
+   `emptyElement`.
+
+Månadsvyns anrop blir `renderChart(CHART, CHART_EMPTY, expensesByCategory(items))`
+och rapportens `renderChart(REPORT_CHART, REPORT_CHART_EMPTY, bars)`. **Ingen
+andra diagramfunktion skrivs**, och samma titel `CHART_TITLE` används: rapportens
+diagram är samma fråga, utgifter per kategori, över perioden i stället för en
+månad. Värdet per stapel är **`totalOre`**, summan över perioden, och inte
+`averageOre` — stapeln och kolumnen `Summa` visar då samma tal.
+
+##### En tabellrad: `reportRow(row)`
+
+Ett `tr` med klassen `report-row` och sex `td`, byggda med `cell(className, text,
+'td')`:
+
+| Klass | Text |
+|---|---|
+| `report-kind` | `ITEM_KIND_LABELS[row.kind]` |
+| `report-category` | `CATEGORY_LABELS[row.category]` |
+| `report-average` | `formatSek(oreFromResponse(row.averageOre))` |
+| `report-total` | `formatSek(oreFromResponse(row.totalOre))` |
+| `report-budget` | **F1:** slutmånadens tak, `formatSek(tak)` där `tak` är sista elementet i `budgetPerMonthOre`; den tomma strängen när det inte är ett säkert heltal |
+| `report-over` | **F2:** `` `${row.overBudgetMonths} av ${m}` `` där `m` är antalet element i `budgetPerMonthOre` som är säkra heltal; den tomma strängen när `m` är `0` |
+
+"Har ett tak" prövas med `Number.isSafeInteger` och inte med `!== null`: ett
+`undefined` eller ett `NaN` ur ett trasigt svar ska ge en tom cell och inte
+texten `NaN` (`LARDOMAR.md` 2026-10-10, villkor som skiljer ut ett enda värde).
+För `income` och `saving` är varje tak `null` (beslut 5), så båda cellerna blir
+tomma utan någon gren på `kind`. `app.js` räknar ingenting utöver antalet `m` —
+inget belopp adderas eller delas här.
+
+```
+const REPORT_EMPTY_TEXT = 'Inget att visa för perioden.';   // F4, användarens beslut
+```
+
+##### Låsraden: en ägare till texten, inte till uppmärkningen
+
+Den första lydelsen bad om en `lockRow(feature)` som byggde raden och läste
+`planFor`. Den ersätts, av två skäl:
+
+1. **Uppmärkningen står redan i `index.html`, och (85) kräver det.** Testet
+   kräver `id="show-plans">Se planer<` och hänglåset i sidan, inte i
+   attrappen, därför att statisk text i en DOM-attrapp inte bevisar något om
+   sidan. En `lockRow` som byggde raden i `app.js` hade flyttat knappen ut ur
+   `index.html` och gjort (85) falskt. Rapportens låsrad står därför också i
+   `index.html`, med sin egen knapp `id="report-show-plans"` och samma etikett.
+   (85) är oförändrat sant.
+2. **`planFor` är serverns fråga, inte klientens.** `requireFeature` räknar
+   `requiredPlan` med `planFor` och skickar det i `403`-svaret; att klienten räknar
+   samma sak en gång till vore två svar på samma fråga. Klienten läser `feature`
+   och `requiredPlan` ur svaret, som `goalLockedText` redan gör.
+
+Det som ska ha en ägare är **texten** och **växlingen mellan kort och låsrad**:
+
+```
+lockedText(body) -> string                              // ersätter goalLockedText
+showLocked(card, locked, textElement, body)             // ersätter showGoalLock
+showCard(card, locked)                                  // ersätter showGoalCard
+```
+
+`lockedText` är `goalLockedText` omdöpt, med samma kropp och samma regel för en
+okänd nyckel (den tomma strängen). `loadGoals` och `loadReport` anropar samma tre
+funktioner med var sina element. Klicket på `#report-show-plans` gör samma sak som
+klicket på `#show-plans`, genom samma hanterare.
+
+##### Nedladdningen
+
+**Ett `<a href>` till API-vägen är förbjudet; ett `<a download>` till en
+objekt-URL är det enda sättet att spara filen och är tillåtet.** Förbudet i den
+första lydelsen gällde en länk som pekar på servern: den kringgår `fetch`, ger
+`404` i demon och öppnar ett `403` som en JSON-klump i en flik. En länk som
+`app.js` skapar till en `Blob` som `fetch` redan hämtat har inget av de felen.
+
+```
+async function downloadReport(button)
+```
+
+1. Knappen spärras; spärren hävs i ett `finally`.
+2. `` fetch(`/api/rapport/${reportMonth}/${reportCount}/csv`) `` — alltså
+   rapporten som **syns**, inte `currentMonth`, som kan ha bytts av ett
+   misslyckat månadsbyte, och den period som syns, inte förvalet.
+3. Svaren: `fetch` avvisas → `GENERAL_ERROR` i `#report-error`; `401` →
+   `sessionExpired`; `403` → `#report-error` töms och `showLocked(...)` för
+   rapporten, som i `loadReport`; annat än `200` → `generalText(body)` i
+   `#report-error`.
+4. `200`: `const blob = await response.blob();` — avvisar den, `GENERAL_ERROR` i
+   `#report-error`.
+5. `const url = URL.createObjectURL(blob);`, därefter
+   `const link = document.createElement('a'); link.href = url;
+   link.download = reportFileName(reportMonth); link.click();` och sist
+   `REPORT_ERROR.textContent = '';` — en lyckad nedladdning tar bort ett tidigare
+   rapportfel. `#month-error` rörs inte (se tabellen över tilldelningarna under
+   "När rapporten hämtas").
+
+**Kroppen läses med `response.blob()`, aldrig med `response.text()`.** Filen ska
+nå disken byte för byte som servern skrev den, och den börjar med U+FEFF. Enligt
+WHATWG Encoding tar avkodningen som `text()` gör bort en inledande BOM, så en fil
+som byggdes om ur `text()` hade förlorat fälla 2 i avsnittet om CSV. Körd i steg
+5 del 3:
+`node -e "new Response(String.fromCharCode(0xFEFF) + 'a').text().then((s) => console.log(s.length))"`
+gav `1`, alltså att `text()` tog bort BOM:en, medan samma svar läst med `blob()`
+gav byten `[239, 187, 191, 97]`, alltså BOM:en kvar som `EF BB BF` följd av `a`.
+Kommandot är skrivet utan ett enda tecken utanför ASCII, så att det går att
+kopiera utan att ett osynligt tecken följer med. Regeln hade gällt oavsett utfallet
+— en kopia genom en sträng är en omkodning, och `blob()` gör ingen.
+
+**Filnamnet byggs med `reportFileName(reportMonth)`**, samma export som
+`api.js` sätter huvudet med. `Content-Disposition` läses inte i klienten.
+
+**Objekt-URL:en återkallas inte.** Ett `URL.revokeObjectURL` direkt efter
+`click()` kan avbryta nedladdningen i en webbläsare som läser URL:en
+asynkront, och ett fördröjt återkallande lägger en timer i `app.js` och en klocka
+i testet. Kostnaden för att låta bli är en `Blob` på några kilobyte per klick
+tills sidan laddas om.
+
+**DOM-attrappen** får tre tillägg, alla i `tests/helpers/dom.js`:
+
+1. `document.createElement('a')` ger ett `FakeElement` vars `click()` lägger
+   `{ href, download }` i en lista som `createDom` returnerar som `klick`.
+2. `createFetch` ger svarsobjektet en `blob`: `async () => svar.blob` när planens
+   svar har en `blob` som är en `Blob`, och annars avvisar den med `TypeError`.
+   Svarsobjektet får **ingen** `text`, så att ett `response.text()` i `app.js`
+   kastar i testet i stället för att passera.
+3. `loadApp` tar en `createObjectURL` i sitt argument och sätter
+   `URL.createObjectURL` till den före importen; förvalet kastar
+   `Error('createObjectURL anropades utan attrapp')`. Det tidigare värdet
+   återställs i **samma** `t.after`-hook som `document`, `fetch` och dagen, och
+   inte i en egen (`LARDOMAR.md` 2026-09-22, återställningens ordning). Bara den
+   statiska metoden byts, aldrig `globalThis.URL`: laddaren själv och
+   testfilerna använder `new URL(...)`.
 
 **Döljandet är aldrig skyddet.** Servern svarar `403` på båda vägarna, och det är
 där spärren sitter. Ingen kommentar får antyda något annat.
+
+##### Följder för befintliga testfall i `tests/app.test.js`
+
+Startordningen får ett femte anrop och varje lyckad ändring av en post eller ett
+tak får ett anrop till. `planInloggad` får en femte parameter,
+`hamtaRapport = () => RAPPORT_TOM`, och en egen gren för
+`GET /api/rapport/...` före den allmänna `GET`-grenen — samma skäl som
+räkningarnas och sparmålens grenar: en rapporthämtning får inte förbruka ett
+månadssvar ur `ikoordning`. Varje assertion på `anrop.length` eller `anrop[i]`
+som ändras av det skrivs om med det nya talet; **ingen assertion tas bort.**
+Byggaren listar dem med `grep -n "anrop\[\|anrop.length" tests/app.test.js`
+före och efter och redovisar båda utfallen. (85) är en av dem: `anrop.length`
+och indexet för `GET /api/plan` ökar med ett, och det är den enda ändringen i
+fallet.
 
 #### Kravlista [steg 5]
 
@@ -10951,14 +11384,474 @@ schedules `(S)`; rapportens heter `(RA)`, eftersom `(R)` ägs av
 | (RA22) | filnamnet är rent ASCII | huvudet läst ordagrant |
 | (RA23) | en annan användares data syns inte | |
 
-`tests/app.test.js`:
+Tillägg i del 3, efter granskningen av punkt 1 till 3 (`LARDOMAR.md` 2026-09-14: ett
+testfall som en granskning kräver får sin punkt här innan det skrivs):
 
-| # | Fall | Kräver |
-|---|---|---|
-| (88) | kortet visas för Plus och låsraden för Bas | båda i samma fil |
-| (89) | `lockRow` är en ägare | sparmålskortet anropar samma funktion |
-| (90) | periodknappen hämtar om | tre månader efter tolv, kortare lista än längre |
-| (91) | diagrammet ritas med `renderChart` | ingen andra diagramfunktion |
+| # | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|
+| (RA31) | inledande nollor ger `404` | `/012`, `/0012` och `/00` ger `404 Okänd adress.` på båda vägarna; `/0` ger `400` med antalets text; `/1` och `/36` ger `200`. Ersätter fallet `(RA18) gränserna 1 och 36 och ett tal med inledande nolla ger 200`, som tas bort | `/^(0\|[1-9][0-9]*)$/` → `/^[0-9]+$/` i `api.js` |
+| (RA32) | 200-kroppen på JSON-vägen har exakt sin form | `Object.keys(kropp).sort()` är `['largest', 'months', 'rows']` och varje rads nycklar är de sju i API-avsnittet; varje tal i `perMonthOre`, `totalOre`, `averageOre` och `overBudgetMonths` och varje icke-`null` i `budgetPerMonthOre` är ett säkert heltal | `largest: result.largest` struket ur `sendJson`-anropet i `handleReadReport`; ett åttonde fält lagt på varje rad i `reportRows` |
+| (RA33) | `405` för varje metod utom `GET` | `POST`, `PUT`, `DELETE`, `PATCH` och `HEAD` mot båda vägarna; kroppen utom vid `HEAD` är `{ error: <methodNotAllowed> }` | `req.method === 'GET'` på raden före `handleReadReport(req, res, now, report);` → `req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'DELETE'` (`LARDOMAR.md` 2026-10-10; villkoret står på fler rader i `api.js`, och mutationen gäller bara den här) |
+| (RA35) | textspärren mot taket kräver bindningen | testet tar bort kommentarerna med `källa.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')` och kräver därefter jämförelsen med `OVERVIEW_MAX_MONTHS` i `reports.js` | tre stavningar, var och en för sig: literalen `36`; `3 * 12`; en lokal `const TAK = 3 * 12;` med kravtexten kvar i en kommentar (`LARDOMAR.md` 2026-10-10) |
+| (RA37) | `readReport` läser ur den databas den får [del 3, efter byggarens mutationskörning] | testfallet `readReport läser ur den databas den får, och aldrig ur getDatabase()` döps om till `(RA37) readReport läser ur den databas den får, och aldrig ur getDatabase()`: riggens delade anslutning är tom, posterna står i en egen databas i minnet som skickas som `{ db }`, och svaret är `deepEqual` med `ANNAS_RAPPORT` | RE8: `readMonth(userId, month, { db })` → `readMonth(userId, month)` i `src/server/reports.js` |
+
+`(RA34)` och `(RA36)` står i kravlistan för `tests/report-csv.test.js`.
+
+`tests/app.test.js`. Ersätter den första lydelsens (88) till (91), som inte
+hade någon mutation och där (89) föreskrev `lockRow`, som inte byggs (se
+"Låsraden: en ägare till texten, inte till uppmärkningen"):
+
+| # | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|
+| (88) | Plus ser kortet, Bas låsraden | `200` → `#report-card` synligt och `#report-locked` dolt; `403` med `feature: 'reports'` → tvärtom, `#report-locked-text` är `Diagram och rapporter ingår i Plus.`, och både `#month-error` och `#report-error` är tomma | `showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body);` i `loadReport` → `REPORT_ERROR.textContent = generalText(body);` |
+| (89) | låstexten har en ägare | efter att kommentarerna tagits bort med samma två `replace` som (RA35) förekommer ordet `ingår` exakt en gång i `src/web/app.js`, och `goalLockedText` och `showGoalLock` förekommer inte; sparmålens låsrad visar fortfarande (85):s text | tre stavningar, var och en för sig: en kopia av `lockedText` med egen mall för rapporten; `` `${FEATURE_LABELS.reports} ingår i ${PLAN_LABELS.plus}.` `` direkt i `loadReport`; strängen `'Diagram och rapporter ingår i Plus.'` skriven i `loadReport` |
+| (90) | uppmärkningen står i `index.html` | `#report-card` och `#report-locked` bär `hidden`; `id="report-show-plans">Se planer<`, `id="report-download">Hämta som CSV<` och `id="report-period-<n>"` med etiketten `<n> mån` för varje `n` i `REPORT_PERIODS`; varje `n` ligger mellan `OVERVIEW_MIN_MONTHS` och `OVERVIEW_MAX_MONTHS`, importerade ur `src/server/months.js`. [del 3, efter granskningen:] tabellhuvudet står ordagrant `<th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th>` (F2), byggt i testet ur en modulkonstant `RAPPORTKOLUMNER = [['Slag', 'report-kind'], ['Kategori', 'report-category'], ['Snitt per månad', 'report-average'], ['Summa', 'report-total'], ['Tak', 'report-budget'], ['Över taket', 'report-over']]`, som (92) också läser sina cellklasser ur i stället för en egen lista, så att rubrikens plats och cellens plats har samma facit; `div` med `class="report-periods"` och `table` med `class="report-table"` står i `index.html` (se beslutsloggen, "Statiska klasser som `style.css` väljer på"). [runda 4:] hela steg 5:s uppmärkning står ordagrant: testet skär ut `index.html` från `<section class="card" id="report-card" hidden>` till och med `<p class="form-error" id="report-error" role="alert"></p>`, tar bort HTML-kommentarerna med `.replace(/<!--[\s\S]*?-->/g, '')`, slår ihop blanktecken mellan taggar med `.replace(/>\s+</g, '><').trim()`, och jämför med en konstant `RAPPORT_UPPMARKNING` i testfilen, som är kodblocket under "Uppmärkningen i `index.html`" normaliserat på samma sätt. Därmed asserteras varje element med klass, `id`, `role`, `aria-*`, `hidden` och text (se beslutsloggen, "Varje nytt element i `index.html`") | `class="form-error" id="report-error"` → `class="x" id="report-error"`; `role="alert"` struket ur `#report-error`; `hidden` struket ur `#report-card` i `index.html`; `12` → `40` i `REPORT_PERIODS`; en rubrik omskriven: `<th>Summa</th>` → `<th>Totalt</th>`; `<th>Slag</th><th>Kategori</th>` → `<th>Kategori</th><th>Slag</th>`; `class="report-periods"` → `class="report-perioder"`; `class="report-table"` → `class="report-tabell"` |
+| (91) | diagrammet ritas med `renderChart` | en rapport med en inkomstrad som är störst, två utgiftsrader och en utgiftsrad med tak men `totalOre: 0`: `#report-chart` har två `rect.chart-bar`, den största utgiften med bredden `CHART_WIDTH`, beloppstexterna är `formatSek(totalOre)`, och inkomstraden ritas inte; efter att kommentarerna tagits bort förekommer `'chart-bar'` exakt en gång i `src/web/app.js`. Andra fallet, `(91) staplarna står i fallande belopp också när rapportens rader inte gör det` [del 3, efter byggarens mutationskörning]: två utgiftsrader där den mindre står först i `rows` ger etiketterna och bredderna i fallande `totalOre` | `oreFromResponse(row.totalOre)` → `oreFromResponse(row.averageOre)` i `bars`; `.filter((row) => row.kind === EXPENSE)` struket i `renderReport`; `.filter((bar) => bar.amountOre > 0)` struket i `renderChart`; X5: `.sort((a, b) => b.amountOre - a.amountOre)` struket i `renderChart` (fälls av det andra fallet); en kopia av stapelslingan i en egen funktion för rapporten |
+| (92) | en tabellrad per `(kind, category)` | cellerna med klasserna i tabellen under "En tabellrad", i den ordning `RAPPORTKOLUMNER` i (90) anger; tak och över-text enligt F1 och F2 för en utgiftsrad med tak i två av tre månader, där taket i den sista månaden skiljer sig från det i den första; inkomstraden har tomma tak- och över-celler. Två renderingar: en kortare lista efter en längre (`LARDOMAR.md` 2026-09-12). Andra fallet, `(92) ett slutmånadstak som inte är ett säkert heltal ger en tom cell och aldrig texten NaN` [del 3, efter byggarens mutationskörning]: `budgetPerMonthOre` `[50000, 50000, undefined]` och `[50000, 50000, NaN]` ger tom `report-budget` och `0 av 2` i `report-over` | 92a: `budgets[budgets.length - 1]` → `budgets[0]`; 92b: `budgets.filter((budget) => Number.isSafeInteger(budget)).length` → `budgets.length`; 92c: `Number.isSafeInteger(budget)` → `budget !== null` (fälls av det första fallet, med `[undefined, 50000, 50000]`); 92d: `Number.isSafeInteger(lastBudget)` → `lastBudget !== null` (fälls av det andra fallet); 92e: `REPORT_ROWS.replaceChildren(` → `REPORT_ROWS.append(` |
+| (93) | tom rapport | `rows: []` ger `#report-chart-empty` `CHART_EMPTY_TEXT`, `#report-empty` `REPORT_EMPTY_TEXT` och tom `#report-rows`; en rapport med rader därefter tömmer `#report-empty` | `else`-grenen `''` i tomtexten struken |
+| (94) | perioden | startens femte anrop är `GET /api/rapport/<FRYST_MÅNAD>/12` och efter svaret är `report-period-12` markerad `"true"` och de två andra `"false"`; klick på `3 mån` ger `GET .../3` och, efter `200`, markeringen på 3 och en kortare lista; klick på `6 mån` som svarar `500` lämnar markeringen på 3, tabellen orörd och serverns text i `#report-error`; knappen är spärrad medan anropet hänger | `REPORT_DEFAULT_PERIOD = 12` → `6`; slingan med `button.setAttribute('aria-pressed', period === count ? 'true' : 'false');` flyttad ur `renderReport` till `changeReportPeriod`, före `await loadReport(count);`; `reportCount = count;` flyttad före `fetch`; `finally` med `button.disabled = false;` struken i `changeReportPeriod` |
+| (95) | rapporten följer månaden | `month-prev` ger `GET /api/manad/<föregående>` och därefter `GET /api/rapport/<föregående>/<reportCount>`; en lyckad `POST` av en post ger `GET /api/manad/<m>` och därefter `GET /api/rapport/<m>/<reportCount>`; en lyckad borttagning genom `sendChange` likaså; ett lyckat tak genom budgetformuläret (`PUT` som svarar `200`) likaså. Efter varje steg asserteras `anrop.length` **före** något index (se beslutsloggen för del 3, punkterna om (95)) | 95a: `await loadMonthAndReport();` i `changeMonth` → `await loadMonth();`; 95b: `reload = loadMonthAndReport` i `sendChange` → `reload = loadMonth`; 95c: `await loadMonthAndReport();` efter `closeForm();` i postformulärets sparning → `await loadMonth();`; 95d: `await loadMonthAndReport();` efter `closeBudgetForm();` i budgetformulärets sparning → `await loadMonth();` |
+| (96) | hämtningens felvägar vid sidladdning | `fetch` avvisas → `GENERAL_ERROR` i `#report-error` och båda sektionerna dolda; `500` → serverns text i `#report-error` och båda dolda; `401` → inloggningsvyn; i alla tre fallen är `#month-error` tom | `REPORT_ERROR.textContent = GENERAL_ERROR;` struken i `loadReport`s `catch` |
+| (97) | nedladdningen vid `200` | klick på `report-download` ger `GET /api/rapport/<reportMonth>/<reportCount>/csv`; `createObjectURL` får exakt den `Blob` attrappen svarade med (`===`); `klick` har ett element med `href` lika med attrappens URL och `download` lika med `reportFileName(reportMonth)`; efter ett misslyckat månadsbyte gäller adressen fortfarande den rapport som syns. [del 3, efter granskningen:] före nedladdningen klickar testet på `report-period-3`, som svarar `200`, så att varje led i adressen skiljer sig från sitt förval, och adressen ska vara `` `${rapportvag(MANAD, 3)}/csv` `` (`LARDOMAR.md` 2026-10-11, nedladdningen kan läsa förvalsperioden) | `response.blob()` → `new Blob([await response.text()])`; `reportMonth` → `currentMonth` i adressen; `${reportCount}` → `${REPORT_DEFAULT_PERIOD}` i `downloadReport`; `link.click()` struken |
+| (98) | nedladdningens felvägar vid nedladdning | `fetch` avvisas → `GENERAL_ERROR`; `500` → serverns text; `403` → låsraden; `401` → inloggningsvyn; ett `200` vars `blob()` avvisar → `GENERAL_ERROR` [del 3, efter byggarens mutationskörning: fallet `(98) vid nedladdning: ett 200 utan läsbar kropp ger den allmänna texten, och createObjectURL anropas inte`]; i inget av fallen anropas `createObjectURL`; felens texter står i `#report-error` och `#month-error` är tom; knappen är spärrad under anropet och åter påslagen efteråt | 98a: `REPORT_ERROR.textContent = GENERAL_ERROR;` struken i `downloadReport`s `catch` runt `fetch`-anropet; 98b: `showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body);` i `downloadReport` struken; 98c: `finally` med `button.disabled = false;` struken i `downloadReport`; 98d: `REPORT_ERROR.textContent = GENERAL_ERROR;` struken i `catch` runt `blob = await response.blob();` |
+| (99) | `Se planer` i rapportens låsrad | klick på `#report-show-plans` ger `GET /api/plan` och visar planvyn, som (85) för sparmålen | lyssnaren på `#report-show-plans` struken |
+| (100) | rapportens fel har ett eget element och töms av nästa svar som inte är ett fel [del 3, efter granskningen] | testfallen nedan, vart och ett med platsen i namnet. (a) `(100) vid periodbyte: ett 200 och ett 403 tömmer #report-error efter ett 500`: klick på `6 mån` som svarar `500` ger serverns text i `#report-error`; klick på `3 mån` som svarar `200` ger tom `#report-error`; klick på `6 mån` som svarar `500` ger texten igen; klick på `12 mån` som svarar `403` ger tom `#report-error` och låsraden. (b) `(100) vid nedladdning: ett 200 och ett 403 tömmer #report-error efter ett 500`: samma följd med nedladdningsknappen — `500` ger texten, `200` med en `Blob` tömmer, `500` ger texten igen, `403` tömmer och visar låsraden — med en egen `createObjectURL`-attrapp. I båda fallen står texten i `#report-error` före varje tömning, så att assertionen på den tomma strängen inte är sann av sig själv (`LARDOMAR.md` 2026-09-10, raden som tömmer #empty-state). (c) `(100) vid sidladdning: rapportens <svar> rör inte räkningarnas fel i #month-error` [runda 4], ett testfall per `<svar>`: `200`, `403`, `500` och ett avvisat `fetch`. Räkningarnas väg svarar `500` med texten `Räkningarnas fel.`, och rapportens första anrop **hänger** (planens svar är `null`) tills testet har asserterat utgångsläget: `#month-error` är `Räkningarnas fel.` och `#report-error` är tom. Därefter svarar testet rapportanropet med `<svar>` och kräver att `#month-error` fortfarande är `Räkningarnas fel.`. Att rapporten hänger gör ordningen bestämd: utan det kunde rapportens svar hanteras innan räkningarnas text skrivits, och en tömning av `#month-error` hade då inte gått att se. (d) `(100) vid nedladdning: <svar> rör inte räkningarnas fel i #month-error` [runda 4], ett testfall per `<svar>`: `200` med en `Blob`, `403`, `500`, ett avvisat `fetch` och ett `200` vars `blob()` avvisar. Utgångsläget skapas som i (c) med rapportens svar `200`: `#month-error` är `Räkningarnas fel.`, `#report-error` är tom och kortet syns. Nedladdningen svarar `<svar>`, och `#month-error` ska fortfarande vara `Räkningarnas fel.`. Körs med en egen `createObjectURL`-attrapp. `401` prövas inte i (c) eller (d): `sessionExpired` döljer månadsvyn, så `#month-error` syns inte och dess innehåll är inget användaren kan se. (e) `(100) en pågående hämtning tömmer inte #report-error` [runda 4], ett testfall för periodbyte och ett för nedladdning. Utgångsläget: ett klick som svarar `500` med `Serverns text.` har satt `#report-error` till `Serverns text.`. Nästa klick får ett anrop som **hänger**; medan det hänger ska `#report-error` fortfarande vara `Serverns text.`. Först när testet svarar `200` (med en `Blob` för nedladdningen) ska elementet vara tomt | Tömningar som tas bort: `REPORT_ERROR.textContent = '';` struken i `loadReport`s gren för `200` (fälls av (a)); struken i `loadReport`s gren för `403` (fälls av (a)); struken efter `link.click();` i `downloadReport` (fälls av (b)); struken i `downloadReport`s gren för `403` (fälls av (b)). Tilldelningar som införs, en per gren och var för sig (`LARDOMAR.md` 2026-09-23 och 2026-10-11): `MONTH_ERROR.textContent = '';` tillagd först i `loadReport`s gren för `200`, för `403`, för annat än `200` och i `catch` runt `fetch` (fälls av (c) med motsvarande `<svar>`); `MONTH_ERROR.textContent = '';` tillagd efter `link.click();`, först i `downloadReport`s gren för `403`, för annat än `200`, i `catch` runt `fetch` och i `catch` runt `blob = await response.blob();` (fälls av (d) med motsvarande `<svar>`); `REPORT_ERROR.textContent = '';` tillagd först i `loadReport`, före `fetch` (fälls av (e), periodbyte); `REPORT_ERROR.textContent = '';` tillagd först i `downloadReport`, direkt efter `button.disabled = true;` (fälls av (e), nedladdning). Tilldelningar som byts: `REPORT_ERROR.textContent = '';` i `loadReport`s gren för `200` → `MONTH_ERROR.textContent = '';` (fälls av (c) med `200`); `REPORT_ERROR.textContent = GENERAL_ERROR;` → `MONTH_ERROR.textContent = GENERAL_ERROR;` i `loadReport`s `catch` (fälls av (96)) |
+
+Var och en av `GENERAL_ERROR`-raderna ovan har ett eget testfall med platsen i
+namnet — "vid sidladdning" i (96) och "vid nedladdning" i (98) — och varje
+kodställe instrumenteras i en kopia av trädet innan paketet lämnas: varje ställe ska
+skrivas minst en gång av hela sviten (`LARDOMAR.md` 2026-09-10, två av tre fall i
+uppräkningen för `GENERAL_ERROR`). Kodställena är `catch` runt `fetch` i
+`loadReport`, `catch` runt `fetch` i `downloadReport` och `catch` runt
+`blob = await response.blob();` i `downloadReport`; det sista prövas av (98):s fall
+"ett 200 utan läsbar kropp", som också bär "vid nedladdning" i namnet. Alla tre
+skriver i `#report-error` sedan rättningen efter granskningen av del 3.
 
 **Mutationslistan genereras ur `git diff HEAD`**, aldrig ur den här tabellen.
 Tabellen är ett minimum (`LARDOMAR.md` 2026-09-12).
+
+#### Demon svarar på rapportens vägar [steg 5 del 3, punkt 5]
+
+Hör till del 3, som en egen punkt 5 efter gränssnittet. Demon börjar på Bas,
+gränssnittet hämtar rapporten vid varje sidladdning, och en attrapp utan vägen
+svarar `404 { error: 'Okänd adress.' }` — den texten hade stått i rapportens felruta
+i den publicerade demon från första sidladdningen. Att skjuta upp punkten hade
+alltså publicerat ett känt fel.
+
+**Kedjan är serverns, som för månaden och översikten.** En ny export i
+`src/web/demo/demo-fetch.js`:
+
+```
+readDemoReport(state, endMonth, count) -> { months, rows, largest }
+```
+
+som bygger `monthsData` med `readDemoMonth(state, m)` för varje `m` från
+`shiftMonth(endMonth, -(count - 1))` till `endMonth`, äldst först, och lämnar
+listan till `reportRows`. Ingen egen räkning, samma regel som (D4).
+
+**Behörighetsspärren tar funktionen som argument:** `kraverFunktion(feature)` i
+stället för dagens `kraverFunktion()` med `GOALS_FEATURE` inskrivet, och
+sparmålens vägar anropar den med `GOALS_FEATURE` och rapportens med en ny
+modullokal `REPORTS_FEATURE = 'reports'`. Kroppen är oförändrad:
+texten, `feature` och `requiredPlan` ur `planFor`.
+
+**Taket och mönstret kopieras, och kopiorna hålls av test.** `OVERVIEW_MIN_MONTHS`
+och `OVERVIEW_MAX_MONTHS` bor i `src/server/months.js`, som webbläsaren inte
+når. Attrappen får två modullokala konstanter, `REPORT_MIN_MONTHS = 1` och
+`REPORT_MAX_MONTHS = 36`, och mönstret `/^(0|[1-9][0-9]*)$/` — samma lösning
+som attrappens `OVERVIEW_MONTHS` och dess egen `segmentAfter`. Antalets text
+läggs i `SERVER_TEXTS` som `invalidReportCount`, interpolerad ur de två
+konstanterna. (D14) prövar gränserna genom beteendet, så att en kopia som glider
+fäller ett test.
+
+**CSV-svaret har en `blob` och ingen `text`:**
+
+```
+function csvSvar(text) -> { status: 200, ok: true, json, blob }
+// json avvisar med SyntaxError; blob ger new Blob([text], { type: 'text/csv; charset=utf-8' })
+```
+
+`text` är `toCsv(reportCsvRows(readDemoReport(...)))`. Attrappen sätter inga
+huvuden: gränssnittet läser inget huvud, och filnamnet kommer ur
+`reportFileName`.
+
+Ordningen på vägen är `api.js`: formen (`404`), metoden (`405`), sessionen
+(`401`), behörigheten (`403`), månaden (`400`), antalet (`400`).
+
+##### Kravlista för `tests/demo.test.js` [steg 5 del 3]
+
+| # | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|
+| (D11) | `200` på JSON-vägen | på Plus är kroppen `deepEqual` med `readDemoReport(state, m, n)` och har exakt API-avsnittets nycklar; `readDemoReport` för tre månader ger samma `rows` som `reportRows` över tre `readDemoMonth` | `return reportRows(monthsData);` i `readDemoReport` → en egen summering som sätter `budgetPerMonthOre` till `null` för varje månad ("tappar budgetarna"). En egen summering som räknar **rätt** ger samma värde och kan inte fällas här; förbudet mot den hålls av (D16) |
+| (D12) | `403` för Bas | båda vägarna ger `403 { error, feature: 'reports', requiredPlan: planFor('reports') }`; sparmålens `403` bär fortfarande `savingsGoals` | `kraverFunktion(REPORTS_FEATURE)` → `kraverFunktion(GOALS_FEATURE)` på rapportvägen |
+| (D13) | `200` på CSV-vägen | `blob()` ger en `Blob` vars byte är UTF-8 av `toCsv(reportCsvRows(...))` och börjar med `0xEF 0xBB 0xBF`; svaret har ingen `text` | `new Blob([text], { type: CSV_TYPE })` i `csvSvar` → `new Blob([text.slice(1)], { type: CSV_TYPE })`; `text` lagt till på svaret |
+| (D14) | felvägarna | `/012` och `/abc` → `404`; `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD` → `405`; utan session `401`; `2026-13` → `400` med `invalidMonth`; `0` och `37` → `400` med en text som är `` `Antalet månader måste vara mellan ${OVERVIEW_MIN_MONTHS} och ${OVERVIEW_MAX_MONTHS}.` `` med konstanterna importerade ur `src/server/months.js`; `1` och `36` → `200` | `REPORT_MAX_MONTHS = 36` → `35`; `REPORT_COUNT_PATTERN = /^(0\|[1-9][0-9]*)$/` → `REPORT_COUNT_PATTERN = /^[0-9]+$/` (`\|` i cellen är `|` i koden, samma escape som (RA31)) |
+| (D15) | `src/web/app.js` körd mot demons attrapp visar rapportens låsrad på Bas [del 3, efter byggarens mutationskörning] | testfallet `src/web/app.js körd mot demons attrapp visar rapportens låsrad på Bas, utan feltext` döps om till `(D15) src/web/app.js körd mot demons attrapp visar rapportens låsrad på Bas, utan feltext`: efter `loadApp` och `flush` är `#report-locked` synligt, `#report-card` dolt, och både `#month-error` och `#report-error` tomma | `const report = reportFromPath(pathname);` i `demo-fetch.js` → `const report = null;` (vägen försvinner, och `Okänd adress.` hamnar i `#report-error`) |
+| (D16) | `readDemoReport` räknar ingenting själv [del 3] | testet läser `src/web/demo/demo-fetch.js`, tar bort kommentarerna med samma två `replace` som (RA35) och skär ut funktionskroppen från raden som börjar med `export function readDemoReport(` till och med den första raden som är exakt `}`. I kroppen ska `return reportRows(monthsData);` stå, och varken `+`, `.reduce(`, `perMonthOre`, `totalOre` eller `averageOre` får förekomma. Importen av `reportRows` ur `'../../core/report.js'` prövas som bindning, med varje element normaliserat med `del.split(/\s+as\s+/)[0].trim()` (`LARDOMAR.md` 2026-09-07) | tre stavningar, var och en för sig: (1) en egen summering med `for` och `+=` som räknar rätt, med `return reportRows(monthsData);` utbytt mot ett eget objekt `{ months, rows, largest }`; (2) samma summering med `.reduce(`; (3) `return reportRows(monthsData);` → `return egenRapport(monthsData);` med en modullokal `egenRapport` utanför `readDemoReport` och raden `return reportRows(monthsData);` kvar i en kommentar |
+
+#### Beslutslogg [steg 5 del 3]
+
+- **`<N>` med inledande nolla ger `404`, mönstret är `/^(0|[1-9][0-9]*)$/`** —
+  `segmentAfter`-regeln säger "ingen normalisering", och `Number('012')` är en
+  normalisering som gav två adresser för samma rapport. `0` matchar och ger `400`,
+  eftersom det är ett tal i kanonisk form utanför taket; skillnaden mellan "ingen
+  adress" och "fel antal" ligger i formen, inte i värdet. *Att godkänna nollorna
+  och skriva in det som regel förkastades:* det hade gjort rapportvägen till den
+  enda vägen i projektet som normaliserar ett led. (påverkat av lärdom: **ja**,
+  `2026-10-10 — process: två val på rapportvägen byggdes och låstes i test utan
+  att ARKITEKTUR.md avgjort dem`)
+- **200-kroppen skrivs ut fält för fält, med typ** — gränssnittet byggs mot den,
+  och en kropp som bara hette "rapporten" lät `report.js` ändra API:t utan att
+  dokumentet märkte det. (RA32) kräver nycklarna exakt. (påverkat av lärdom:
+  **ja**, samma post, och `2026-09-07 — dokumentation: HTTP-API-tabellen utesluter
+  tre av kodens statuskoder`)
+- **Ingen kontroll mot `NaN` i `api.js`** — varje tal i kroppen räknas av en
+  funktion som kastar utanför det säkra heltalsområdet, så ett `NaN` blir `500` och
+  aldrig `null` i ett `200`. En kontroll i `api.js` hade varit en gren ingen indata
+  når. (påverkat av lärdom: **ja**, `2026-09-04 — test: två konstruktioner i
+  storage.js körs aldrig och överlever mutation`)
+- **`405` förs in i API-tabellen** — koden gav statuskoden från början och
+  tabellen räknade inte upp den. (påverkat av lärdom: **ja**, `2026-09-07 —
+  dokumentation: HTTP-API-tabellen utesluter tre av kodens statuskoder`)
+- **Rad 5 och 6 i spärrtabellen för `report-csv.js` skrivs som i koden, med
+  `Array.isArray` på raden** — tabellen och stycket under den gav två svar. Rad 7
+  tillkommer för den nya exporten. Kontrollerat efter ändringen med en sökning per
+  delvillkor i `src/core/report-csv.js`; utfallet står i paketets redovisning,
+  inte här, eftersom ett tal här åldras. (påverkat av lärdom: **ja**,
+  `2026-10-10 — dokumentation: spärrtabellen för report-csv.js skriver rad 5 och
+  6 annorlunda än koden`)
+- **`reportFileName(endMonth)` blir en export i `src/core/report-csv.js`** —
+  servern och gränssnittet behöver samma namn, och bara `src/core/` nås av båda.
+  *Att läsa `Content-Disposition` i klienten förkastades:* det kräver en tolkning
+  av huvudet och att demons attrapp svarar med huvuden. *Att bygga namnet i
+  `app.js` förkastades:* två facit för samma sträng. (påverkat av lärdom: **ja**,
+  `2026-09-02 — datamodell: cost.js har en egen, svagare kopia av "är detta ett
+  objekt"`)
+- **`renderChart(chartElement, emptyElement, bars)`** — en funktion med målet som
+  argument i stället för en andra diagramfunktion. Urval (`amountOre > 0`),
+  ordning och skalning flyttas in i den, så att varje regel har en ägare. Värdet
+  per stapel är `totalOre`, så att stapeln och kolumnen `Summa` visar samma tal.
+  Bara utgiftsrader ritas, därför att diagrammet är "Utgifter per kategori" och
+  avsnittet säger att rapporten är samma fråga över tid. (påverkat av lärdom:
+  **ja**, `2026-09-02 — datamodell: cost.js har en egen, svagare kopia av "är
+  detta ett objekt"`)
+- **`largest` läses inte av gränssnittet och skalar inte diagrammet** — den väljs
+  bland alla tre slag, och diagrammet ritar bara utgifter. Fältet behålls med
+  märkningen "ingen läsare i `src/web/` sedan steg 5 del 3". *Att stryka det ur
+  kroppen förkastades i den här delen:* det kräver att `report.js` och (RA15)
+  öppnas för en ändring ingen användare ser; frågan kan tas upp när `report.js`
+  ändå ändras. (påverkat av lärdom: **ja**, `2026-09-16 — arkitektur:
+  daysUntilNextDue byggdes utan anropare i src/ och utan den märkning
+  gränssnittsblocket kräver`)
+- **`lockRow(feature)` byggs inte; texten och växlingen får en ägare, inte
+  uppmärkningen** — `lockedText`, `showLocked` och `showCard` ersätter sparmålens
+  egna. Rapportens låsrad står i `index.html` med `id="report-show-plans"`, så
+  (85) förblir sant utan ändring av sitt `index.html`-fall. `requiredPlan` läses
+  ur `403`-svaret, där servern räknat det med `planFor`. (påverkat av lärdom:
+  **ja**, `2026-09-22 — gränssnitt: radens egen klass i kortet Kommande dragningar
+  överlever mutation`, om statisk uppmärkning som prövas mot sidan och inte mot
+  attrappen)
+- **Slutmånaden är `currentMonth`, och rapporten hämtas om vid månadsbyte och
+  efter varje lyckad ändring av en post eller ett tak** — ett kort som visar gamla
+  tal bredvid en lista med nya är det fel paket 8 rättade för totalerna.
+  `loadMonthAndReport` är den enda vägen, så att ingen omhämtning kan glömma
+  rapporten. Vid start hämtas rapporten sist, så att de fyra första anropen
+  behåller sina index. (påverkat av lärdom: **ja**, `2026-09-22 — gränssnitt: en
+  borttagning som ger 404 lämnar posten kvar i listan, i båda totalerna och bland
+  kommande dragningar`)
+- **Periodens markering är `aria-pressed`, satt först efter `200`** — markeringen
+  ska visa den period tabellen visar. (påverkat av lärdom: **ja**, `2026-09-10 —
+  gränssnitt: totalrutan och tomläget har ett tredje tillstånd som specen inte
+  nämner`)
+- **Nedladdningen: `fetch`, `response.blob()`, `URL.createObjectURL` och ett
+  `<a download>` som `app.js` skapar; förbudet gäller ett `<a href>` till
+  API-vägen** — förbudets skäl (demon, `403` i felrutan) gäller länken till
+  servern och inte länken till en `Blob`. `text()` förbjuds därför att filen ska
+  nå disken byte för byte med sin BOM. Objekt-URL:en återkallas inte. (påverkat av
+  lärdom: **ja**, `2026-09-07 — dokumentation: ARKITEKTUR.md förbjuder den
+  millisekundkonstant LARDOMAR.md kräver`, om ett förbud som är bredare än sitt
+  skäl)
+- **Attrappen får `createObjectURL` genom `loadApp`, återställd i samma
+  `t.after`-hook** — bara den statiska metoden byts. (påverkat av lärdom: **ja**,
+  `2026-09-22 — test: laddarens återställning av den frusna dagen lämnar kvar den
+  första dagen när loadApp anropas två gånger i samma test`)
+- **Demon hör till del 3, som punkt 5** — utan den visar den publicerade demon
+  `Okänd adress.` vid varje sidladdning. Taket och mönstret kopieras och hålls av
+  (D14). (påverkat av lärdom: **ja**, `2026-09-02 — test: kopplingen mellan
+  INTERVALS och PAYMENTS_PER_YEAR skyddas inte av något test`)
+- **Varje nytt testfall har en punkt med sin mutation** — (RA31) till (RA36), (88)
+  till (99) och (D11) till (D14). Den första lydelsens (88) till (91) hade ingen
+  mutation och ersätts. (påverkat av lärdom: **ja**, `2026-09-14 — test: fyra
+  obligatoriska testfall byggdes utan sin rad i ARKITEKTUR.md`)
+- **F1 till F4 är användarens beslut, inte arkitektens** — de gäller vad
+  användaren ser och inte hur det byggs, så arkitekten lade fram dem som frågor
+  med förslag, och användaren svarade:
+  - **F1:** raden visar slutmånadens tak; saknar slutmånaden tak blir cellen
+    tom. Som föreslaget.
+  - **F2:** `<n> av <m>`, och kolumnrubrikerna `Slag`, `Kategori`,
+    `Snitt per månad`, `Summa`, `Tak`, `Över taket`. Som föreslaget.
+  - **F3:** **12 månader** från början. Förslaget var 6 och användaren valde
+    annorlunda. `REPORT_DEFAULT_PERIOD` är `12`, startens femte anrop är
+    `GET /api/rapport/<m>/12`, och (94) är omskriven: den börjar på 12, går ned
+    till 3 med en kortare lista, och prövar felvägen med 6. Mutationen
+    `REPORT_DEFAULT_PERIOD = 12` → `6` står i (94):s rad.
+  - **F4:** `Inget att visa för perioden.` Som föreslaget.
+  (påverkat av lärdom: **nej**)
+
+Rättningar efter byggarens rapport om punkt 1 till 5, skrivna innan granskaren
+kör (`LARDOMAR.md` 2026-09-14 och 2026-09-15):
+
+- **(D11):s mutation byts mot en som går att fälla, och förbudet mot en egen
+  räkning får en egen källtextspärr, (D16)** — den första lydelsen, "en egen
+  summering av `perMonthOre`", ger samma värde som `reportRows` när den räknar
+  rätt, och en `deepEqual` mot `reportRows` kan då aldrig falla; byggaren körde i
+  stället en summering som tappar budgetarna, och den fälls av (D11). (D11) prövar
+  alltså *värdet*, och den raden står nu med den mutation den faktiskt fäller.
+  Förbudet gäller däremot *formen* — två facit som kan glida isär för indata
+  seed-datan inte når — och det är en fråga om källtexten, inte om värdet. *Att
+  bara skriva om mutationsraden förkastades:* då hade "Ingen egen räkning, samma
+  regel som (D4)" stått utan skydd, och (D4):s filomfattande spärr fångar bara
+  `.reduce(` och `amountOre +`, inte en `for`-slinga med `+=` över `perMonthOre`.
+  (påverkat av lärdom: **ja**, `2026-09-10 — test: förbudet mot att summera
+  kolumnen skyddas bara för månadstotalen`, vars regel säger att en mutation som
+  ger samma värde ska skyddas med en kontroll av källtexten, och `2026-09-07 —
+  test: textspärren mot saveEntries i api.js går förbi med ett alias`, för de tre
+  stavningarna)
+- **(95) skärps; kolumnens krav står kvar** — kolumnen kräver att punktens egen
+  kryssrad finns *bland* de fallerande, inte att den är ensam, och en punkt vars
+  hela innehåll är "rapporten följer månaden" ska fällas av mutationen som gör att
+  den inte gör det. Byggaren rapporterade att 95a bara fälldes av (40), (41) och
+  `räkningarna hämtas en gång och inte vid ett månadsbyte`, med skälet att (95)
+  byter period före månadsbytet. Skärpningen gjordes så att utfallet inte längre
+  beror på hur ett saknat index hanteras: testfallet `(95) rapporten följer
+  månaden vid månadsbyte och efter en lyckad ändring` asserterar sedan del 3
+  längden direkt efter varje `await flush()` och före varje index, med
+  meddelandena `'månadsbytet hämtade inte rapporten'` (`8`), `'sparningen hämtade
+  inte rapporten'` (`11`), `'borttagningen hämtade inte rapporten'` (`14`) och
+  `'taket hämtade inte rapporten'` (`17`, se punkten nedan). Körd i steg 5 del 3:
+  utan mutation stämde alla fyra längderna, och 95a, 95b, 95c och 95d gav var och
+  en (95):s kryssrad. *Att skriva om kolumnens krav förkastades:* att (40) och (41) faller säger
+  att månaden hämtas, inte att rapporten följer med, och kolumnen är det enda som
+  binder en mutation till den punkt som påstår skyddet. (påverkat av lärdom:
+  **ja**, `2026-09-14 — test: steg 2 i nextDueDate kan tas bort utan att något test
+  faller`, om ett testnamn som påstår ett skydd assertionen inte ger)
+- **Varje anropsställe för `loadMonthAndReport` i `src/web/app.js` har en egen
+  mutation i (95)** — en sökning efter `loadMonthAndReport` i filen ger
+  definitionen och fyra anropsställen: `changeMonth` (95a), förvalet i
+  `sendChange` (95b), postformulärets sparning efter `closeForm();` (95c) och
+  budgetformulärets sparning efter `closeBudgetForm();` (95d). Den första
+  lydelsen hade bara 95a och 95b; postformulärets ställe lades till på
+  samordnarens begäran, och budgetformulärets hittades av samma sökning.
+  Budgetformulärets ställe fälls i dag av det onumrerade testet `+ Sätt tak sparar
+  taket med PUT och ritar om kortet ur en hämtning`, som asserterar
+  `anrop.length` lika med `8`, men ett onumrerat test kan inte bära en
+  kolumnrad, och (95) är punkten som påstår att rapporten följer varje lyckad
+  ändring. Testskärpningen per mutation, utöver den i punkten ovan:
+  - **95c** kräver ingen ytterligare skärpning: `POST`-steget i (95) går genom
+    postformuläret, och längdkontrollen `11` efter `skickaFormularet` från
+    punkten ovan fäller mutationen med ett `AssertionError` i (95).
+  - **95d** fick ett fjärde steg i (95): (95):s andra argument till
+    `planInloggad` svarar `{ status: 200, json: { budgets: [] } }` på `PUT`,
+    utöver `204` på `DELETE` och `201` på övriga; efter borttagningssteget klickar
+    testet på `add-budget`, sätter `budget-category` till `'housing'` och
+    `budget-amount` till `'9000'`, anropar `skickaBudgetformularet(dom)` och
+    `await flush()`, och asserterar längden `17` före indexen
+    `anrop[14].method === 'PUT'`, `anrop[15].url === '/api/manad/' +
+    FOREGAENDE_MANAD` och `anrop[16].url === rapportvag(FOREGAENDE_MANAD, 3)`.
+    Körd i steg 5 del 3: längden `17` och de tre indexen stämde utan mutation, och
+    95c och 95d gav var för sig (95):s kryssrad.
+  (påverkat av lärdom: **ja**, `2026-09-04 — test: två konstruktioner i
+  storage.js körs aldrig och överlever mutation`, om att mutationslistan ska
+  genereras ur filen och inte ur dokumentet, och `2026-09-14 — test: loopkroppens
+  väg genom addMonths skyddas av inget test`, om att varje anropsställe ska vara
+  det enda som kan få sin gräns att brytas)
+- **Fem testfall som byggaren skrev för att mutationer annars överlevde får sina
+  rader** — i (91), (92) och (98) som ett andra fall på punktens egen rad, med
+  mutationerna X5, 92d och 98d; i demons kravlista som (D15) och i kravlistans
+  tillägg för `tests/report-api.test.js` som (RA37), med mutationen RE8. De två
+  senare hade inget nummer och döptes om med numret först, så att en sökning på
+  numret hittar både raden och testet: `(D15) src/web/app.js körd mot demons
+  attrapp visar rapportens låsrad på Bas, utan feltext` står i
+  `tests/demo.test.js` och `(RA37) readReport läser ur den databas den får, och
+  aldrig ur getDatabase()` i `tests/report-api.test.js`. Etiketterna 92d, 98d och
+  RE8 är byggarens; X5 sattes av arkitekten på staplarnas ordning, och mutationen
+  i tabellen är det bindande, inte etiketten.
+  (påverkat av lärdom: **ja**, `2026-09-14 — test: fyra obligatoriska testfall
+  byggdes utan sin rad i ARKITEKTUR.md`)
+- **En mutation som citerar "raden" i bestämd form och träffar flera ställen delas
+  upp** — `MONTH_ERROR.textContent = GENERAL_ERROR;` stod i två `catch` i
+  `downloadReport` (efter granskningen är det `REPORT_ERROR`, se "Rapportens fel
+  har ett eget element"), så (98):s rad har 98a och 98d med var sin plats utskriven;
+  `Number.isSafeInteger` står två gånger i `reportRow`, så (92):s rad har 92c och
+  92d; `req.method === 'GET'` står på flera rader i `api.js`, så (RA33):s rad
+  namnger raden före `handleReadReport`. Stycket om `GENERAL_ERROR`-raderna räknar
+  nu upp de tre kodställena med namn. (påverkat av lärdom: **ja**, `2026-09-10 —
+  test: raden som tömmer #empty-state i clearView överlever mutation, och
+  mutationskravet träffar bara den andra kopian`)
+- **Varje mutationsrad i steg 5:s tabeller är skriven med ett uttryck som står i
+  filen raden gäller** — kontrollerat med en sökning per uttryck före pilen.
+  Rader som inte gav någon träff och nu är omskrivna: (91) `row.kind ===
+  'expense'` (koden skriver `row.kind === EXPENSE`); (92) "`m` räknat som
+  `budgetPerMonthOre.length`" och "sista elementet" (koden läser `budgets`, och
+  mutationen skrivs med det namn uttrycket bär där villkoret står); (88)
+  `showLocked(...)`; (94) "markeringen satt vid klicket"; (D11); (D13) "`blob`
+  byggd ur `text` utan BOM". Byggarens omskrivna AP7, AP8, AP17 och AP19 står inte
+  i den här filen — etiketterna förekommer inte i den — och berörs därför inte här.
+  Rader vars mutation är ett *tillägg* ((89):s tre stavningar, (91):s kopia av
+  stapelslingan, (D13):s `text`, (D16):s tre stavningar) har inget uttryck att
+  söka efter och prövas genom att köras. (påverkat av lärdom: **ja**, `2026-09-14
+  — dokumentation: (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte
+  längre finns i koden` och `2026-09-16 — dokumentation: mutationsraden i
+  kravlistan för (21) till (23) citerar ett uttryck som inte finns i app.js`)
+- **Sökningen efter rå BOM körs med `-I`:** `grep -rnI $'\xef\xbb\xbf' src tests`,
+  rörledd genom `cat -v`, och ska ge ingen utskrift. Utan `-I` träffar sökningen
+  binärfilen `src/web/bilder/logga.png`, där de tre byten är en del av bilddatan
+  och inte ett tecken i en sträng. Kontrollen stod inte i den här filen tidigare;
+  den kommer ur `LARDOMAR.md` 2026-10-10 och skrivs in här så att den har en
+  bindande lydelse. `-I` hoppar över varje fil grep räknar som binär, men inte en
+  textfil med en rå BOM. Körd i steg 5 del 3: samma kommando mot en kopia under
+  scratchpad-katalogen, med en `.js`-fil vars första rad börjar med de tre byten,
+  gav en träffrad för den filen. Att
+  CSV-filen *ska* börja med BOM är ingen motsägelse: tecknet skrivs vid körning av
+  `toCsv` ur konstanten `BOM` i `src/core/csv.js`, där tecknet står som escape
+  och inte rått, och tecknet står aldrig rått i en fil. (påverkat av lärdom: **ja**,
+  `2026-10-10 — test: U+FEFF står rått i två nya testfiler, under kommentarer som
+  säger att tecknet står som escape`)
+
+Rättningar efter granskarens återlämning av del 3 (`LARDOMAR.md` 2026-10-11, fem
+poster):
+
+- **Ordrar och "inte körd" i steg 5 skrevs om i dåtid med de körda utfallen** —
+  avsnittet "Nedladdningen" (`text()` gav längden `1`, `blob()` gav byten
+  `[239, 187, 191, 97]`) och de tre posterna ovan om (95), om de fem testfallen och
+  om `-I`. Sökningen
+  `awk '/^### Diagram och rapporter \(bindande\) \[steg 5\]/{f=1} f' ARKITEKTUR.md | grep -nE "inte kör(t|d|da)|arkitektens (läsning|räkning)|ingen körning|[Bb]yggaren (ska|kör)|förrän|körs efter|ska köras|när .* är byggd"`
+  (de fyra sista leden tillkom i runda 4, se posten om tidsord nedan)
+  är förankrad i rubriken och inte i ett radnummer, som flyttas av varje ändring
+  ovanför. Före rättningen gav den träffar i "Nedladdningen" och i de tre
+  posterna. Efter rättningen är varje kvarvarande träff antingen en mening i
+  dåtid om en körning som gjordes (posten om (D11)) eller ett omnämnande av
+  mekanismen i den här posten, som innehåller sitt eget sökmönster; ingen är en
+  order eller en okörd uppgift. Antalet skrivs inte här, eftersom den här posten
+  själv ändrar det (`LARDOMAR.md` 2026-09-10, sökmönstret skrevs in i filen det
+  söker i). Utfallen före och efter står i paketets redovisning. Krav på byggaren i den här rättningen står som rader i
+  kravlistorna, med testfall och mutation, och inte som ordrar i den här loggen:
+  en rad i en kravlista blir inte falsk när den är utförd. (påverkat av lärdom:
+  **ja**, `2026-10-11 — dokumentation: steg 5 lämnades vidare med sju "inte
+  körd"- och "Byggaren ska"-rader som redan är utförda`)
+- **Rapportens fel har ett eget element, `#report-error`, och `#month-error`
+  lämnas åt sina gamla ägare** — `#month-error` skrivs av månadens, räkningarnas,
+  sparmålens och ändringarnas vägar. Att låta rapportens `200` tömma det hade
+  tagit bort deras fel: vid start hämtas rapporten sist, så ett `500` på
+  räkningarnas väg hade försvunnit i samma stund rapporten svarade. Det är den
+  risk granskaren bad om ett beslut för, och (100):s fall (c) prövar den. *Att
+  tömma `#month-error` bara när texten skrevs av rapporten förkastades:* det
+  kräver att `app.js` minns vem som skrev senast, och en jämförelse på texten
+  räcker inte, eftersom `GENERAL_ERROR` är samma sträng från varje väg. *Att lägga
+  elementet i kortet förkastades:* ett fel vid sidladdningen lämnar båda
+  sektionerna dolda, och felet hade då inte synts. Elementet står därför mellan
+  `#report-locked` och `#chart`, utanför båda. Vid `200` töms det i både
+  `loadReport` och `downloadReport` (i `downloadReport` efter `link.click()`),
+  och vid `403`, eftersom låsraden är det normala svaret och inget fel. Körd i
+  steg 5 del 3 efter bygget, med `grep -cF "<uttrycket>" src/web/app.js` per
+  mutationsuttryck i (88), (96), (97), (98) och (100): `REPORT_ERROR.textContent
+  = GENERAL_ERROR;` gav `3`, `REPORT_ERROR.textContent = '';` gav `4`,
+  `showLocked(REPORT_CARD, REPORT_LOCKED, REPORT_LOCKED_TEXT, body);` gav `2`,
+  `${reportCount}` gav `1`, `blob = await response.blob();` gav `1` och
+  `link.click()` gav `1` — varje uttryck står alltså i filen raden gäller.
+  (påverkat av lärdom: **ja**, `2026-10-11 — gränssnitt: ett
+  rapportfel står kvar i #month-error efter att ett nytt försök lyckats` och
+  `2026-09-10 — gränssnitt: totalrutan och tomläget har ett tredje tillstånd som
+  specen inte nämner`)
+- **Kolumnrubrikerna i F2 står i (90), med en lista som binder rubrik till cell**
+  — (90) läser redan `index.html`, och rubrikerna är uppmärkning i samma fil. En
+  egen punkt hade varit ett andra testfall som läser samma fil för samma slags
+  krav. Listan `RAPPORTKOLUMNER` i testfilen bygger både den förväntade
+  rubrikraden och (92):s cellklasser, så att ett byte av två rubriker och ett byte
+  av två celler fälls var för sig. (påverkat av lärdom: **ja**, `2026-10-11 —
+  test: kolumnrubrikerna i F2 kan skrivas om eller byta plats utan att något test
+  faller`)
+- **(33) prövar alla tre globaler laddaren byter, och förvalet får ett eget
+  fall** — mutationerna citerar raderna i `tests/helpers/dom.js` med deras text,
+  inte med radnummer, eftersom ett radnummer flyttas av nästa ändring i filen.
+  (påverkat av lärdom: **ja**, `2026-10-11 — test: återställningen av
+  URL.createObjectURL i loadApp skyddas av inget test`)
+- **(97) byter period före nedladdningen** — `reportCount` var lika med förvalet i
+  all testdata, och då kan ingen assertion skilja de två åt. (påverkat av lärdom:
+  **ja**, `2026-10-11 — test: nedladdningen kan läsa förvalsperioden i stället för
+  reportCount` och `2026-09-16 — test: datumkolumnen i kortet Kommande dragningar
+  kan bytas mot startDate`)
+- **Statiska klasser som `style.css` väljer på testas, och regeln gäller
+  bokstavligt från steg 5** — lärdomen 2026-09-22 säger att en ny selektor i
+  `style.css` ska sökas i `tests/app.test.js` och att paketet stoppas om den
+  saknas där. Den gör inget undantag för klasser som står i `index.html` i
+  stället för att skapas av `app.js`, och ett undantag hade varit ett förbud
+  smalare än sitt skäl: en omdöpt klass i `index.html` tappar stilen lika tyst som
+  en omdöpt klass i `app.js`. Regeln, så som den följs: **varje klassnamn som en
+  selektor i `src/web/style.css` väljer på och som ett paket lägger till i
+  `style.css` ska förekomma i `tests/app.test.js`. Sätts klassen av `app.js`
+  asserteras elementets `className` i attrappen. Står klassen i `index.html`
+  asserteras den i den öppnande taggen, i det testfall som läser `index.html` för
+  samma kort.** För steg 5 betyder det `report-periods` och `report-table` i (90);
+  `report-row` och cellklasserna står redan i (92). Klasser som lades till i
+  `style.css` före steg 5 omfattas inte i efterhand: regeln utlöses av att en
+  selektor läggs till, och att gå tillbaka genom alla tidigare kort är ett arbete
+  ingen användare ser. Attributselektorn `[aria-pressed="true"]` är inget
+  klassnamn och prövas redan av markeringen i (94). (påverkat av lärdom: **ja**,
+  `2026-09-22 — gränssnitt: radens egen klass i kortet Kommande dragningar
+  överlever mutation` och `2026-09-07 — dokumentation: ARKITEKTUR.md förbjuder den
+  millisekundkonstant LARDOMAR.md kräver`, om ett förbud som är smalare eller
+  bredare än sitt skäl) **Ersatt i runda 4 av punkten nedan för det som står i
+  `index.html`;** för klasser som `app.js` sätter gäller den fortfarande.
+- **Varje nytt element i `index.html` asserteras med hela sin uppmärkning
+  [runda 4]** — regeln ovan utlöstes av *selektorn*: bara en klass som paketet
+  lade till i `style.css` omfattades. Skälet, att en ändrad klass i `index.html`
+  tappar stilen tyst, gäller lika mycket ett nytt element med en gammal klass
+  (`#report-error` med `form-error`), och `role` och `aria-*` omfattades inte
+  alls. Regeln utlöses nu av *elementet*, och så här följs den: **varje element
+  som ett paket lägger till i `src/web/index.html` ska ingå i ett sammanhängande
+  block som ett testfall skär ut ur `index.html` och jämför ordagrant med en
+  konstant i testfilen, efter två normaliseringar och inga andra: HTML-kommentarer
+  tas bort med `.replace(/<!--[\s\S]*?-->/g, '')`, och blanktecken mellan taggar
+  slås ihop med `.replace(/>\s+</g, '><').trim()`. Konstanten är kodblocket för
+  uppmärkningen i `ARKITEKTUR.md`, normaliserat på samma sätt. Lägger paketet till
+  element på två ställen i filen blir det två block. Mutationskolumnen för
+  punkten har minst en mutation som byter en klass och en som stryker ett
+  `role`- eller `aria-*`-attribut, om blocket har något sådant.** Jämförelsen
+  gäller alltså klass, `id`, `role`, `aria-*`, `hidden` och text utan att någon
+  behöver räkna upp attributen, och ett nytt attribut kommer med av sig självt.
+  För steg 5 är blocket det från `<section class="card" id="report-card" hidden>`
+  till och med `<p class="form-error" id="report-error" role="alert"></p>`, i
+  (90). Element från före steg 5 omfattas inte i efterhand, av samma skäl som
+  ovan. *Att räkna upp attribut per element förkastades:* en uppräkning är en
+  sluten lista, och det var just en sluten lista som missade `role`. (påverkat av
+  lärdom: **ja**, `2026-10-11 — test: den nya felraden #report-error kan tappa
+  sin klass och sin role utan att något test faller`)
+- **"#month-error rörs aldrig av rapporten" prövas i varje gren, och "en hämtning
+  som pågår tömmer inte #report-error" har ett eget fall [runda 4]** — en mening
+  om att ett element aldrig skrivs eller töms av en funktion gäller varje gren i
+  funktionen, och den fälls bara av mutationer som *inför* tilldelningen, en per
+  gren. Därför har (100) fallen (c) och (d), ett per svar och funktion, och (e) med
+  ett hängande anrop. Utgångsläget skrivs ut i varje fall och är aldrig det tomma:
+  `#month-error` har `Räkningarnas fel.` innan rapportens svar kommer, och
+  `#report-error` har `Serverns text.` innan det hängande anropet görs. Rapportens
+  första anrop hänger i (c) och (d) tills utgångsläget är asserterat, så att
+  ordningen mellan räkningarnas och rapportens svar inte beror på i vilken ordning
+  löftena råkar avvecklas. `401` undantas med skäl i (100):s rad. (påverkat av
+  lärdom: **ja**, `2026-10-11 — test: "#month-error skrivs och töms aldrig av
+  rapporten" prövas bara för loadReports 200` och `2026-09-23 — test: de två
+  "oförändrad"-raderna i facittabellen för vyn efter en borttagning skyddas av
+  inget test`)
+- **Sökningen efter okörda markörer fångar också tidsord som pekar framåt [runda
+  4]** — mönstret i den första posten under den här rubriken fick leden för
+  "förrän", "körs efter", "ska köras" och "när … är byggd". Före tillägget gav den
+  utökade sökningen över steg 5 meningen om `REPORT_ERROR`-uttrycken i posten om
+  `#report-error` ("finns inte … förrän rättningen är byggd"), som var falsk
+  eftersom rättningen var byggd; den är omskriven med byggarens körda utfall.
+  Övriga träffar är meningen om `405` i API-avsnittet ("stod inte i tabellen
+  förrän del 3"), som står i dåtid och är sann, posten om (D11), som beskriver en
+  körning som gjordes, och omnämnanden av mekanismen i de här posterna, som
+  innehåller sitt eget sökmönster. En mening i den här loggen villkorar aldrig sin
+  sanning på något som byggs senare. (påverkat av lärdom: **ja**, `2026-10-11 —
+  dokumentation: rättningen av de okörda ordrarna lade till en ny, som
+  sökmönstret inte fångar`)

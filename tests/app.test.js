@@ -26,6 +26,9 @@ import { REMIND_DAYS_DEFAULT, REMIND_DAYS_MAX, REMIND_DAYS_MIN } from '../src/co
 import { divideRoundHalfUp, formatSek } from '../src/core/money.js';
 import { GOAL_STATUSES } from '../src/core/goal.js';
 import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
+import { ITEM_KIND_LABELS } from '../src/core/item.js';
+import { reportFileName } from '../src/core/report-csv.js';
+import { OVERVIEW_MAX_MONTHS, OVERVIEW_MIN_MONTHS } from '../src/server/months.js';
 import { createDom, createFetch, flush, idsFranIndexHtml, loadApp } from './helpers/dom.js';
 
 // Text mot användaren som app.js skriver själv, alltså varken hämtar ur svaret
@@ -57,6 +60,10 @@ const TOMT_SPARANDE = 'Inget sparande i september ännu - lägg till ditt först
 // tidigareFetch och lägger tillbaka den — rätt beteende, men värdet är då en
 // funktion och blir aldrig undefined (ARKITEKTUR.md, "Verifierad miljö").
 const FETCH_FORE_TESTERNA = globalThis.fetch;
+// Samma sak för URL.createObjectURL [steg 5 del 3], den tredje globala som
+// laddaren byter: Node har metoden, så värdet är en funktion och prövas mot det
+// värde som gällde innan något testfall kördes.
+const CREATE_OBJECT_URL_FORE_TESTERNA = URL.createObjectURL;
 
 // Dagen app.js ser är injicerad av laddaren, så varje fall prövar en känd dag och
 // kan aldrig bli rött av att dygnet byts mitt i provet (ARKITEKTUR.md, "Klockan
@@ -97,6 +104,13 @@ const SPARMALSVAG = `${SPARMALSVAG_PREFIX}${FRYST_IDAG}`;
 // fall, och låsraden bara där den efterfrågas.
 const SPARMAL_TOM = Object.freeze({ status: 200, json: { goals: [] } });
 
+// Rapportens väg [steg 5]: /api/rapport/<ÅÅÅÅ-MM>/<N>. Månaden står i sökvägen,
+// så prefixet och inte hela adressen. Förvalet är ett 200 med en tom rapport,
+// alltså en plan SOM HAR rapporter, av samma skäl som SPARMAL_TOM: kortet syns i
+// varje inloggat fall, och låsraden bara där den efterfrågas.
+const RAPPORTVAG_PREFIX = '/api/rapport/';
+const RAPPORT_TOM = Object.freeze({ status: 200, json: { months: [], rows: [], largest: null } });
+
 // En post på samma form som src/server/months.js lämnar den: ören och inte
 // kronor, och fälten som säger om posten kommer från en mall.
 function post(id, kind, name, amountOre, category, extra = {}) {
@@ -127,7 +141,10 @@ function manadssvar(items, totals = NOLLOR, budgets = []) {
 
 // Startar app.js med en plan för fetch-attrappen och lämnar tillbaka attrappen,
 // anropslistan och bytDag — laddarens väg att sätta en annan dag mitt i ett fall.
-async function starta(t, plan, idag = FRYST_IDAG) {
+//
+// createObjectURL [steg 5] går vidare till laddaren. Utelämnad får laddaren sitt
+// förval, som kastar: ett fall som inte väntar sig en nedladdning fälls av en.
+async function starta(t, plan, idag = FRYST_IDAG, { createObjectURL } = {}) {
   const dom = createDom();
   // Det första anropet måste besvaras med en gång: app.js har ett await på
   // toppnivå, så modulen laddas inte färdigt förrän GET /api/mig är besvarad. En
@@ -142,7 +159,7 @@ async function starta(t, plan, idag = FRYST_IDAG) {
     return svar;
   };
   const { fetch, anrop } = createFetch(forstaSvaretMasteKomma);
-  const { bytDag } = await loadApp(t, { document: dom.document, fetch, idag });
+  const { bytDag } = await loadApp(t, { document: dom.document, fetch, idag, createObjectURL });
   return { dom, anrop, bytDag };
 }
 
@@ -163,11 +180,17 @@ async function starta(t, plan, idag = FRYST_IDAG) {
 //
 // Förvalen är tomma listor: kort utan rader, alltså det utgångsläge varje fall
 // som inte handlar om räkningar eller sparmål förutsätter.
+//
+// Rapporten [steg 5] har en egen gren av samma skäl som räkningarna och
+// sparmålen: app.js hämtar den vid laddningen och efter varje omhämtning av
+// månaden, och en rapporthämtning får inte förbruka ett månadssvar ur
+// ikoordning.
 function planInloggad(
   hamtaManad,
   ovrigt = () => null,
   hamtaRakningar = () => RAKNINGAR_TOM,
-  hamtaSparmal = () => SPARMAL_TOM
+  hamtaSparmal = () => SPARMAL_TOM,
+  hamtaRapport = () => RAPPORT_TOM
 ) {
   return (anropet, index) => {
     if (anropet.url === '/api/mig') {
@@ -178,6 +201,9 @@ function planInloggad(
     }
     if (anropet.method === 'GET' && anropet.url.startsWith(SPARMALSVAG_PREFIX)) {
       return hamtaSparmal(anropet, index);
+    }
+    if (anropet.method === 'GET' && anropet.url.startsWith(RAPPORTVAG_PREFIX)) {
+      return hamtaRapport(anropet, index);
     }
     if (anropet.method === 'GET') {
       return hamtaManad(anropet.url);
@@ -254,7 +280,8 @@ test('(37) ett 401 vid laddningen visar inloggningsvyn och döljer månadsvyn', 
 test('(38) ett 200 vid laddningen visar månadsvyn med månadens namn', async (t) => {
   const { dom, anrop } = await starta(t, planInloggad(() => manadssvar([])));
 
-  assert.equal(anrop.length, 4);
+  // Fem anrop sedan steg 5: rapporten hämtas sist, efter sparmålen.
+  assert.equal(anrop.length, 5);
   assert.equal(anrop[1].method, 'GET');
   assert.equal(anrop[1].url, MANADSVAG);
 
@@ -287,9 +314,10 @@ test('(40) bakåtknappen hämtar föregående månad och byter rubrik', async (t
   assert.equal(dom.falt('month-prev').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, `/api/manad/${FOREGAENDE_MANAD}`);
+  // Startens fem anrop, därefter månaden och rapporten för den nya månaden.
+  assert.equal(anrop.length, 7);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, `/api/manad/${FOREGAENDE_MANAD}`);
   assert.equal(dom.falt('month-label').textContent, FOREGAENDE_RUBRIK);
   // Tomtexterna bär den nya månadens namn, inte den gamlas.
   assert.equal(dom.falt('income-empty').textContent, 'Inga inkomster i augusti ännu - lägg till din första.');
@@ -301,14 +329,14 @@ test('(41) framåtknappen hämtar nästa månad, också över ett årsskifte', a
   assert.equal(dom.falt('month-next').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].url, `/api/manad/${JANUARI_NASTA_AR}`);
+  assert.equal(anrop.length, 7);
+  assert.equal(anrop[5].url, `/api/manad/${JANUARI_NASTA_AR}`);
   assert.equal(dom.falt('month-label').textContent, JANUARI_RUBRIK);
 
   // Ett andra steg framåt räknar vidare från januari och inte från dagens månad.
   assert.equal(dom.falt('month-next').utlos('click'), true);
   await flush();
-  assert.equal(anrop[5].url, '/api/manad/2027-02');
+  assert.equal(anrop[7].url, '/api/manad/2027-02');
   assert.equal(dom.falt('month-label').textContent, 'Februari 2027');
 });
 
@@ -549,16 +577,18 @@ test('(49) en ny utgift skickas som POST och hämtar om månaden', async (t) => 
   assert.equal(skickaFormularet(dom), true, 'app.js kallade inte preventDefault');
   await flush();
 
-  assert.equal(anrop.length, 6);
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, MANADSVAG);
+  // Startens fem anrop sedan steg 5, och efter en lyckad ändring hämtas både
+  // månaden och rapporten om.
+  assert.equal(anrop.length, 8);
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, MANADSVAG);
   // Slaget kommer från vilken lista knappen satt i och är inget fält. Beloppet
   // skickas som den råa strängen ur formuläret — ingen egen tolkning i app.js.
   // occurredOn och note står med sedan steg 2 och är tomma strängar när
   // användaren inte fyllt i dem: checkOccurredOn och checkNote i
   // src/core/item.js läser en tom sträng som "ingen dag" respektive "ingen
   // kommentar", precis som checkToMonth läser sitt tomma fält.
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -568,8 +598,9 @@ test('(49) en ny utgift skickas som POST och hämtar om månaden', async (t) => 
   });
 
   // Direktuppdateringen: ett GET för samma månad, och listan växer.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
+  assert.equal(anrop[7].url, `/api/rapport/${MANAD}/12`);
   assert.deepEqual(namnen(dom, 'expense-list'), ['Hyra']);
   assert.equal(dom.falt('total-expense').textContent, formatSek(123450));
   // Formuläret stängs OCH nollställs efter en lyckad sparning: ett dolt formulär
@@ -591,7 +622,8 @@ test('en ny inkomst och ett nytt sparande skickar sitt eget slag', async (t) => 
     fyllFormularet(dom, { name: 'Post', amountSek: '100', category: 'other' });
     skickaFormularet(dom);
     await flush();
-    assert.equal(kropp(anrop.at(-2)).kind, slag, knappId);
+    // Sparningen följs av två hämtningar sedan steg 5, månaden och rapporten.
+    assert.equal(kropp(anrop.at(-3)).kind, slag, knappId);
   }
 });
 
@@ -605,8 +637,8 @@ test('(50) knappen är låst medan anropet pågår och ett andra försök ger in
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'POST');
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'POST');
   assert.equal(dom.falt('item-submit').disabled, true, 'knappen släpptes innan svaret kom');
 
   // Ett andra submit medan anropet är i luften. Formulärets eget pågående-läge
@@ -614,14 +646,14 @@ test('(50) knappen är låst medan anropet pågår och ett andra försök ger in
   // disabled duger inte som enda spärr.
   skickaFormularet(dom);
   await flush();
-  assert.equal(anrop.length, 5, 'ett andra försök gav ett andra POST');
+  assert.equal(anrop.length, 6, 'ett andra försök gav ett andra POST');
 
   // Svaret kommer, knappen släpps, och omhämtningen blir av.
-  anrop[4].svara({ status: 201, json: { item: null } });
+  anrop[5].svara({ status: 201, json: { item: null } });
   await flush();
   assert.equal(dom.falt('item-submit').disabled, false);
-  assert.equal(anrop.length, 6);
-  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop.length, 8);
+  assert.equal(anrop[6].method, 'GET');
 });
 
 test('ett andra klick på samma Ta bort-knapp medan anropet är i luften ger inget andra DELETE', async (t) => {
@@ -631,14 +663,14 @@ test('ett andra klick på samma Ta bort-knapp medan anropet är i luften ger ing
   assert.equal(taBort.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'DELETE');
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'DELETE');
   assert.equal(taBort.disabled, true);
   // Webbläsaren skickar inget klick till en avstängd knapp, och attrappen gör
   // likadant: utlos svarar false utan att kalla lyssnaren.
   assert.equal(taBort.utlos('click'), false);
   await flush();
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 });
 
 test('(51) Ta bort hämtar om månaden, listan krymper och summorna ändras', async (t) => {
@@ -663,10 +695,10 @@ test('(51) Ta bort hämtar om månaden, listan krymper och summorna ändras', as
   knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
   await flush();
 
-  assert.equal(anrop[4].method, 'DELETE');
-  assert.equal(anrop[4].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'DELETE');
+  assert.equal(anrop[5].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
 
   assert.equal(dom.rader('expense-list').length, 0);
   assert.equal(dom.falt('expense-empty').textContent, TOM_UTGIFTSLISTA);
@@ -694,9 +726,9 @@ test('(52) Ändra fyller formuläret och sparar posten med PUT', async (t) => {
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, '/api/poster/dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -705,8 +737,8 @@ test('(52) Ändra fyller formuläret och sparar posten med PUT', async (t) => {
     note: ''
   });
   // Direktuppdateringen sker också efter en ändring.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
 });
 
 test('en ny post efter en ändring skickas som POST med tomma fält', async (t) => {
@@ -730,9 +762,9 @@ test('en ny post efter en ändring skickas som POST med tomma fält', async (t) 
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, MANADSVAG);
-  assert.equal(kropp(anrop[4]).kind, 'income');
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(kropp(anrop[5]).kind, 'income');
 });
 
 test('(53) ett 400 visar fältfelen vid sina fält och skapar ingen post', async (t) => {
@@ -761,7 +793,7 @@ test('(53) ett 400 visar fältfelen vid sina fält och skapar ingen post', async
   assert.equal(dom.falt('item-form-error').textContent, '');
   // Ingen omhämtning: posten skapades inte, och formuläret står kvar öppet med
   // användarens värden.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('item-form-card').hidden, false);
   assert.equal(dom.rader('expense-list').length, 0);
 });
@@ -802,7 +834,7 @@ test('ett 404 vid Ta bort visar serverns text i månadsvyns allmänna ruta', asy
 
   assert.equal(dom.falt('month-error').textContent, 'Posten finns inte.');
   // Ingen omhämtning på ett 404: vyn står kvar som den var.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.rader('saving-list').length, 1);
 });
 
@@ -836,7 +868,7 @@ test('ett 401 på en sparning visar inloggningsvyn', async (t) => {
   assert.equal(dom.falt('login-view').hidden, false);
   assert.equal(dom.falt('month-view').hidden, true);
   // Ingen omhämtning och inget fältfel: sessionen är slut.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('item-form-error').textContent, '');
 });
 
@@ -848,7 +880,7 @@ test('ett 401 på en borttagning visar inloggningsvyn', async (t) => {
 
   assert.equal(dom.falt('login-view').hidden, false);
   assert.equal(dom.falt('month-view').hidden, true);
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('month-error').textContent, '');
 });
 
@@ -1032,16 +1064,16 @@ test('(57) Logga ut anropar utloggningsvägen och visar inloggningsvyn', async (
   assert.equal(dom.falt('log-out').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, '/api/auth/logga-ut');
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, '/api/auth/logga-ut');
   assert.equal(dom.falt('log-out').disabled, true, 'knappen släpptes innan svaret kom');
   assert.equal(dom.falt('month-view').hidden, false, 'vyn byttes innan svaret kom');
   // Ett andra klick medan anropet är i luften ger inget andra anrop.
   assert.equal(dom.falt('log-out').utlos('click'), false);
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 
-  anrop[4].svara({ status: 204 });
+  anrop[5].svara({ status: 204 });
   await flush();
 
   assert.equal(dom.falt('login-view').hidden, false);
@@ -1101,8 +1133,8 @@ test('(59) Avbryt stänger formuläret, tömmer fälten och skickar inget anrop'
   assert.equal(dom.falt('item-form-card').hidden, true);
   assert.equal(dom.falt('item-name').value, '');
   assert.equal(dom.falt('item-amount').value, '');
-  // Anropslistan är oförändrad: de två anropen är laddningens.
-  assert.equal(anrop.length, 4);
+  // Anropslistan är oförändrad: anropen är laddningens, fem sedan steg 5.
+  assert.equal(anrop.length, 5);
 });
 
 test('(60) Avbryt rensar fältfelen, så att formuläret öppnas rent nästa gång', async (t) => {
@@ -1191,8 +1223,8 @@ test('(62) en misslyckad omhämtning efter en ändring lämnar vyn stående', as
   knapp(dom.rader('saving-list')[0], 'remove').utlos('click');
   await flush();
 
-  assert.equal(anrop[4].method, 'DELETE');
-  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].method, 'DELETE');
+  assert.equal(anrop[6].method, 'GET');
   assert.equal(dom.falt('month-error').textContent, serverns);
   kravVynStaende(dom);
 });
@@ -1213,10 +1245,10 @@ test('en pågående hämtning lämnar den gamla feltexten kvar tills svaret komm
   dom.falt('month-next').utlos('click');
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('month-error').textContent, serverns, 'texten försvann innan svaret kom');
 
-  anrop[4].svara(manadssvar(treSlagsposter(), STAENDE_TOTALER));
+  anrop[5].svara(manadssvar(treSlagsposter(), STAENDE_TOTALER));
   await flush();
 
   assert.equal(dom.falt('month-error').textContent, '');
@@ -1323,8 +1355,8 @@ test('(64) kryssrutan Återkommande öppnar de två fälten, som är dolda tills
     dom.falt('item-interval').children.map((barn) => [barn.value, barn.textContent]),
     Object.entries(INTERVAL_LABELS)
   );
-  // Kryssrutan skickar inget anrop: de två anropen är GET /api/mig och månaden.
-  assert.equal(anrop.length, 4);
+  // Kryssrutan skickar inget anrop: anropen är laddningens, fem sedan steg 5.
+  assert.equal(anrop.length, 5);
 });
 
 test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fält', async (t) => {
@@ -1343,9 +1375,9 @@ test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fä
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, `/api/mallar/${MANAD}`);
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -1354,7 +1386,7 @@ test('(64) en ny post med kryssrutan kryssad skapas som en mall med sina sex fä
     toMonth: ''
   });
   // Månaden hämtas om, och formuläret stängs med rutan nollställd.
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[6].url, MANADSVAG);
   assert.equal(dom.falt('item-form-card').hidden, true);
   assert.equal(dom.falt('item-recurring').checked, false);
   assert.equal(dom.falt('recurring-fields').hidden, true);
@@ -1393,7 +1425,7 @@ test('ett 400 från mallvägen visar fältfelen vid interval och toMonth', async
   assert.equal(dom.falt('item-form-error').textContent, '');
   assert.equal(dom.falt('item-form-card').hidden, false);
   // Ingen omhämtning: ingen post skapades.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 });
 
 test('(65) en mallrads Ändra visar två val med månadens namn i och öppnar inget formulär', async (t) => {
@@ -1414,7 +1446,7 @@ test('(65) en mallrads Ändra visar två val med månadens namn i och öppnar in
   // Frågan kommer före formuläret: Ändra på en mallrad öppnar det inte självt.
   assert.equal(dom.falt('item-form-card').hidden, true);
   // Och frågan skickar inget anrop.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('(65) en mallrads Ta bort visar sin egen fråga med samma två val', async (t) => {
@@ -1426,7 +1458,7 @@ test('(65) en mallrads Ta bort visar sin egen fråga med samma två val', async 
   assert.equal(fragetext(rad), REMOVE_QUESTION);
   assert.deepEqual(valen(rad).map((val) => val.textContent), [BARA_MANADEN, FRAN_OCH_MED_MANADEN]);
   // Ta bort på en mallrad tar inte bort något självt: frågan kommer först.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 
   // Den andra frågan ersätter den första i samma ruta: en rad frågar en sak i
   // taget. Utgångsläget är borttagningsfrågan, så bytet fälls av det här steget.
@@ -1475,9 +1507,9 @@ test('(66) en engångsposts Ändra öppnar formuläret direkt och raden har inge
   await flush();
 
   // Samma väg som före etapp 4: postens egen, varken månadsvägen eller mallvägen.
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, `/api/poster/${bio.id}`);
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, `/api/poster/${bio.id}`);
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -1512,14 +1544,14 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
   // Kroppen bär amountSek och ingenting annat: en avvikelse har bara en kolumn
   // för belopp.
-  assert.deepEqual(kropp(anrop[4]), { amountSek: '13000' });
+  assert.deepEqual(kropp(anrop[5]), { amountSek: '13000' });
   // Månaden hämtas om: vyn byggs aldrig ur svaret på en ändring.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
 
   // Det andra valet, från samma rad. Nu är rutan kryssad och de två fälten
   // öppna: en ny version av serien är fortfarande en återkommande post.
@@ -1533,10 +1565,10 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[6].method, 'PUT');
+  assert.equal(anrop[8].method, 'PUT');
   // Seriens id, inte postens: de två vägarna skiljer sig i både sökväg och kropp.
-  assert.equal(anrop[6].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
-  assert.deepEqual(kropp(anrop[6]), {
+  assert.equal(anrop[8].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[8]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '12000',
@@ -1544,7 +1576,7 @@ test('(67) Ändra: Bara månaden går till postens månadsväg, Från och med m�
     interval: 'quarterly',
     toMonth: '2027-03'
   });
-  assert.equal(anrop[7].url, MANADSVAG);
+  assert.equal(anrop[9].url, MANADSVAG);
 });
 
 test('(67) Ta bort: Bara månaden hoppar över månaden, Från och med månaden avslutar serien', async (t) => {
@@ -1561,22 +1593,22 @@ test('(67) Ta bort: Bara månaden hoppar över månaden, Från och med månaden 
   assert.equal(valen(dom.rader('expense-list')[0])[0].utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
-  assert.deepEqual(kropp(anrop[4]), { skipped: true });
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, `/api/poster/${MALL_ID}/manad/${MANAD}`);
+  assert.deepEqual(kropp(anrop[5]), { skipped: true });
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
 
   knapp(dom.rader('expense-list')[0], 'remove').utlos('click');
   assert.equal(valen(dom.rader('expense-list')[0])[1].utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[6].method, 'DELETE');
-  assert.equal(anrop[6].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.equal(anrop[8].method, 'DELETE');
+  assert.equal(anrop[8].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
   // Vägen har ingen kropp: vad som ska hända står i metoden och i sökvägen.
-  assert.equal(anrop[6].body, undefined);
-  assert.equal(anrop[7].method, 'GET');
-  assert.equal(anrop[7].url, MANADSVAG);
+  assert.equal(anrop[8].body, undefined);
+  assert.equal(anrop[9].method, 'GET');
+  assert.equal(anrop[9].url, MANADSVAG);
 });
 
 test('(70) Från och med förifyller Intervall och Till och med ur posten', async (t) => {
@@ -1619,9 +1651,9 @@ test('(71) en beloppsändring från och med månaden behåller intervallet', asy
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, `/api/mallar/${SERIE_ID}/${MANAD}`);
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '13000',
@@ -1702,16 +1734,16 @@ test('valet som utlöser ett anrop är låst tills svaret kommit', async (t) => 
   assert.equal(bara.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(bara.disabled, true, 'valet släpptes innan svaret kom');
   assert.equal(bara.utlos('click'), false, 'ett låst val tog emot ett klick');
   await flush();
-  assert.equal(anrop.length, 5, 'ett andra klick gav ett andra anrop');
+  assert.equal(anrop.length, 6, 'ett andra klick gav ett andra anrop');
 
-  anrop[4].svara({ status: 200, json: { items: [], totals: NOLLOR } });
+  anrop[5].svara({ status: 200, json: { items: [], totals: NOLLOR } });
   await flush();
-  assert.equal(anrop.length, 6);
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop.length, 8);
+  assert.equal(anrop[6].url, MANADSVAG);
 });
 
 test('ett 404 på en avslutad serie visar serverns text och lämnar valet släppt', async (t) => {
@@ -1865,6 +1897,21 @@ test('(33) laddarens after-hook lämnar tillbaka globalThis efter ett avvisat an
     globalThis.fetch,
     FETCH_FORE_TESTERNA,
     'globalThis.fetch är inte värdet från före testfallen: attrappen står kvar'
+  );
+  assert.equal(
+    URL.createObjectURL,
+    CREATE_OBJECT_URL_FORE_TESTERNA,
+    'URL.createObjectURL är inte värdet från före testfallen: attrappen står kvar'
+  );
+});
+
+test('(33) laddarens förval för URL.createObjectURL kastar sin text', async (t) => {
+  // Anropet görs direkt i testet och inte genom ett klick på report-download: ett
+  // kast inne i downloadReport blir ett avvisat löfte som ingen väntar på.
+  await starta(t, () => MIG_401);
+  assert.throws(
+    () => URL.createObjectURL(new Blob(['a'])),
+    (error) => error instanceof Error && error.message === 'createObjectURL anropades utan attrapp'
   );
 });
 
@@ -2784,19 +2831,20 @@ test('+ Sätt tak sparar taket med PUT och ritar om kortet ur en hämtning', asy
   assert.equal(skickaBudgetformularet(dom), true);
   await flush();
 
-  // anrop: 0 GET /api/mig, 1 GET månaden, 2 PUT taket, 3 GET månaden igen.
-  assert.equal(anrop.length, 6);
-  assert.equal(anrop[4].method, 'PUT');
-  assert.equal(anrop[4].url, BUDGETVAG);
+  // anrop: 0 GET /api/mig, 1 GET månaden, 2 räkningarna, 3 sparmålen, 4
+  // rapporten, 5 PUT taket, 6 GET månaden igen, 7 rapporten igen [steg 5].
+  assert.equal(anrop.length, 8);
+  assert.equal(anrop[5].method, 'PUT');
+  assert.equal(anrop[5].url, BUDGETVAG);
   // Beloppet skickas som den råa strängen ur fältet — ingen egen tolkning i
   // app.js, precis som för en post.
-  assert.deepEqual(kropp(anrop[4]), { category: 'housing', amountSek: '9000' });
+  assert.deepEqual(kropp(anrop[5]), { category: 'housing', amountSek: '9000' });
 
   // Vyn ritas ur hämtningen och aldrig ur svaret på ändringen: spentOre och
   // leftOre beror på månadens poster, och kortet och listorna ska aldrig visa två
   // olika månadstillstånd.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, MANADSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, MANADSVAG);
   assert.equal(budgetrader(dom).length, 3);
 
   // Och formuläret är stängt och tömt.
@@ -2827,7 +2875,7 @@ test('ett 400 från budgetvägen visar serverns text och lämnar formuläret öp
   assert.equal(dom.falt('budget-form').hidden, false);
   assert.equal(dom.falt('budget-amount').value, '0');
   // Ingen omhämtning: inget tak skrevs.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 });
 
 test('ett avvisat fetch vid en sparning av ett tak visar den allmänna texten', async (t) => {
@@ -2854,7 +2902,7 @@ test('Avbryt i budgetformuläret stänger det utan att skicka något anrop', asy
 
   assert.equal(dom.falt('budget-form').hidden, true);
   assert.equal(dom.falt('budget-amount').value, '');
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('budgetknappen är låst tills svaret kommit, så att två snabba klick inte ger två tak', async (t) => {
@@ -2869,15 +2917,15 @@ test('budgetknappen är låst tills svaret kommit, så att två snabba klick int
   skickaBudgetformularet(dom);
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('budget-submit').disabled, true);
   // Enter i beloppsfältet går förbi den avstängda knappen, så formulärets eget
   // pågående-läge är spärren.
   skickaBudgetformularet(dom);
   await flush();
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 
-  anrop[4].svara({ status: 200, json: { budgets: [] } });
+  anrop[5].svara({ status: 200, json: { budgets: [] } });
   await flush();
   assert.equal(dom.falt('budget-submit').disabled, false);
 });
@@ -2942,8 +2990,8 @@ test('Datum och Kommentar fylls i av Ändra och skickas med posten', async (t) =
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].method, 'PUT');
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'PUT');
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Bio',
     amountSek: '199.5',
@@ -3017,8 +3065,8 @@ test('en mall skickas utan Datum och Kommentar, också när fälten har värden'
   skickaFormularet(dom);
   await flush();
 
-  assert.equal(anrop[4].url, `/api/mallar/${MANAD}`);
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].url, `/api/mallar/${MANAD}`);
+  assert.deepEqual(kropp(anrop[5]), {
     kind: 'expense',
     name: 'Hyra',
     amountSek: '1234,50',
@@ -3107,7 +3155,7 @@ test('(81) räkningskortet visar de tre utseendena: förfallen, påminnelse och 
   );
 
   // Hämtningen görs med dagens datum i sökvägen, läst ur den injicerade dagen.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
   assert.equal(anrop[2].method, 'GET');
   assert.equal(anrop[2].url, RAKNINGSVAG);
 
@@ -3139,7 +3187,7 @@ test('(81) räkningskortet visar de tre utseendena: förfallen, påminnelse och 
   for (const rad of rader) {
     assert.equal(knapp(rad, 'bill-paid').textContent, BILL_PAID_LABEL);
   }
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('(82) Betald flyttar fram en återkommande räkning, och den nya förfallodagen syns', async (t) => {
@@ -3165,15 +3213,15 @@ test('(82) Betald flyttar fram en återkommande räkning, och den nya förfallod
 
   // Betalningen: dagens datum står i kroppen, samma sträng som i sökvägen till
   // hämtningen. Servern läser ingen klocka.
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, `/api/rakningar/${HYRA_ID}/betald`);
-  assert.deepEqual(kropp(anrop[4]), { today: FRYST_IDAG });
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, `/api/rakningar/${HYRA_ID}/betald`);
+  assert.deepEqual(kropp(anrop[5]), { today: FRYST_IDAG });
 
   // Därefter en omhämtning av räkningarna — och ingen av månaden: en betalning
   // rör ingen månadspost.
-  assert.equal(anrop.length, 6);
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, RAKNINGSVAG);
+  assert.equal(anrop.length, 7);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, RAKNINGSVAG);
   assert.equal(anrop.filter((anropet) => anropet.url === MANADSVAG).length, 1);
 
   // Räkningen är kvar, med sin nya förfallodag och sin nya dagtext. Exakt en
@@ -3206,7 +3254,7 @@ test('(83) en betald engångsräkning försvinner ur listan', async (t) => {
   assert.equal(knapp(rakningsrader(dom)[0], 'bill-paid').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop[4].url, `/api/rakningar/${TAND_ID}/betald`);
+  assert.equal(anrop[5].url, `/api/rakningar/${TAND_ID}/betald`);
   // Noll rader, fastän svaret fortfarande bär räkningen: utgångsläget var en
   // rad, så raden som tömmer listan fälls av det här fallet.
   assert.equal(rakningsrader(dom).length, 0);
@@ -3241,14 +3289,14 @@ test('knappen Betald är låst tills svaret kommit, så att två snabba klick in
   assert.equal(betald.utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(betald.disabled, true);
   // Webbläsaren skickar inget klick till en avstängd knapp, och attrappen gör
   // likadant: utlos svarar false och inget andra anrop går ut.
   assert.equal(betald.utlos('click'), false);
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 
-  anrop[4].svara({ status: 200, json: { bill } });
+  anrop[5].svara({ status: 200, json: { bill } });
   await flush();
   assert.equal(betald.disabled, false);
 });
@@ -3274,9 +3322,9 @@ test('+ Ny räkning sparar räkningen med POST och ritar om kortet ur en hämtni
   assert.equal(skickaRakningsformularet(dom), true);
   await flush();
 
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, '/api/rakningar');
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, '/api/rakningar');
+  assert.deepEqual(kropp(anrop[5]), {
     name: 'Hemförsäkring',
     amountSek: '249,00',
     dueDate: '2026-10-01',
@@ -3288,7 +3336,7 @@ test('+ Ny räkning sparar räkningen med POST och ritar om kortet ur en hämtni
   // ur svaret på sparningen, som varken bär status eller daysUntil.
   assert.equal(dom.falt('bill-form').hidden, true);
   assert.equal(dom.falt('bill-name').value, '');
-  assert.equal(anrop[5].url, RAKNINGSVAG);
+  assert.equal(anrop[6].url, RAKNINGSVAG);
   assert.deepEqual(
     rakningsrader(dom).map((rad) => celltext(rad, 'bill-name')),
     ['Hemförsäkring']
@@ -3315,7 +3363,7 @@ test('ett 400 från räkningsvägen visar serverns text och lämnar formuläret 
   // Fälten står kvar: användaren ska kunna rätta det ena och skicka igen.
   assert.equal(dom.falt('bill-name').value, 'Hemförsäkring');
   // Ingen omhämtning: ingenting sparades.
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 });
 
 test('ett avvisat fetch vid en sparning av en räkning visar den allmänna texten', async (t) => {
@@ -3342,7 +3390,7 @@ test('Avbryt i räkningsformuläret stänger det utan att skicka något anrop', 
 
   assert.equal(dom.falt('bill-form').hidden, true);
   assert.equal(dom.falt('bill-name').value, '');
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('räkningsformulärets intervallfält har Engångs först och därefter de fyra intervallen', async (t) => {
@@ -3383,7 +3431,8 @@ test('räkningarna hämtas en gång och inte vid ett månadsbyte', async (t) => 
   assert.equal(dom.falt('month-prev').utlos('click'), true);
   await flush();
 
-  assert.equal(anrop.length, 6);
+  // Varje månadsbyte hämtar månaden och rapporten sedan steg 5.
+  assert.equal(anrop.length, 9);
   assert.equal(anrop.filter((anropet) => anropet.url === RAKNINGSVAG).length, 1);
 });
 
@@ -3578,7 +3627,8 @@ test('laddningen hämtar sparmålen med dagens datum i sökvägen, efter räknin
 
   assert.deepEqual(
     anrop.map((anropet) => `${anropet.method} ${anropet.url}`),
-    ['GET /api/mig', `GET ${MANADSVAG}`, `GET ${RAKNINGSVAG}`, `GET ${SPARMALSVAG}`]
+    // Rapporten sist [steg 5], så att de fyra första behåller sina platser.
+    ['GET /api/mig', `GET ${MANADSVAG}`, `GET ${RAKNINGSVAG}`, `GET ${SPARMALSVAG}`, `GET /api/rapport/${MANAD}/12`]
   );
 });
 
@@ -3641,7 +3691,7 @@ test('(84) kortet visar namn, sparat av mål, stapel, procent och Kvar-raden', a
   assert.equal(stapelfyllning(rader[1]).getAttribute('width'), '50');
 
   // Inget av de tre målen har skickat något anrop.
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('(85) en Bas-användare ser låsraden i stället för kortet', async (t) => {
@@ -3665,9 +3715,9 @@ test('(85) en Bas-användare ser låsraden i stället för kortet', async (t) =>
   // planen när den klickas.
   assert.equal(dom.falt('show-plans').utlos('click'), true);
   await flush();
-  assert.equal(anrop.length, 5);
-  assert.equal(anrop[4].method, 'GET');
-  assert.equal(anrop[4].url, PLANVAG);
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].method, 'GET');
+  assert.equal(anrop[5].url, PLANVAG);
   assert.equal(dom.falt('plan-view').hidden, false);
   assert.equal(dom.falt('month-view').hidden, true);
 });
@@ -3972,9 +4022,9 @@ test('+ Nytt sparmål sparar målet med POST och ritar om kortet ur en hämtning
 
   // De tre fälten skickas som de står: ingen validering och ingen omräkning i
   // app.js.
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, '/api/sparmal');
-  assert.deepEqual(kropp(anrop[4]), {
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, '/api/sparmal');
+  assert.deepEqual(kropp(anrop[5]), {
     name: 'Buffert',
     targetSek: '50000',
     targetDate: '2027-06-30'
@@ -3982,8 +4032,8 @@ test('+ Nytt sparmål sparar målet med POST och ritar om kortet ur en hämtning
 
   // Kortet ritas ur en OMHÄMTNING och aldrig ur svaret på sparningen: svaret på
   // en POST bär ingen av de sex räknade fälten.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, SPARMALSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, SPARMALSVAG);
   assert.deepEqual(
     sparmalsrader(dom).map((rad) => celltext(rad, 'goal-name')),
     ['Buffert']
@@ -4054,7 +4104,7 @@ test('(87) + Sätt in ökar savedOre och ritar om raden, med stapeln och procent
   assert.equal(knapp(raden(), 'goal-deposit').textContent, '+ Sätt in');
   assert.equal(knapp(raden(), 'goal-deposit').utlos('click'), true);
   assert.equal(dom.falt('deposit-form').hidden, false);
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 
   dom.falt('deposit-amount').value = '2500';
   dom.falt('deposit-date').value = FRYST_IDAG;
@@ -4070,13 +4120,13 @@ test('(87) + Sätt in ökar savedOre och ritar om raden, med stapeln och procent
 
   // Insättningen går till målets egen väg, med de två fälten som de står: app.js
   // prövar varken beloppet eller datumet självt.
-  assert.equal(anrop[4].method, 'POST');
-  assert.equal(anrop[4].url, `${SPARMALSVAG_PREFIX}${malId}/insattning`);
-  assert.deepEqual(kropp(anrop[4]), { amountSek: '2500', madeOn: FRYST_IDAG });
+  assert.equal(anrop[5].method, 'POST');
+  assert.equal(anrop[5].url, `${SPARMALSVAG_PREFIX}${malId}/insattning`);
+  assert.deepEqual(kropp(anrop[5]), { amountSek: '2500', madeOn: FRYST_IDAG });
 
   // Och raden ritas om ur en OMHÄMTNING, aldrig ur svaret på insättningen.
-  assert.equal(anrop[5].method, 'GET');
-  assert.equal(anrop[5].url, SPARMALSVAG);
+  assert.equal(anrop[6].method, 'GET');
+  assert.equal(anrop[6].url, SPARMALSVAG);
 
   // Andra renderingen: stapeln och procenten följde med det nya savedOre.
   assert.equal(sparmalsrader(dom).length, 1);
@@ -4132,7 +4182,7 @@ test('knappen Spara i sparmålsformuläret är låst tills svaret kommit', async
   dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
   await flush();
 
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
   assert.equal(dom.falt('goal-submit').disabled, true);
 
   // En andra submit medan anropet är i luften ger inget andra anrop: hanteraren
@@ -4140,9 +4190,9 @@ test('knappen Spara i sparmålsformuläret är låst tills svaret kommit', async
   // Enter i ett fält går förbi.
   dom.falt('goal-form').utlos('submit', { preventDefault: () => undefined });
   await flush();
-  assert.equal(anrop.length, 5);
+  assert.equal(anrop.length, 6);
 
-  anrop[4].svara({ status: 201, json: { goal: { id: BUFFERT.id } } });
+  anrop[5].svara({ status: 201, json: { goal: { id: BUFFERT.id } } });
   await flush();
   assert.equal(dom.falt('goal-submit').disabled, false);
 });
@@ -4172,7 +4222,7 @@ test('Avbryt i sparmålsformuläret stänger det utan att skicka något anrop', 
 
   assert.equal(dom.falt('goal-form').hidden, true);
   assert.equal(dom.falt('goal-name').value, '');
-  assert.equal(anrop.length, 4);
+  assert.equal(anrop.length, 5);
 });
 
 test('ett 500 på sparmålens väg visar serverns text och lämnar kortet dolt', async (t) => {
@@ -4291,4 +4341,821 @@ test('app.js räknar aldrig fram sparmålskortets tal själv', async () => {
     ['klart', 'forsenat'],
     'bara de statusvärden som har ett utseende får stå skrivna i app.js'
   );
+});
+
+// ------------------------------------------- (88) till (99) rapportkortet [steg 5]
+
+// Rapportkortets egna texter, skrivna tecken för tecken som ägaren i
+// src/web/app.js skriver dem (LARDOMAR.md 2026-09-14). Låstexten sätts samman ur
+// ägarna FEATURE_LABELS och PLAN_LABELS, precis som LASTEXT för sparmålen.
+const REPORT_EMPTY_TEXT = 'Inget att visa för perioden.';
+const RAPPORT_LASTEXT = `${FEATURE_LABELS.reports} ingår i ${PLAN_LABELS.plus}.`;
+
+// Kolumnernas rubrik och cellklass, i tabellens ordning (beslut F2). En lista
+// och inte två: (90) bygger rubrikraden ur den och (92) läser cellklasserna ur
+// den, så att rubrikens plats och cellens plats har samma facit.
+const RAPPORTKOLUMNER = Object.freeze([
+  ['Slag', 'report-kind'],
+  ['Kategori', 'report-category'],
+  ['Snitt per månad', 'report-average'],
+  ['Summa', 'report-total'],
+  ['Tak', 'report-budget'],
+  ['Över taket', 'report-over']
+]);
+
+// Steg 5:s uppmärkning i index.html, ordagrant: kodblocket under
+// "Uppmärkningen i index.html" i ARKITEKTUR.md, normaliserat på samma två sätt
+// som testet (90) normaliserar sidan — HTML-kommentarerna bort och blanktecken
+// mellan taggar sammanslagna. Delarna står på var sin rad för läsbarhetens skull
+// och fogas ihop utan skiljetecken.
+const RAPPORT_UPPMARKNING = [
+  '<section class="card" id="report-card" hidden>',
+  '<h3>Rapport</h3>',
+  '<div class="report-periods">',
+  '<button type="button" class="secondary" id="report-period-3" aria-pressed="false">3 mån</button>',
+  '<button type="button" class="secondary" id="report-period-6" aria-pressed="false">6 mån</button>',
+  '<button type="button" class="secondary" id="report-period-12" aria-pressed="false">12 mån</button></div>',
+  '<div id="report-chart" class="chart"></div>',
+  '<p class="empty-state" id="report-chart-empty"></p>',
+  '<table class="report-table">',
+  '<thead><tr><th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th></tr></thead>',
+  '<tbody id="report-rows"></tbody></table>',
+  '<p class="empty-state" id="report-empty"></p>',
+  '<button type="button" class="secondary" id="report-download">Hämta som CSV</button></section>',
+  '<section class="card" id="report-locked" hidden>',
+  '<h3>Rapport</h3>',
+  '<p class="locked-row">',
+  '<span class="lock-icon" aria-hidden="true">&#x1F512;</span>',
+  '<span id="report-locked-text"></span>',
+  '<button type="button" class="secondary" id="report-show-plans">Se planer</button></p></section>',
+  '<p class="form-error" id="report-error" role="alert"></p>'
+].join('');
+const RAPPORT_403 = Object.freeze({
+  status: 403,
+  json: {
+    error: 'Funktionen ingår i Plus. Uppgradera för att låsa upp.',
+    feature: 'reports',
+    requiredPlan: 'plus'
+  }
+});
+
+// Rapportvägen för månaden och ett antal, som app.js skriver den.
+const rapportvag = (manad, antal) => `${RAPPORTVAG_PREFIX}${manad}/${antal}`;
+
+// En rapportrad på den form GET /api/rapport svarar med.
+function rapportrad(kind, category, perMonthOre, budgetPerMonthOre, overBudgetMonths) {
+  const totalOre = perMonthOre.reduce((summa, belopp) => summa + belopp, 0);
+  return {
+    kind,
+    category,
+    perMonthOre,
+    totalOre,
+    averageOre: divideRoundHalfUp(totalOre, perMonthOre.length),
+    budgetPerMonthOre,
+    overBudgetMonths
+  };
+}
+
+function rapportsvar(rows, months = ['2026-07', '2026-08', MANAD]) {
+  return { status: 200, json: { months, rows, largest: null } };
+}
+
+// Den längre rapporten: en inkomstrad som är störst, två utgiftsrader med belopp
+// och en utgiftsrad med tak men utan belopp. Boendets tak finns i två av tre
+// månader och skiljer sig mellan den första och den sista (beslut F1 och F2).
+const LANG_RAPPORT = Object.freeze([
+  rapportrad('income', 'other', [3000000, 3000000, 3000000], [null, null, null], 0),
+  rapportrad('expense', 'housing', [1200000, 1200000, 1200000], [1000000, null, 1250000], 1),
+  rapportrad('expense', 'transport', [150000, 150000, 150000], [null, null, null], 0),
+  rapportrad('expense', 'other', [0, 0, 0], [undefined, 50000, 50000], 0)
+]);
+// Den kortare rapporten, för den andra renderingen.
+const KORT_RAPPORT = Object.freeze([
+  rapportrad('expense', 'loan', [10000, 20000, 30000], [null, null, null], 0)
+]);
+
+function rapportrader(dom) {
+  return dom.rader('report-rows');
+}
+
+function rapportsvgen(dom) {
+  const barn = dom.falt('report-chart').children;
+  assert.equal(barn.length, 1, 'rapportens diagram har inte exakt ett barn');
+  return barn[0];
+}
+
+function markeringen(dom) {
+  return [3, 6, 12].map((antal) => dom.falt(`report-period-${antal}`).getAttribute('aria-pressed'));
+}
+
+// Kommentarerna bort, med samma två replace som ARKITEKTUR.md föreskriver för
+// (RA35), (89) och (91).
+function utanKommentarer(kalla) {
+  return kalla.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
+test('(88) Plus ser rapportkortet och inte låsraden', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => rapportsvar(LANG_RAPPORT))
+  );
+  assert.equal(dom.falt('report-card').hidden, false);
+  assert.equal(dom.falt('report-locked').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-error').textContent, '');
+});
+
+test('(88) Bas ser rapportens låsrad och inte kortet, utan text i felrutan', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => RAPPORT_403)
+  );
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(dom.falt('report-locked').hidden, false);
+  assert.equal(dom.falt('report-locked-text').textContent, 'Diagram och rapporter ingår i Plus.');
+  assert.equal(dom.falt('report-locked-text').textContent, RAPPORT_LASTEXT);
+  // Ett 403 är inget fel: det är det normala svaret för Bas.
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-error').textContent, '');
+});
+
+test('(89) låstexten har en ägare i app.js', async (t) => {
+  const kod = utanKommentarer(await fs.readFile(APP_KALLA_PATH, 'utf8'));
+  assert.equal(kod.split('ingår').length - 1, 1, 'ordet ingår ska stå exakt en gång i koden');
+  assert.equal(kod.includes('goalLockedText'), false);
+  assert.equal(kod.includes('showGoalLock'), false);
+  assert.equal(kod.includes('Diagram och rapporter'), false);
+
+  // Sparmålens låsrad visar fortfarande (85):s text genom samma ägare.
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_403, () => RAPPORT_403)
+  );
+  assert.equal(dom.falt('goal-locked-text').textContent, LASTEXT);
+  assert.equal(dom.falt('report-locked-text').textContent, RAPPORT_LASTEXT);
+});
+
+test('(90) rapportens uppmärkning står i index.html, och perioderna ligger inom serverns tak', async () => {
+  const html = await fs.readFile(INDEX_PATH, 'utf8');
+  for (const id of ['report-card', 'report-locked']) {
+    const taggen = new RegExp(`<section[^>]*id="${id}"[^>]*>`).exec(html);
+    assert.notEqual(taggen, null, `${id} saknas i index.html`);
+    assert.equal(taggen[0].includes(' hidden'), true, `${id} bär inte hidden från början`);
+  }
+  assert.equal(html.includes('id="report-show-plans">Se planer<'), true);
+  assert.equal(html.includes('id="report-download">Hämta som CSV<'), true);
+  // Tabellhuvudet ordagrant, byggt ur RAPPORTKOLUMNER (F2).
+  const rubrikraden = RAPPORTKOLUMNER.map(([rubrik]) => `<th>${rubrik}</th>`).join('');
+  assert.equal(rubrikraden, '<th>Slag</th><th>Kategori</th><th>Snitt per månad</th><th>Summa</th><th>Tak</th><th>Över taket</th>');
+  assert.equal(html.includes(rubrikraden), true, 'tabellhuvudet står inte ordagrant i index.html');
+  // De två statiska klasser style.css väljer på, i sina öppnande taggar.
+  assert.equal(/<div class="report-periods">/.test(html), true, 'div.report-periods saknas');
+  assert.equal(/<table class="report-table">/.test(html), true, 'table.report-table saknas');
+
+  // [runda 4] Hela steg 5:s uppmärkning ordagrant, så att varje element med
+  // klass, id, role, aria-*, hidden och text asserteras. Normaliseringen är två
+  // byten och inga andra: HTML-kommentarerna bort, och blanktecken mellan taggar
+  // sammanslagna.
+  const forsta = '<section class="card" id="report-card" hidden>';
+  const sista = '<p class="form-error" id="report-error" role="alert"></p>';
+  const fran = html.indexOf(forsta);
+  const till = html.indexOf(sista);
+  assert.notEqual(fran, -1, 'rapportkortets öppnande tagg saknas i index.html');
+  assert.notEqual(till, -1, 'rapportens felrad saknas i index.html');
+  const utdraget = html
+    .slice(fran, till + sista.length)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/>\s+</g, '><')
+    .trim();
+  assert.equal(utdraget, RAPPORT_UPPMARKNING);
+
+  // REPORT_PERIODS läses ur källtexten: app.js exporterar ingenting, och talen
+  // står bara där.
+  const kod = utanKommentarer(await fs.readFile(APP_KALLA_PATH, 'utf8'));
+  const traff = /const REPORT_PERIODS = Object\.freeze\(\[([0-9, ]+)\]\);/.exec(kod);
+  assert.notEqual(traff, null, 'REPORT_PERIODS saknas i app.js');
+  const perioder = traff[1].split(',').map((tal) => Number(tal.trim()));
+  assert.equal(perioder.length > 0, true);
+  for (const antal of perioder) {
+    assert.equal(Number.isInteger(antal), true, String(antal));
+    assert.equal(antal >= OVERVIEW_MIN_MONTHS && antal <= OVERVIEW_MAX_MONTHS, true, `${antal} ligger utanför taket`);
+    assert.equal(html.includes(`id="report-period-${antal}" aria-pressed="false">${antal} mån<`), true, `knappen för ${antal} saknas`);
+  }
+});
+
+test('(91) rapportens diagram ritas med renderChart: bara utgifter, totalOre, ingen stapel på noll', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => rapportsvar(LANG_RAPPORT))
+  );
+  const svg = rapportsvgen(dom);
+  const staplar = svg.children.filter((barn) => barn.tagName === 'rect' && barn.getAttribute('class') === 'chart-bar');
+  // Två staplar: boendet och transporten. Inkomsten ritas inte, och den
+  // utgiftsrad som har tak men inget belopp ritas inte heller.
+  assert.equal(staplar.length, 2);
+  // Den största UTGIFTEN fyller bredden, fast inkomsten är större.
+  assert.equal(staplar[0].getAttribute('width'), '100');
+  assert.equal(staplar[1].getAttribute('width'), String(Math.round((450000 * 100) / 3600000)));
+  assert.deepEqual(
+    medKlass(svg, 'chart-amount').map((text) => text.textContent),
+    [formatSek(3600000), formatSek(450000)]
+  );
+  assert.deepEqual(
+    medKlass(svg, 'chart-label').map((text) => text.textContent),
+    [CATEGORY_LABELS.housing, CATEGORY_LABELS.transport]
+  );
+  assert.equal(dom.falt('report-chart-empty').textContent, '');
+
+  // En diagramfunktion: klassen chart-bar står en gång i koden.
+  const kod = utanKommentarer(await fs.readFile(APP_KALLA_PATH, 'utf8'));
+  assert.equal(kod.split("'chart-bar'").length - 1, 1);
+});
+
+test('(91) staplarna står i fallande belopp också när rapportens rader inte gör det', async (t) => {
+  // Ordningen ägs av renderChart. Rapportens rader står i CATEGORIES ordning,
+  // så transporten kommer här före boendet fast den är mindre.
+  const rader = [
+    rapportrad('expense', 'transport', [100000, 100000, 100000], [null, null, null], 0),
+    rapportrad('expense', 'loan', [400000, 400000, 400000], [null, null, null], 0)
+  ];
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => rapportsvar(rader))
+  );
+  const svg = rapportsvgen(dom);
+  assert.deepEqual(
+    medKlass(svg, 'chart-label').map((text) => text.textContent),
+    [CATEGORY_LABELS.loan, CATEGORY_LABELS.transport]
+  );
+  const staplar = svg.children.filter((barn) => barn.tagName === 'rect');
+  assert.deepEqual(staplar.map((stapel) => stapel.getAttribute('width')), ['100', '25']);
+});
+
+test('(92) en tabellrad per slag och kategori, med tak och Över taket enligt F1 och F2', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      (anropet) => (anropet.url.endsWith('/12') ? rapportsvar(LANG_RAPPORT) : rapportsvar(KORT_RAPPORT))
+    )
+  );
+  const rader = rapportrader(dom);
+  assert.equal(rader.length, 4);
+  const klasser = RAPPORTKOLUMNER.map(([, klass]) => klass);
+  for (const rad of rader) {
+    assert.equal(rad.tagName, 'tr');
+    assert.equal(rad.className, 'report-row');
+    assert.deepEqual(rad.children.map((barn) => barn.className), klasser);
+    assert.deepEqual(rad.children.map((barn) => barn.tagName), klasser.map(() => 'td'));
+  }
+  const celler = (rad) => klasser.map((klass) => celltext(rad, klass));
+  // Inkomsten: tomma tak- och över-celler.
+  assert.deepEqual(celler(rader[0]), [
+    ITEM_KIND_LABELS.income, CATEGORY_LABELS.other, formatSek(3000000), formatSek(9000000), '', ''
+  ]);
+  // Boendet: slutmånadens tak, och en av de två månader som har ett tak.
+  assert.deepEqual(celler(rader[1]), [
+    ITEM_KIND_LABELS.expense, CATEGORY_LABELS.housing, formatSek(1200000), formatSek(3600000), formatSek(1250000), '1 av 2'
+  ]);
+  assert.deepEqual(celler(rader[2]).slice(4), ['', '']);
+  // Ett undefined bland taken räknas inte som ett tak.
+  assert.deepEqual(celler(rader[3]).slice(4), [formatSek(50000), '0 av 2']);
+
+  // Andra renderingen: en kortare lista efter en längre.
+  assert.equal(dom.falt('report-period-3').utlos('click'), true);
+  await flush();
+  assert.equal(rapportrader(dom).length, 1);
+  assert.equal(celltext(rapportrader(dom)[0], 'report-category'), CATEGORY_LABELS.loan);
+});
+
+test('(92) ett slutmånadstak som inte är ett säkert heltal ger en tom cell och aldrig texten NaN', async (t) => {
+  // "Har ett tak" prövas med Number.isSafeInteger och inte med !== null: ett
+  // undefined eller ett NaN ur ett trasigt svar ska ge en tom cell
+  // (LARDOMAR.md 2026-10-10, villkor som skiljer ut ett enda värde).
+  const rader = [
+    rapportrad('expense', 'housing', [100, 100, 100], [50000, 50000, undefined], 0),
+    rapportrad('expense', 'loan', [100, 100, 100], [50000, 50000, NaN], 0)
+  ];
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => rapportsvar(rader))
+  );
+  assert.equal(rapportrader(dom).length, 2);
+  for (const rad of rapportrader(dom)) {
+    assert.equal(celltext(rad, 'report-budget'), '');
+    assert.equal(celltext(rad, 'report-over'), '0 av 2');
+  }
+});
+
+test('(93) en tom rapport ger båda tomtexterna, och en rapport med rader därefter tömmer tomtexten', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      ikoordning([rapportsvar([]), rapportsvar(KORT_RAPPORT)])
+    )
+  );
+  assert.equal(dom.falt('report-chart-empty').textContent, CHART_EMPTY_TEXT);
+  assert.equal(dom.falt('report-empty').textContent, REPORT_EMPTY_TEXT);
+  assert.equal(rapportrader(dom).length, 0);
+
+  assert.equal(dom.falt('report-period-6').utlos('click'), true);
+  await flush();
+  assert.equal(dom.falt('report-empty').textContent, '');
+  assert.equal(dom.falt('report-chart-empty').textContent, '');
+  assert.equal(rapportrader(dom).length, 1);
+});
+
+test('(94) perioden: 12 från start, 3 efter ett klick, och ett 500 på 6 lämnar 3 kvar', async (t) => {
+  const serverns = 'Det gick inte att läsa dina uppgifter. Försök igen.';
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      (anropet) => {
+        if (anropet.url.endsWith('/12')) {
+          return rapportsvar(LANG_RAPPORT);
+        }
+        if (anropet.url.endsWith('/3')) {
+          return null;
+        }
+        return { status: 500, json: { error: serverns } };
+      }
+    )
+  );
+  assert.equal(anrop[4].method, 'GET');
+  assert.equal(anrop[4].url, rapportvag(MANAD, 12));
+  assert.deepEqual(markeringen(dom), ['false', 'false', 'true']);
+
+  // Klick på 3 mån: knappen är spärrad och markeringen står kvar tills svaret.
+  assert.equal(dom.falt('report-period-3').utlos('click'), true);
+  await flush();
+  assert.equal(anrop.length, 6);
+  assert.equal(anrop[5].url, rapportvag(MANAD, 3));
+  assert.equal(dom.falt('report-period-3').disabled, true);
+  assert.deepEqual(markeringen(dom), ['false', 'false', 'true']);
+  assert.equal(dom.falt('report-period-3').utlos('click'), false);
+  assert.equal(anrop.length, 6);
+  anrop[5].svara(rapportsvar(KORT_RAPPORT));
+  await flush();
+  assert.equal(dom.falt('report-period-3').disabled, false);
+  assert.deepEqual(markeringen(dom), ['true', 'false', 'false']);
+  assert.equal(rapportrader(dom).length, 1);
+
+  // Klick på 6 mån som svarar 500.
+  assert.equal(dom.falt('report-period-6').utlos('click'), true);
+  await flush();
+  assert.equal(anrop[6].url, rapportvag(MANAD, 6));
+  assert.deepEqual(markeringen(dom), ['true', 'false', 'false']);
+  assert.equal(rapportrader(dom).length, 1);
+  assert.equal(dom.falt('report-error').textContent, serverns);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-period-6').disabled, false);
+  assert.equal(dom.falt('report-card').hidden, false);
+
+  // reportCount skrivs först efter ett 200: nästa hämtning, här vid ett
+  // månadsbyte, gäller fortfarande den period som syns och inte den som
+  // misslyckades.
+  assert.equal(dom.falt('month-prev').utlos('click'), true);
+  await flush();
+  assert.equal(anrop.at(-1).url, rapportvag(FOREGAENDE_MANAD, 3));
+});
+
+test('(95) rapporten följer månaden vid månadsbyte och efter en lyckad ändring', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar(treSlagsposter()),
+      (anropet) => {
+        if (anropet.method === 'DELETE') {
+          return { status: 204 };
+        }
+        if (anropet.method === 'PUT') {
+          return { status: 200, json: { budgets: [] } };
+        }
+        return { status: 201, json: { item: null } };
+      },
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      () => rapportsvar(KORT_RAPPORT)
+    )
+  );
+  // Perioden byts först, så att adresserna nedan visar att reportCount följer med.
+  dom.falt('report-period-3').utlos('click');
+  await flush();
+  assert.equal(anrop[5].url, rapportvag(MANAD, 3));
+
+  assert.equal(dom.falt('month-prev').utlos('click'), true);
+  await flush();
+  // Längden före varje index: utan rapporthämtningen finns inget sjunde anrop,
+  // och testet ska falla på sin egen assertion och inte på ett TypeError.
+  assert.equal(anrop.length, 8, 'månadsbytet hämtade inte rapporten');
+  assert.equal(anrop[6].url, `/api/manad/${FOREGAENDE_MANAD}`);
+  assert.equal(anrop[7].url, rapportvag(FOREGAENDE_MANAD, 3));
+
+  // En lyckad POST av en post.
+  dom.falt('add-expense').utlos('click');
+  fyllFormularet(dom);
+  skickaFormularet(dom);
+  await flush();
+  assert.equal(anrop.length, 11, 'sparningen hämtade inte rapporten');
+  assert.equal(anrop[8].method, 'POST');
+  assert.equal(anrop[9].url, `/api/manad/${FOREGAENDE_MANAD}`);
+  assert.equal(anrop[10].url, rapportvag(FOREGAENDE_MANAD, 3));
+
+  // En lyckad borttagning, som går genom sendChange.
+  knapp(dom.rader('saving-list')[0], 'remove').utlos('click');
+  await flush();
+  assert.equal(anrop.length, 14, 'borttagningen hämtade inte rapporten');
+  assert.equal(anrop[11].method, 'DELETE');
+  assert.equal(anrop[12].url, `/api/manad/${FOREGAENDE_MANAD}`);
+  assert.equal(anrop[13].url, rapportvag(FOREGAENDE_MANAD, 3));
+
+  // Ett lyckat tak genom budgetformuläret.
+  dom.falt('add-budget').utlos('click');
+  dom.falt('budget-category').value = 'housing';
+  dom.falt('budget-amount').value = '9000';
+  skickaBudgetformularet(dom);
+  await flush();
+  assert.equal(anrop.length, 17, 'taket hämtade inte rapporten');
+  assert.equal(anrop[14].method, 'PUT');
+  assert.equal(anrop[15].url, '/api/manad/' + FOREGAENDE_MANAD);
+  assert.equal(anrop[16].url, rapportvag(FOREGAENDE_MANAD, 3));
+});
+
+test('(96) hämtningens felvägar vid sidladdning: avvisat fetch, 500 och 401', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => new Error('nätet nere'))
+  );
+  assert.equal(dom.falt('report-error').textContent, GENERAL_ERROR);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(dom.falt('report-locked').hidden, true);
+});
+
+test('(96) ett 500 vid sidladdning ger serverns text och båda sektionerna dolda', async (t) => {
+  const serverns = 'Det gick inte att läsa dina uppgifter. Försök igen.';
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => ({ status: 500, json: { error: serverns } }))
+  );
+  assert.equal(dom.falt('report-error').textContent, serverns);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(dom.falt('report-locked').hidden, true);
+});
+
+test('(96) ett 401 vid sidladdning visar inloggningsvyn', async (t) => {
+  const { dom } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => MIG_401)
+  );
+  assert.equal(dom.falt('login-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-error').textContent, '');
+});
+
+// En createObjectURL-attrapp som minns varje Blob den fått.
+function objektUrl() {
+  const fatt = [];
+  const createObjectURL = (blob) => {
+    fatt.push(blob);
+    return `blob:attrapp/${fatt.length}`;
+  };
+  return { fatt, createObjectURL };
+}
+
+test('(97) nedladdningen hämtar den rapport som syns och sparar Bloben under reportFileName', async (t) => {
+  const fil = new Blob(['csv'], { type: 'text/csv; charset=utf-8' });
+  const { fatt, createObjectURL } = objektUrl();
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      ikoordning([manadssvar([]), { status: 500, json: { error: 'fel' } }]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      (anropet) => {
+        if (anropet.url.endsWith('/csv')) {
+          return { status: 200, blob: fil };
+        }
+        return anropet.url.startsWith(rapportvag(MANAD, '')) ? rapportsvar(KORT_RAPPORT) : { status: 500, json: { error: 'fel' } };
+      }
+    ),
+    FRYST_IDAG,
+    { createObjectURL }
+  );
+
+  // Perioden byts först, till 3, som svarar 200: då skiljer sig varje led i
+  // nedladdningens adress från sitt förval.
+  assert.equal(dom.falt('report-period-3').utlos('click'), true);
+  await flush();
+
+  // Ett misslyckat månadsbyte: månaden och rapporten för oktober svarar 500,
+  // så kortet visar fortfarande september med tre månader.
+  dom.falt('month-next').utlos('click');
+  await flush();
+
+  assert.equal(dom.falt('report-download').utlos('click'), true);
+  await flush();
+  const nedladdning = anrop.at(-1);
+  assert.equal(nedladdning.method, 'GET');
+  assert.equal(nedladdning.url, `${rapportvag(MANAD, 3)}/csv`);
+  assert.equal(fatt.length, 1);
+  assert.equal(fatt[0] === fil, true, 'createObjectURL fick inte attrappens Blob');
+  assert.deepEqual(dom.klick, [{ href: 'blob:attrapp/1', download: reportFileName(MANAD) }]);
+  assert.equal(dom.klick[0].download, 'hemochekonomi-2026-09.csv');
+  assert.equal(dom.falt('report-download').disabled, false);
+});
+
+for (const [namn, svar, kontroll] of [
+  ['ett avvisat fetch ger den allmänna texten', () => new Error('nätet nere'), (dom) => {
+    assert.equal(dom.falt('report-error').textContent, GENERAL_ERROR);
+    assert.equal(dom.falt('month-error').textContent, '');
+  }],
+  ['ett 500 ger serverns text', () => ({ status: 500, json: { error: 'Serverns text.' } }), (dom) => {
+    assert.equal(dom.falt('report-error').textContent, 'Serverns text.');
+    assert.equal(dom.falt('month-error').textContent, '');
+  }],
+  ['ett 403 visar låsraden', () => RAPPORT_403, (dom) => {
+    assert.equal(dom.falt('report-locked').hidden, false);
+    assert.equal(dom.falt('report-card').hidden, true);
+    assert.equal(dom.falt('report-locked-text').textContent, RAPPORT_LASTEXT);
+    assert.equal(dom.falt('month-error').textContent, '');
+    assert.equal(dom.falt('report-error').textContent, '');
+  }],
+  ['ett 200 utan läsbar kropp ger den allmänna texten', () => ({ status: 200 }), (dom) => {
+    assert.equal(dom.falt('report-error').textContent, GENERAL_ERROR);
+    assert.equal(dom.falt('month-error').textContent, '');
+  }],
+  ['ett 401 visar inloggningsvyn', () => MIG_401, (dom) => {
+    assert.equal(dom.falt('login-view').hidden, false);
+    assert.equal(dom.falt('month-view').hidden, true);
+  }]
+]) {
+  test(`(98) vid nedladdning: ${namn}, och createObjectURL anropas inte`, async (t) => {
+    const { fatt, createObjectURL } = objektUrl();
+    let csvSvar = null;
+    const { dom, anrop } = await starta(
+      t,
+      planInloggad(
+        () => manadssvar([]),
+        () => null,
+        () => RAKNINGAR_TOM,
+        () => SPARMAL_TOM,
+        (anropet) => (anropet.url.endsWith('/csv') ? csvSvar : rapportsvar(KORT_RAPPORT))
+      ),
+      FRYST_IDAG,
+      { createObjectURL }
+    );
+    // Först ett hängande anrop: knappen är spärrad medan det är i luften.
+    assert.equal(dom.falt('report-download').utlos('click'), true);
+    await flush();
+    assert.equal(dom.falt('report-download').disabled, true);
+    assert.equal(dom.falt('report-download').utlos('click'), false);
+    const forsta = anrop.at(-1);
+    forsta.svara({ status: 200, blob: new Blob(['a']) });
+    await flush();
+    assert.equal(dom.falt('report-download').disabled, false);
+    assert.equal(fatt.length, 1);
+
+    csvSvar = svar();
+    assert.equal(dom.falt('report-download').utlos('click'), true);
+    await flush();
+    kontroll(dom);
+    assert.equal(fatt.length, 1, 'createObjectURL anropades efter ett fel');
+    assert.equal(dom.klick.length, 1);
+    assert.equal(dom.falt('report-download').disabled, false);
+  });
+}
+
+test('(99) Se planer i rapportens låsrad visar planvyn', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () => SPARMAL_TOM, () => RAPPORT_403)
+  );
+  assert.equal(dom.falt('report-show-plans').utlos('click'), true);
+  await flush();
+  assert.equal(anrop.at(-1).method, 'GET');
+  assert.equal(anrop.at(-1).url, PLANVAG);
+  assert.equal(dom.falt('plan-view').hidden, false);
+  assert.equal(dom.falt('month-view').hidden, true);
+});
+
+// (100) rapportens fel har ett eget element och töms av nästa svar som inte är
+// ett fel. I (a) och (b) står texten i #report-error före varje tömning, så att
+// assertionen på den tomma strängen inte är sann av sig själv (LARDOMAR.md
+// 2026-09-10).
+
+test('(100) vid periodbyte: ett 200 och ett 403 tömmer #report-error efter ett 500', async (t) => {
+  const serverns = 'Rapporten gick inte att läsa.';
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      ikoordning([
+        rapportsvar(LANG_RAPPORT),
+        { status: 500, json: { error: serverns } },
+        rapportsvar(KORT_RAPPORT),
+        { status: 500, json: { error: serverns } },
+        RAPPORT_403
+      ])
+    )
+  );
+  assert.equal(dom.falt('report-error').textContent, '');
+
+  dom.falt('report-period-6').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, serverns);
+
+  dom.falt('report-period-3').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, '');
+
+  dom.falt('report-period-6').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, serverns);
+
+  dom.falt('report-period-12').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, '');
+  assert.equal(dom.falt('report-locked').hidden, false);
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, '');
+});
+
+test('(100) vid nedladdning: ett 200 och ett 403 tömmer #report-error efter ett 500', async (t) => {
+  const serverns = 'Filen gick inte att skapa.';
+  const { fatt, createObjectURL } = objektUrl();
+  const csvSvar = ikoordning([
+    { status: 500, json: { error: serverns } },
+    { status: 200, blob: new Blob(['csv']) },
+    { status: 500, json: { error: serverns } },
+    RAPPORT_403
+  ]);
+  const { dom } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      (anropet) => (anropet.url.endsWith('/csv') ? csvSvar() : rapportsvar(KORT_RAPPORT))
+    ),
+    FRYST_IDAG,
+    { createObjectURL }
+  );
+
+  dom.falt('report-download').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, serverns);
+
+  dom.falt('report-download').utlos('click');
+  await flush();
+  assert.equal(fatt.length, 1);
+  assert.equal(dom.falt('report-error').textContent, '');
+
+  dom.falt('report-download').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, serverns);
+
+  dom.falt('report-download').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, '');
+  assert.equal(dom.falt('report-locked').hidden, false);
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(fatt.length, 1);
+  assert.equal(dom.falt('month-error').textContent, '');
+});
+
+// (100)(c) till (e) [runda 4]. Räkningarnas väg svarar 500 med en egen text, och
+// varje fall kräver att rapportens svar lämnar den texten i #month-error.
+const RAKNINGARNAS_FEL = 'Räkningarnas fel.';
+const RAKNINGAR_500 = Object.freeze({ status: 500, json: { error: RAKNINGARNAS_FEL } });
+
+for (const [namn, svaraRapporten] of [
+  ['200', (anropet) => anropet.svara(rapportsvar(KORT_RAPPORT))],
+  ['403', (anropet) => anropet.svara(RAPPORT_403)],
+  ['500', (anropet) => anropet.svara({ status: 500, json: { error: 'Serverns text.' } })],
+  ['avvisade fetch', (anropet) => anropet.kasta(new Error('nätet nere'))]
+]) {
+  test(`(100) vid sidladdning: rapportens ${namn} rör inte räkningarnas fel i #month-error`, async (t) => {
+    // Rapportens anrop hänger tills utgångsläget är asserterat: då är ordningen
+    // bestämd, och räkningarnas text står garanterat i #month-error innan
+    // rapporten svarar.
+    const { dom, anrop } = await starta(
+      t,
+      planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_500, () => SPARMAL_TOM, () => null)
+    );
+    await flush();
+    assert.equal(anrop[4].url, rapportvag(MANAD, 12));
+    assert.equal(dom.falt('month-error').textContent, RAKNINGARNAS_FEL);
+    assert.equal(dom.falt('report-error').textContent, '');
+
+    svaraRapporten(anrop[4]);
+    await flush();
+    assert.equal(dom.falt('month-error').textContent, RAKNINGARNAS_FEL);
+  });
+}
+
+for (const [namn, csvSvar] of [
+  ['200 med en Blob', () => ({ status: 200, blob: new Blob(['csv']) })],
+  ['403', () => RAPPORT_403],
+  ['500', () => ({ status: 500, json: { error: 'Serverns text.' } })],
+  ['ett avvisat fetch', () => new Error('nätet nere')],
+  ['200 där blob() avvisar', () => ({ status: 200 })]
+]) {
+  test(`(100) vid nedladdning: ${namn} rör inte räkningarnas fel i #month-error`, async (t) => {
+    const { createObjectURL } = objektUrl();
+    const { dom } = await starta(
+      t,
+      planInloggad(
+        () => manadssvar([]),
+        () => null,
+        () => RAKNINGAR_500,
+        () => SPARMAL_TOM,
+        (anropet) => (anropet.url.endsWith('/csv') ? csvSvar() : rapportsvar(KORT_RAPPORT))
+      ),
+      FRYST_IDAG,
+      { createObjectURL }
+    );
+    await flush();
+    assert.equal(dom.falt('month-error').textContent, RAKNINGARNAS_FEL);
+    assert.equal(dom.falt('report-error').textContent, '');
+    assert.equal(dom.falt('report-card').hidden, false);
+
+    assert.equal(dom.falt('report-download').utlos('click'), true);
+    await flush();
+    assert.equal(dom.falt('month-error').textContent, RAKNINGARNAS_FEL);
+  });
+}
+
+test('(100) en pågående hämtning tömmer inte #report-error vid periodbyte', async (t) => {
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      ikoordning([rapportsvar(LANG_RAPPORT), { status: 500, json: { error: 'Serverns text.' } }, null])
+    )
+  );
+  dom.falt('report-period-6').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, 'Serverns text.');
+
+  dom.falt('report-period-3').utlos('click');
+  await flush();
+  const hangande = anrop.at(-1);
+  assert.equal(hangande.url, rapportvag(MANAD, 3));
+  assert.equal(dom.falt('report-error').textContent, 'Serverns text.', 'texten försvann innan svaret kom');
+
+  hangande.svara(rapportsvar(KORT_RAPPORT));
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, '');
+});
+
+test('(100) en pågående hämtning tömmer inte #report-error vid nedladdning', async (t) => {
+  const { createObjectURL } = objektUrl();
+  const csvSvar = ikoordning([{ status: 500, json: { error: 'Serverns text.' } }, null]);
+  const { dom, anrop } = await starta(
+    t,
+    planInloggad(
+      () => manadssvar([]),
+      () => null,
+      () => RAKNINGAR_TOM,
+      () => SPARMAL_TOM,
+      (anropet) => (anropet.url.endsWith('/csv') ? csvSvar() : rapportsvar(KORT_RAPPORT))
+    ),
+    FRYST_IDAG,
+    { createObjectURL }
+  );
+  dom.falt('report-download').utlos('click');
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, 'Serverns text.');
+
+  dom.falt('report-download').utlos('click');
+  await flush();
+  const hangande = anrop.at(-1);
+  assert.equal(hangande.url, `${rapportvag(MANAD, 12)}/csv`);
+  assert.equal(dom.falt('report-error').textContent, 'Serverns text.', 'texten försvann innan svaret kom');
+
+  hangande.svara({ status: 200, blob: new Blob(['csv']) });
+  await flush();
+  assert.equal(dom.falt('report-error').textContent, '');
 });

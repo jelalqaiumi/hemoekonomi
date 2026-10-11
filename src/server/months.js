@@ -117,8 +117,13 @@ DELETE FROM budgets
 // literaler: var och en läses både av villkoret och av felmeddelandet, alltså i
 // samma roll på två ställen, och två handskrivna kopior kan glida isär utan att
 // något test märker det.
-const OVERVIEW_MIN_MONTHS = 1;
-const OVERVIEW_MAX_MONTHS = 36;
+//
+// Exporterade sedan steg 5: readReport i src/server/reports.js har samma tak och
+// läser det härifrån, och api.js interpolerar 400-texten för ett otillåtet antal
+// ur samma två namn. Ett andra tak för samma sak vore två facit (ARKITEKTUR.md,
+// "Vad readReport svarar").
+export const OVERVIEW_MIN_MONTHS = 1;
+export const OVERVIEW_MAX_MONTHS = 36;
 
 // En månads innehåll och summor. Kedjan står som pseudokod i ARKITEKTUR.md under
 // "En månads innehåll — kedjan", och stegen nedan är numrerade efter den.

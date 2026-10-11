@@ -13,9 +13,11 @@
 // importeras härifrån, av samma skäl som cost.js anropar isPlainObject i
 // entry.js i stället för att skriva av villkoret (LARDOMAR.md 2026-09-02).
 //
-// ITEM_KIND_LABELS, som samma avsnitt namnger, är inte byggd här: den har ingen
-// anropare i src/ förrän gränssnittet visar etiketterna, och en export utan
-// användare får inga meningsfulla tester (ARKITEKTUR.md, "Teststrategi").
+// ITEM_KIND_LABELS, som samma avsnitt namnger, byggdes i steg 5 och står nedanför
+// ITEM_KINDS. Fram till dess hade den ingen anropare i src/, och en export utan
+// användare får inga meningsfulla tester (ARKITEKTUR.md, "Teststrategi"). Dess
+// första anropare är reportCsvRows i src/core/report-csv.js, som skriver slagets
+// svenska namn i CSV-filens första kolumn.
 
 import { compareMonths, isValidIsoDate, isValidIsoMonth } from './dates.js';
 import { checkAmountSek, checkCategory, checkInterval, checkName, isPlainObject } from './entry.js';
@@ -62,6 +64,26 @@ const MESSAGES = Object.freeze({
 // importör som skriver om ett värde skulle annars ändra hela appens beräkning
 // utan att någon fil visar det.
 export const ITEM_KINDS = Object.freeze(['income', 'expense', 'saving']);
+
+// De svenska etiketterna för de tre slagen, ur tabellen under "Posttypen:
+// inkomst, utgift eller sparande" i ARKITEKTUR.md. Samma avsnitt pekar ut den
+// här modulen som ägaren, och texterna står därför bara här: användaren ser
+// aldrig nycklarna income, expense och saving.
+//
+// Fryst av samma skäl som ITEM_KINDS: en importör som skriver om ett värde
+// skulle annars ändra texten i varje vy och i CSV-filen utan att någon fil visar
+// det.
+//
+// Ett objekt och inte en lista, till skillnad från ITEM_KINDS: frågan här är
+// "vilket namn har det här slaget", alltså ett uppslag. Varje anropare slår upp
+// ett slag som redan kommer ur ITEM_KINDS, så uppslaget behöver ingen
+// Object.hasOwn — nyckeln är aldrig användarens text. Villkoret "detta är ett
+// känt slag" ägs av isItemKind nedan och ställs aldrig genom det här objektet.
+export const ITEM_KIND_LABELS = Object.freeze({
+  income: 'Inkomst',
+  expense: 'Utgift',
+  saving: 'Sparande'
+});
 
 // Enda definitionen i projektet av villkoret "detta är ett känt slag".
 // ITEM_KINDS.includes och inte ett uppslag i ett objekt: en lista har ingen

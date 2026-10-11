@@ -907,3 +907,45 @@ button.goal-deposit:hover {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+/* Rapportkortet [steg 5]. Periodknapparna står på en rad, och den valda väljs
+   på aria-pressed, samma attribut som skärmläsaren läser: inget eget klassnamn
+   och inget style-attribut i app.js. */
+.report-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-periods [aria-pressed="true"] {
+  background: var(--knapp-fylld-yta);
+  color: var(--knapp-fylld-text);
+}
+
+/* Tabellen har samma form som översiktens: slag och kategori till vänster,
+   beloppen och Över taket högerställda i tabular-nums. */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.75rem;
+}
+
+.report-table th,
+.report-table td {
+  padding: 0.35rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid var(--kant);
+}
+
+.report-table th:nth-child(-n + 2),
+.report-table td:nth-child(-n + 2) {
+  text-align: left;
+}
+
+.report-table th {
+  font-size: 0.875rem;
+  color: var(--text-svag);
+  font-weight: 600;
+}

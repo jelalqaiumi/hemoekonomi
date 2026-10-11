@@ -20,12 +20,15 @@ import { CATEGORY_LABELS } from '../src/core/entry.js';
 import { formatSek } from '../src/core/money.js';
 import { AUTH_MESSAGES, NOT_LOGGED_IN_MESSAGE } from '../src/server/auth.js';
 import { MEMORY_PATH, openDatabase } from '../src/server/db.js';
-import { addMonthItem, addTemplate, readMonth } from '../src/server/months.js';
+import { OVERVIEW_MAX_MONTHS, OVERVIEW_MIN_MONTHS, addMonthItem, addTemplate, readMonth } from '../src/server/months.js';
 import { mountBanner } from '../src/web/demo/banner.js';
-import { createDemoFetch, readDemoMonth, readDemoOverview, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
+import { createDemoFetch, readDemoMonth, readDemoOverview, readDemoReport, SERVER_TEXTS } from '../src/web/demo/demo-fetch.js';
 import { DEMO } from '../src/web/demo/demolage.js';
 import { clearState, getStorage, readState, STORAGE_KEY, writeState } from '../src/web/demo/lagring.js';
-import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
+import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS, planFor } from '../src/core/plans.js';
+import { toCsv } from '../src/core/csv.js';
+import { reportRows } from '../src/core/report.js';
+import { reportCsvRows } from '../src/core/report-csv.js';
 import { createSeedState, DEMO_EMAIL, seedMonths } from '../src/web/demo/seed.js';
 import { createDemoDom, createStorage, createThrowingStorage } from './helpers/demo-dom.js';
 import { createDom, flush, loadApp } from './helpers/dom.js';
@@ -1609,4 +1612,161 @@ test('src/web/app.js körd mot demons attrapp visar låsraden på Bas och kortet
   const { goals } = await json(await efter.fetch(SPARMALSVAG));
   assert.equal(goals.length, 4);
   assert.equal(goals[0].name, 'Buffert');
+});
+
+// ------------------------------------------------- (D11) till (D14) rapporten
+// [steg 5 del 3]. Kravlistan står i ARKITEKTUR.md under "Kravlista för
+// tests/demo.test.js [steg 5 del 3]".
+
+const RAPPORTVAG = `/api/rapport/${MANAD}/3`;
+const RAPPORT_CSV_VAG = `${RAPPORTVAG}/csv`;
+const RADNYCKLAR = ['averageOre', 'budgetPerMonthOre', 'category', 'kind', 'overBudgetMonths', 'perMonthOre', 'totalOre'];
+
+test('(D11) 200 på rapportens JSON-väg är readDemoReport med exakt API-avsnittets nycklar', async () => {
+  const { fetch, state } = riggning();
+  await bytTillPlus(fetch);
+  const svaret = await fetch(RAPPORTVAG);
+  assert.equal(svaret.status, 200);
+  const kropp = await json(svaret);
+  assert.deepEqual(kropp, readDemoReport(state, MANAD, 3));
+  assert.deepEqual(Object.keys(kropp).sort(), ['largest', 'months', 'rows']);
+  assert.equal(kropp.rows.length > 0, true, 'seed-datan ger inga rader att pröva');
+  for (const rad of kropp.rows) {
+    assert.deepEqual(Object.keys(rad).sort(), RADNYCKLAR);
+  }
+  assert.deepEqual(kropp.months, [shiftMonth(MANAD, -2), FOREGAENDE, MANAD]);
+});
+
+test('(D11) readDemoReport är reportRows över tre readDemoMonth, ingen egen räkning', async () => {
+  const { state } = riggning();
+  const manader = [shiftMonth(MANAD, -2), FOREGAENDE, MANAD];
+  const vantat = reportRows(manader.map((month) => {
+    const { items, budgets } = readDemoMonth(state, month);
+    return { month, items, budgets };
+  }));
+  assert.deepEqual(readDemoReport(state, MANAD, 3).rows, vantat.rows);
+  assert.deepEqual(readDemoReport(state, MANAD, 3), vantat);
+});
+
+test('(D12) Bas får 403 på båda rapportvägarna, och sparmålens 403 bär fortfarande sin feature', async () => {
+  const { fetch } = riggning();
+  for (const vag of [RAPPORTVAG, RAPPORT_CSV_VAG]) {
+    const svaret = await fetch(vag);
+    assert.equal(svaret.status, 403, vag);
+    assert.deepEqual(await json(svaret), {
+      error: `Funktionen ingår i ${PLAN_LABELS.plus}. Uppgradera för att låsa upp.`,
+      feature: 'reports',
+      requiredPlan: planFor('reports')
+    }, vag);
+  }
+  const sparmal = await fetch(SPARMALSVAG);
+  assert.equal(sparmal.status, 403);
+  assert.equal((await json(sparmal)).feature, 'savingsGoals');
+});
+
+test('(D13) 200 på CSV-vägen ger en Blob med BOM och UTF-8 av toCsv, och ingen text', async () => {
+  const { fetch, state } = riggning();
+  await bytTillPlus(fetch);
+  const svaret = await fetch(RAPPORT_CSV_VAG);
+  assert.equal(svaret.status, 200);
+  assert.equal(Object.hasOwn(svaret, 'text'), false, 'CSV-svaret har en text');
+  assert.equal(typeof svaret.text, 'undefined');
+  await assert.rejects(() => svaret.json(), SyntaxError);
+  const blob = await svaret.blob();
+  assert.equal(blob instanceof Blob, true);
+  const byte = new Uint8Array(await blob.arrayBuffer());
+  // U+FEFF i UTF-8 är de tre byten EF BB BF.
+  assert.deepEqual([...byte.slice(0, 3)], [0xef, 0xbb, 0xbf]);
+  const vantat = new TextEncoder().encode(toCsv(reportCsvRows(readDemoReport(state, MANAD, 3))));
+  assert.deepEqual([...byte], [...vantat]);
+});
+
+test('(D14) rapportvägarnas felvägar svarar som servern', async () => {
+  const { fetch, state } = riggning();
+  await bytTillPlus(fetch);
+  const antalstext = `Antalet månader måste vara mellan ${OVERVIEW_MIN_MONTHS} och ${OVERVIEW_MAX_MONTHS}.`;
+  assert.equal(SERVER_TEXTS.invalidReportCount, antalstext);
+
+  for (const vag of [`/api/rapport/${MANAD}/012`, `/api/rapport/${MANAD}/abc`, `/api/rapport/${MANAD}/012/csv`, `/api/rapport/${MANAD}/abc/csv`, '/api/rapport//3', `/api/rapport/${MANAD}/3/json`]) {
+    const svaret = await fetch(vag);
+    assert.equal(svaret.status, 404, vag);
+    assert.deepEqual(await json(svaret), { error: SERVER_TEXTS.unknownPath }, vag);
+  }
+  for (const vag of [RAPPORTVAG, RAPPORT_CSV_VAG]) {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']) {
+      const svaret = await fetch(vag, { method, body: '{}' });
+      assert.equal(svaret.status, 405, `${method} ${vag}`);
+    }
+  }
+  for (const [antal, status] of [
+    [String(OVERVIEW_MIN_MONTHS - 1), 400],
+    [String(OVERVIEW_MAX_MONTHS + 1), 400],
+    [String(OVERVIEW_MIN_MONTHS), 200],
+    [String(OVERVIEW_MAX_MONTHS), 200]
+  ]) {
+    for (const vag of [`/api/rapport/${MANAD}/${antal}`, `/api/rapport/${MANAD}/${antal}/csv`]) {
+      const svaret = await fetch(vag);
+      assert.equal(svaret.status, status, vag);
+      if (status === 400) {
+        assert.deepEqual(await json(svaret), { error: antalstext }, vag);
+      }
+    }
+  }
+  const felManad = await fetch('/api/rapport/2026-13/3');
+  assert.equal(felManad.status, 400);
+  assert.deepEqual(await json(felManad), { error: SERVER_TEXTS.invalidMonth });
+
+  state.loggedIn = false;
+  for (const vag of [RAPPORTVAG, RAPPORT_CSV_VAG]) {
+    const svaret = await fetch(vag);
+    assert.equal(svaret.status, 401, vag);
+    assert.deepEqual(await json(svaret), { error: SERVER_TEXTS.notLoggedIn }, vag);
+    // Metoden prövas före sessionen, som i api.js.
+    assert.equal((await fetch(vag, { method: 'POST', body: '{}' })).status, 405, vag);
+  }
+});
+
+test('(D15) src/web/app.js körd mot demons attrapp visar rapportens låsrad på Bas, utan feltext', async (t) => {
+  // Utan rapportvägen i attrappen hade "Okänd adress." stått i felrutan vid
+  // varje sidladdning i den publicerade demon (ARKITEKTUR.md, "Demon svarar på
+  // rapportens vägar").
+  const dom = createDom();
+  const { fetch } = riggning();
+  await loadApp(t, { document: dom.document, fetch, idag: IDAG });
+  await flush();
+  assert.equal(dom.falt('report-locked').hidden, false);
+  assert.equal(dom.falt('report-card').hidden, true);
+  assert.equal(dom.falt('month-error').textContent, '');
+  assert.equal(dom.falt('report-error').textContent, '');
+});
+
+test('(D16) readDemoReport räknar ingenting själv: kroppen lämnar listan till reportRows', async () => {
+  // En egen summering som räknar RÄTT ger samma värde som reportRows och kan inte
+  // fällas av ett beteendetest, så förbudet hålls av källtexten (ARKITEKTUR.md,
+  // kravlistan för tests/demo.test.js, (D16)). Kommentarerna tas bort med samma
+  // två replace som (RA35), så att en rad som står kvar i en kommentar inte räknas.
+  const kalla = await fs.readFile(DEMO_FETCH_PATH, 'utf8');
+  const kod = kalla.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const rader = kod.split(/\r?\n/);
+  const start = rader.findIndex((rad) => rad.startsWith('export function readDemoReport('));
+  assert.notEqual(start, -1, 'readDemoReport saknas i demo-fetch.js');
+  const slut = rader.findIndex((rad, index) => index > start && rad === '}');
+  assert.notEqual(slut, -1, 'readDemoReport har ingen avslutande rad');
+  const kropp = rader.slice(start, slut + 1).join('\n');
+
+  assert.equal(kropp.includes('return reportRows(monthsData);'), true, 'readDemoReport lämnar inte listan till reportRows');
+  for (const forbjudet of ['+', '.reduce(', 'perMonthOre', 'totalOre', 'averageOre']) {
+    assert.equal(kropp.includes(forbjudet), false, `readDemoReport innehåller ${forbjudet}`);
+  }
+
+  // reportRows är bindningen ur kärnan och ingen lokal kopia med samma namn.
+  // Importlistan prövas element för element, normaliserat som en bindning
+  // (LARDOMAR.md 2026-09-07): ett alias hade gjort namnet i kroppen till något
+  // annat.
+  const importen = /import\s*\{([^}]*)\}\s*from\s*'\.\.\/\.\.\/core\/report\.js';/.exec(kod);
+  assert.notEqual(importen, null, 'demo-fetch.js importerar inte ../../core/report.js');
+  const delar = importen[1].split(',').map((del) => del.trim()).filter((del) => del !== '');
+  assert.equal(delar.map((del) => del.split(/\s+as\s+/)[0].trim()).includes('reportRows'), true, 'reportRows importeras inte');
+  assert.equal(delar.includes('reportRows'), true, 'reportRows importeras under ett annat namn');
+  assert.equal(/\b(function|const|let|var|class)\s+reportRows\b/.test(kod), false, 'en lokal reportRows skuggar importen');
 });

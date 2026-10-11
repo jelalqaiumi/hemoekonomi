@@ -25,6 +25,9 @@ import { goalProgress, validateDepositDraft, validateGoalDraft } from '../../cor
 import { compareIsoDates, compareMonths, firstDayOfMonth, isValidIsoDate, isValidIsoMonth, monthOfIsoDate, parseIsoDate, shiftMonth, todayIso } from '../../core/dates.js';
 import { ITEM_KINDS, validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../../core/item.js';
 import { FEATURES, hasFeature, isPlanKey, planFor, PLAN_LABELS } from '../../core/plans.js';
+import { toCsv } from '../../core/csv.js';
+import { reportRows } from '../../core/report.js';
+import { reportCsvRows } from '../../core/report-csv.js';
 import { nextDueDate } from '../../core/schedule.js';
 import { DEMO } from './demolage.js';
 
@@ -45,6 +48,16 @@ import { DEMO } from './demolage.js';
 //   invalidToday     MESSAGES.invalidToday i src/server/api.js
 //   billNotFound     MESSAGES.billNotFound i src/server/api.js
 //   goalNotFound     MESSAGES.goalNotFound i src/server/api.js
+//   invalidReportCount MESSAGES.invalidReportCount i src/server/api.js
+//
+// Rapportens tak [steg 5 del 3]. OVERVIEW_MIN_MONTHS och OVERVIEW_MAX_MONTHS bor i
+// src/server/months.js, som webbläsaren inte når, så de kopieras hit. Kopian
+// hålls av (D14) i tests/demo.test.js, som prövar gränserna genom beteendet mot
+// de importerade konstanterna (ARKITEKTUR.md, "Demon svarar på rapportens
+// vägar").
+const REPORT_MIN_MONTHS = 1;
+const REPORT_MAX_MONTHS = 36;
+
 export const SERVER_TEXTS = Object.freeze({
   notLoggedIn: 'Du är inte inloggad.',
   unknownCode: 'Koden stämmer inte. Begär en ny kod och försök igen.',
@@ -61,7 +74,10 @@ export const SERVER_TEXTS = Object.freeze({
   // src/server/api.js, och gäller både ett mål som aldrig funnits och ett som
   // tillhör någon annan - demon har bara en användare, så bara det första fallet
   // är nåbart här.
-  goalNotFound: 'Sparmålet finns inte.'
+  goalNotFound: 'Sparmålet finns inte.',
+  // Rapportens text för ett otillåtet antal månader [steg 5 del 3],
+  // interpolerad ur taket ovan precis som i src/server/api.js.
+  invalidReportCount: `Antalet månader måste vara mellan ${REPORT_MIN_MONTHS} och ${REPORT_MAX_MONTHS}.`
 });
 
 // Vägarna, med samma adresser som src/server/api.js.
@@ -93,6 +109,17 @@ const GOAL_DEPOSIT_SEGMENT = 'insattning';
 // Funktionsnyckeln sparmålens vägar kräver. Står som en konstant och inte som en
 // sträng på två ställen, av samma skäl som adresserna ovan.
 const GOALS_FEATURE = 'savingsGoals';
+// Rapportens vägar [steg 5 del 3]: /api/rapport/<ÅÅÅÅ-MM>/<N> och
+// /api/rapport/<ÅÅÅÅ-MM>/<N>/csv, samma adresser och samma form på N som i
+// src/server/api.js. Mönstret kopieras av samma skäl som taket: api.js går inte
+// att ladda i webbläsaren, och (D14) håller kopian.
+const REPORT_PATH_PREFIX = '/api/rapport/';
+const REPORT_CSV_SEGMENT = 'csv';
+const REPORT_COUNT_PATTERN = /^(0|[1-9][0-9]*)$/;
+// Funktionsnyckeln rapportens vägar kräver.
+const REPORTS_FEATURE = 'reports';
+// CSV-svarets typ. Samma Content-Type som sendCsv i src/server/api.js sätter.
+const CSV_TYPE = 'text/csv; charset=utf-8';
 
 // Antalet månader i översikten. Samma tolv som OVERVIEW_MONTHS i
 // src/server/api.js: antalet står inte i adressen, så en klient kan inte be om
@@ -111,6 +138,24 @@ const NAME_COLLATOR = new Intl.Collator('sv');
 // Ett led i en sökväg, eller null när sökvägen inte har den formen. Samma regler
 // som segmentAfter i src/server/api.js: ingen trimning, ingen avkodning, och ett
 // tomt led eller ett led med snedstreck är ingen väg alls.
+// Leden i /api/rapport/<ÅÅÅÅ-MM>/<N>[/csv], eller null [steg 5 del 3]. Samma
+// regler som reportFromPath i src/server/api.js: ingen trimning, ingen
+// avkodning, och ett N som inte är ett tal i kanonisk form är ingen adress.
+function reportFromPath(pathname) {
+  if (!pathname.startsWith(REPORT_PATH_PREFIX)) {
+    return null;
+  }
+  const parts = pathname.slice(REPORT_PATH_PREFIX.length).split('/');
+  const csv = parts.length === 3 && parts[2] === REPORT_CSV_SEGMENT;
+  if (parts.length !== 2 && !csv) {
+    return null;
+  }
+  if (parts[0] === '' || !REPORT_COUNT_PATTERN.test(parts[1])) {
+    return null;
+  }
+  return { month: parts[0], count: Number(parts[1]), csv };
+}
+
 function segmentAfter(pathname, prefix) {
   if (!pathname.startsWith(prefix)) {
     return null;
@@ -424,6 +469,23 @@ export function readDemoOverview(state, endMonth, count) {
   return { months, savedThisYear: sumByKind(yearItems, 'saving') };
 }
 
+// Rapporten för count månader som slutar med endMonth [steg 5 del 3]. Samma
+// kedja som readReport i src/server/reports.js: varje månad läses med
+// readDemoMonth, äldst först, och listan lämnas till reportRows. Ingen egen
+// räkning, samma regel som (D4).
+//
+// Exporterad av samma skäl som readDemoOverview: tests/demo.test.js läser den
+// direkt.
+export function readDemoReport(state, endMonth, count) {
+  const monthsData = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const month = shiftMonth(endMonth, -offset);
+    const { items, budgets } = readDemoMonth(state, month);
+    monthsData.push({ month, items, budgets });
+  }
+  return reportRows(monthsData);
+}
+
 // Den version av en serie som gäller en månad, eller null. Samma periodvillkor
 // som SQL_TEMPLATE_VERSION_FOR_MONTH i src/server/months.js: högst en version av
 // en serie kan gälla en månad, eftersom versionerna läggs efter varandra utan
@@ -557,6 +619,22 @@ function svar(status, json) {
   };
 }
 
+// CSV-svaret [steg 5 del 3]: en blob och ingen text, så att gränssnittet läser
+// filen med blob() precis som mot servern, och json() avvisar. Bloben byggs ur
+// strängen, som börjar med BOM:en: en Blob kodar sin sträng som UTF-8 och tar
+// aldrig bort ett inledande tecken. Inga huvuden: gränssnittet läser inget
+// huvud, och filnamnet kommer ur reportFileName.
+function csvSvar(text) {
+  return {
+    status: 200,
+    ok: true,
+    json: async () => {
+      throw new SyntaxError('Unexpected token in JSON');
+    },
+    blob: async () => new Blob([text], { type: CSV_TYPE })
+  };
+}
+
 // Ett eget värde i stället för null eller undefined: en kropp som innehåller
 // exakt "null" är giltig JSON och ska nå valideringen, inte förväxlas med en
 // kropp som inte gick att tolka. Samma skäl som UNPARSABLE i src/server/api.js.
@@ -645,15 +723,19 @@ export function createDemoFetch({
   //
   // Till skillnad från budgetens spärr, som api.js kör med 'budget' och som
   // svarar null för varje plan demon kan ha, är den här grenen NÅBAR: demon börjar
-  // på Bas, och savingsGoals finns bara från Plus.
-  const kraverFunktion = () => {
-    if (hasFeature(state.plan, GOALS_FEATURE)) {
+  // på Bas, och savingsGoals och reports finns bara från Plus.
+  //
+  // Funktionen kommer som argument sedan steg 5 del 3, precis som i
+  // requireFeature: sparmålens vägar anropar den med GOALS_FEATURE och
+  // rapportens med REPORTS_FEATURE.
+  const kraverFunktion = (feature) => {
+    if (hasFeature(state.plan, feature)) {
       return null;
     }
-    const requiredPlan = planFor(GOALS_FEATURE);
+    const requiredPlan = planFor(feature);
     return svar(403, {
       error: `Funktionen ingår i ${PLAN_LABELS[requiredPlan]}. Uppgradera för att låsa upp.`,
-      feature: GOALS_FEATURE,
+      feature,
       requiredPlan
     });
   };
@@ -1104,7 +1186,7 @@ export function createDemoFetch({
       if (utanSession !== null) {
         return utanSession;
       }
-      const utanFunktion = kraverFunktion();
+      const utanFunktion = kraverFunktion(GOALS_FEATURE);
       if (utanFunktion !== null) {
         return utanFunktion;
       }
@@ -1138,7 +1220,7 @@ export function createDemoFetch({
       if (utanSession !== null) {
         return utanSession;
       }
-      const utanFunktion = kraverFunktion();
+      const utanFunktion = kraverFunktion(GOALS_FEATURE);
       if (utanFunktion !== null) {
         return utanFunktion;
       }
@@ -1167,7 +1249,7 @@ export function createDemoFetch({
       if (utanSession !== null) {
         return utanSession;
       }
-      const utanFunktion = kraverFunktion();
+      const utanFunktion = kraverFunktion(GOALS_FEATURE);
       if (utanFunktion !== null) {
         return utanFunktion;
       }
@@ -1186,6 +1268,36 @@ export function createDemoFetch({
       };
       state.goals.push(goal);
       return sparaOch(svar(201, { goal }));
+    }
+
+    // GET /api/rapport/<ÅÅÅÅ-MM>/<N> och .../csv [steg 5 del 3]. Samma ordning
+    // som api.js: formen (404, ges av att vägen inte matchar), metoden,
+    // sessionen, behörigheten, månaden och antalet.
+    const report = reportFromPath(pathname);
+    if (report !== null) {
+      if (method !== 'GET') {
+        return metodStods();
+      }
+      const utanSession = kraverSession();
+      if (utanSession !== null) {
+        return utanSession;
+      }
+      const utanFunktion = kraverFunktion(REPORTS_FEATURE);
+      if (utanFunktion !== null) {
+        return utanFunktion;
+      }
+      const felManad = kraverManad(report.month);
+      if (felManad !== null) {
+        return felManad;
+      }
+      if (report.count < REPORT_MIN_MONTHS || report.count > REPORT_MAX_MONTHS) {
+        return svar(400, { error: SERVER_TEXTS.invalidReportCount });
+      }
+      const result = readDemoReport(state, report.month, report.count);
+      if (report.csv) {
+        return csvSvar(toCsv(reportCsvRows(result)));
+      }
+      return svar(200, { months: result.months, rows: result.rows, largest: result.largest });
     }
 
     // GET /api/oversikt/<ÅÅÅÅ-MM>. Samma ordning som api.js: sessionen först,
