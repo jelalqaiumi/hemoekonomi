@@ -38,14 +38,12 @@ import { MONTHS_PER_PERIOD, nextDueDate } from './schedule.js';
 // skriver om ett värde skulle annars flytta hela appens statusregel utan att
 // någon fil visar det.
 //
-// Exportens enda anropare i src/ är raden nedan, i samma fil
-// (`grep -rn "BILL_STATUSES" src/` ger definitionen, en kommentar och
-// destruktureringen). Den är exporterad för att korten i månadsvyn ska kunna
-// räkna upp de fyra utseendena ur listan i stället för att skriva av dem, och
-// gränssnittet är ännu inte byggt. Läser gränssnittet den inte när steg 3 är klart
-// ska exporten tas bort (LARDOMAR.md 2026-09-16). Detsamma gäller
-// REMIND_DAYS_MIN, REMIND_DAYS_MAX och REMIND_DAYS_DEFAULT nedan, som
-// formulärets fält Påminn mig <N> dagar innan ska läsa sina gränser ur.
+// Utöver destruktureringen nedan läses exporten av src/web/app.js:
+// billClassName prövar radens status mot listan, så att räkningsraden får sin
+// klass ur listan i stället för ur avskrivna strängar. REMIND_DAYS_MIN,
+// REMIND_DAYS_MAX och REMIND_DAYS_DEFAULT nedan läses av samma fil för
+// formulärets fält Påminn mig: gränserna sätts som fältets min- och
+// max-attribut, och förvalet skrivs in av openBillForm.
 export const BILL_STATUSES = Object.freeze(['betald', 'forfallen', 'paminnelse', 'kommande']);
 
 // De fyra värdena läses ur listan ovan och skrivs inte en andra gång som

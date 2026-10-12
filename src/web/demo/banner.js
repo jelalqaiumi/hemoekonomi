@@ -24,10 +24,13 @@ const DEMO_LOGIN_LABEL = 'Logga in som demoanvändare';
 // knappen har två lydelser och inget stängkryss.
 const COLLAPSE_LABEL = 'Fäll ihop';
 const EXPAND_LABEL = 'Visa mer';
-// Det demon inte visar. Samma uppräkning som ARKITEKTUR.md under "Det demon inte
-// visar", och samma som README ska bära.
+// Det demon inte visar: de planfunktioner som står på prissidan men inte är
+// byggda, och betalningen. Texten står ordagrant i ARKITEKTUR.md under "Det demon
+// inte visar", och (D17) i tests/demo.test.js prövar den mot FEATURE_LABELS och
+// mot de requireFeature-anrop src/server/api.js gör. README:s avsnitt "Inte
+// byggt" är längre och ägs av README.
 const NOT_BUILT_TEXT =
-  'Prisplaner, behörighet, sparmål, räkningspåminnelser, delat hushåll och Mina funktioner är inte byggda - de står på landningssidan som design.';
+  'Delat hushåll, Mina funktioner och Prioriterad support står på prissidan men är inte byggda. Betalning finns inte heller - planbytet är gratis och sker direkt.';
 // Visas bara när webbläsaren inte ger demon någon lagring.
 const NO_STORAGE_TEXT = 'Webbläsaren ger demon ingen lagring, så ändringar försvinner när sidan laddas om.';
 

@@ -84,14 +84,45 @@ export const FEATURE_LABELS = Object.freeze({
   prioritySupport: 'Prioriterad support'
 });
 
-// De två meddelandena modulen äger. Båda är programmeringsfel och når aldrig
+// De funktioner som ingår i en plan men inte finns i appen. Nycklarna är planens
+// innehåll och står kvar i PLANS, så behörigheten är oförändrad, men ingen väg
+// och ingen vy finns för dem. Listan står i FEATURES ordning. Den är handskriven,
+// men (P14) i tests/plans.test.js kräver att den är precis de nycklar som
+// src/server/api.js inte spärrar med requireFeature, utom overview
+// (ARKITEKTUR.md, "Landningssidan lovar inget som inte finns").
+export const NOT_BUILT_FEATURES = Object.freeze(['sharedHousehold', 'customFeatures', 'prioritySupport']);
+
+// Tillägget efter namnet på en funktion som inte finns i appen. Bara featureText
+// läser det, och därför exporteras det inte.
+const NOT_BUILT_NOTE = 'finns inte i appen';
+
+// De meddelanden modulen äger. Alla är programmeringsfel och når aldrig
 // användaren: planen kommer ur databasens plan-kolumn, som har ett CHECK, och
 // funktionsnyckeln står i koden. Texterna är därför skrivna för den som läser
 // ett stackspår, på samma form som RangeError-texterna i cost.js och dates.js.
 const MESSAGES = Object.freeze({
   unknownFeature: (value) => `hasFeature kräver en känd funktion, fick "${String(value)}".`,
-  unknownPlan: (value) => `hasFeature kräver en känd plan, fick "${String(value)}".`
+  unknownPlan: (value) => `hasFeature kräver en känd plan, fick "${String(value)}".`,
+  unknownFeatureText: (value) => `featureText kräver en känd funktion, fick "${String(value)}".`
 });
+
+// En funktions namn i en lista över vad en plan innehåller: prissidans kort och
+// vyn Min plan läser båda härifrån. En funktion i NOT_BUILT_FEATURES får
+// tillägget " - finns inte i appen", så att listan inte lovar något som inte
+// finns (ARKITEKTUR.md, "Landningssidan lovar inget som inte finns").
+//
+// Spärren finns av samma skäl som hasFeature har sin: ett uppslag med en okänd
+// nyckel ger annars undefined, som skrivs ut som texten "undefined".
+// FEATURES.includes kastar för ingen indata, inte heller för 1n och Symbol('x').
+export function featureText(feature) {
+  if (!FEATURES.includes(feature)) {
+    throw new RangeError(MESSAGES.unknownFeatureText(feature));
+  }
+  if (NOT_BUILT_FEATURES.includes(feature)) {
+    return `${FEATURE_LABELS[feature]} - ${NOT_BUILT_NOTE}`;
+  }
+  return FEATURE_LABELS[feature];
+}
 
 // Enda definitionen i projektet av villkoret "detta är en känd plan".
 // Object.hasOwn och inte ett sanningsprövat uppslag: PLANS är ett objekt, så

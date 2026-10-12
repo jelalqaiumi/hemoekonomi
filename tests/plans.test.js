@@ -1,12 +1,24 @@
 // Kravlistan (P1) till (P5) för src/core/plans.js i ARKITEKTUR.md under
-// "Del 5: planer och behörighet".
+// "Del 5: planer och behörighet". (P14) och (P15) står under "Landningssidan
+// lovar inget som inte finns".
 //
 // Modulen är ren kärna och har inga sidoeffekter: inget fall behöver något
 // utgångsläge och inget fall städar.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { FEATURES, FEATURE_LABELS, PLANS, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../src/core/plans.js';
+import {
+  FEATURES,
+  FEATURE_LABELS,
+  NOT_BUILT_FEATURES,
+  PLANS,
+  PLAN_LABELS,
+  featureText,
+  hasFeature,
+  isPlanKey,
+  planFor
+} from '../src/core/plans.js';
+import { builtFeatureKeys } from './helpers/built-features.js';
 
 // Varje funktion som står i någon plans lista, i planordning. Används av (P5)
 // och av det prov som binder PLAN_LABELS till PLANS.
@@ -267,4 +279,46 @@ test('FEATURE_LABELS har ett svenskt namn för varje nyckel i FEATURES', () => {
   assert.equal(FEATURE_LABELS.budget, 'Budget och utgiftsregistrering');
   assert.equal(FEATURE_LABELS.reports, 'Diagram och rapporter');
   assert.equal(FEATURE_LABELS.prioritySupport, 'Prioriterad support');
+});
+
+test('(P14) NOT_BUILT_FEATURES är precis det som inte är byggt', async () => {
+  // Listan i plans.js är handskriven. Den kan ändå inte glida isär från koden:
+  // byggda nycklar läses ur requireFeature-anropen i src/server/api.js, med
+  // samma hjälpfunktion som (D17) i tests/demo.test.js använder.
+  const byggda = await builtFeatureKeys();
+  assert.deepEqual(NOT_BUILT_FEATURES, FEATURES.filter((f) => !byggda.includes(f)));
+  assert.equal(Object.isFrozen(NOT_BUILT_FEATURES), true);
+});
+
+test('(P15) featureText följer facit', () => {
+  // Facit står i ARKITEKTUR.md under "Landningssidan lovar inget som inte
+  // finns". Strängarna har inga andra blanktecken än vanligt mellanslag, och
+  // strecket är bindestreck-minus (U+002D).
+  assert.equal(featureText('budget'), 'Budget och utgiftsregistrering');
+  assert.equal(featureText('savingsGoals'), 'Sparmål');
+  assert.equal(featureText('reports'), 'Diagram och rapporter');
+  assert.equal(featureText('sharedHousehold'), 'Delat hushåll - finns inte i appen');
+  assert.equal(featureText('customFeatures'), 'Mina funktioner - finns inte i appen');
+  assert.equal(featureText('prioritySupport'), 'Prioriterad support - finns inte i appen');
+
+  // Hela meddelandet asserteras och inte bara feltypen: modulen har flera
+  // RangeError, och en assertion på enbart typen kan inte skilja dem åt
+  // (LARDOMAR.md 2026-09-16).
+  const kastande = [
+    ['okänd', 'okänd'],
+    [undefined, 'undefined'],
+    ['constructor', 'constructor'],
+    [1n, '1'],
+    [Symbol('x'), 'Symbol(x)']
+  ];
+  for (const [varde, text] of kastande) {
+    assert.throws(
+      () => featureText(varde),
+      {
+        name: 'RangeError',
+        message: `featureText kräver en känd funktion, fick "${text}".`
+      },
+      String(varde)
+    );
+  }
 });

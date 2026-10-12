@@ -25,7 +25,7 @@ import { CATEGORY_LABELS, INTERVAL_LABELS } from '../src/core/entry.js';
 import { REMIND_DAYS_DEFAULT, REMIND_DAYS_MAX, REMIND_DAYS_MIN } from '../src/core/bill.js';
 import { divideRoundHalfUp, formatSek } from '../src/core/money.js';
 import { GOAL_STATUSES } from '../src/core/goal.js';
-import { FEATURES, FEATURE_LABELS, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
+import { FEATURES, FEATURE_LABELS, featureText, hasFeature, PLANS, PLAN_LABELS } from '../src/core/plans.js';
 import { ITEM_KIND_LABELS } from '../src/core/item.js';
 import { reportFileName } from '../src/core/report-csv.js';
 import { OVERVIEW_MAX_MONTHS, OVERVIEW_MIN_MONTHS } from '../src/server/months.js';
@@ -2361,10 +2361,10 @@ test('knappen Min plan hämtar planen och byter vy', async (t) => {
   // Planens svenska namn, aldrig nyckeln.
   assert.equal(dom.falt('plan-current').textContent, 'Bas');
   assert.equal(dom.falt('plan-current').textContent, PLAN_LABELS.bas);
-  // Funktionerna planen har, med svenska namn ur FEATURE_LABELS.
+  // Funktionerna planen har, med svenska namn ur featureText.
   assert.deepEqual(
     dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
-    funktionerFor('bas').map((feature) => FEATURE_LABELS[feature])
+    funktionerFor('bas').map((feature) => featureText(feature))
   );
   // Knappen är påslagen igen när svaret kommit, och vyns två rutor är tomma.
   assert.equal(dom.falt('show-plan').disabled, false);
@@ -2391,7 +2391,7 @@ test('de tre knapparna ritas ur PLANS och antyder ingen betalning', async (t) =>
   }
 });
 
-test('ett klick på en planknapp byter plan, ritar om vyn och visar demotexten', async (t) => {
+test('(P17) ett klick på en planknapp byter plan, ritar om vyn och visar demotexten', async (t) => {
   const { dom, anrop } = await starta(t, planPlan((anropet) =>
     anropet.method === 'PUT' ? plansvar(JSON.parse(anropet.body).plan) : plansvar('bas')
   ));
@@ -2415,10 +2415,15 @@ test('ett klick på en planknapp byter plan, ritar om vyn och visar demotexten',
     1
   );
   assert.equal(dom.falt('plan-current').textContent, 'Premium');
+  const premiumRader = dom.rader('plan-features').map((rad) => celltext(rad, 'item-name'));
   assert.deepEqual(
-    dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
-    [...FEATURES].map((feature) => FEATURE_LABELS[feature])
+    premiumRader,
+    [...FEATURES].map((feature) => featureText(feature))
   );
+  // Min plan lovar ingen funktion som inte finns: Premium-användaren får höra
+  // att Mina funktioner inte finns i appen, inte att hen har dem.
+  assert.equal(premiumRader.includes('Mina funktioner - finns inte i appen'), true);
+  assert.equal(premiumRader.includes('Mina funktioner'), false);
   // Bekräftelsen, ordagrant.
   assert.equal(dom.falt('plan-note').textContent, PLAN_DEMOTEXT);
   assert.equal(dom.falt('plan-error').textContent, '');
@@ -2445,7 +2450,7 @@ test('ett byte nedåt kortar funktionslistan i stället för att bygga på den',
   assert.equal(dom.rader('plan-features').length, funktionerFor('bas').length);
   assert.deepEqual(
     dom.rader('plan-features').map((rad) => celltext(rad, 'item-name')),
-    funktionerFor('bas').map((feature) => FEATURE_LABELS[feature])
+    funktionerFor('bas').map((feature) => featureText(feature))
   );
 });
 

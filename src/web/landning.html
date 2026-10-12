@@ -6,7 +6,7 @@
     <title>Hem och Ekonomi | Full koll på hemmet och ekonomin</title>
     <meta
       name="description"
-      content="Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar månadskostnad, årskostnad och vad som dras härnäst."
+      content="Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar vad som är kvar att leva på varje månad och när räkningarna förfaller."
     />
     <!-- Faviconen är användarens egen logga, den nedskalade kopian: 400 gånger
          400 bildpunkter och 60 159 byte, mot originalets 1024 gånger 1024 och
@@ -84,8 +84,8 @@
             <h1>Full koll på hemmet och ekonomin på ett ställe</h1>
             <p class="hero-under">
               Inkomster, fasta utgifter och sparande i samma vy, räknade i hela
-              ören. Du ser månadskostnaden, årskostnaden och vad som dras
-              härnäst utan att öppna ett enda kalkylblad.
+              ören. Du ser vad som är kvar att leva på varje månad och när nästa
+              räkning förfaller, utan att öppna ett enda kalkylblad.
             </p>
             <div class="hero-knappar">
               <a class="knapp knapp-guld" href="/app">Kom igång</a>
@@ -96,14 +96,14 @@
       </section>
 
       <!-- ===================================================== 3. Fördelar
-           Fyra punkter med ikon: budget, räkningar, sparmål, hushållet.
+           Punkter med ikon: budget, räkningar, sparmål och översikten över året.
            Menyns "Funktioner" pekar hit. -->
       <section class="fordelar" id="funktioner">
         <div class="block">
-          <h2>Fyra saker du får direkt</h2>
+          <h2>Fyra saker appen gör</h2>
           <p class="block-ingress">
-            Inget att ställa in först. Lägg in din ekonomi en gång, så räknar
-            appen resten.
+            Inget att ställa in först. Lägg in en återkommande post en gång, så
+            kommer den med i varje månad den dras.
           </p>
           <ul class="fordel-lista">
             <li class="fordel">
@@ -115,8 +115,8 @@
               </svg>
               <h3>Budget som håller</h3>
               <p>
-                Varje inkomst och varje utgift räknas i hela ören. Summan längst
-                ned stämmer, varje månad.
+                Sätt ett tak per kategori för månaden, så visar appen hur mycket
+                som är kvar. Drar du över taket syns det som ett minusbelopp.
               </p>
             </li>
             <li class="fordel">
@@ -130,8 +130,9 @@
               </svg>
               <h3>Räkningar i tid</h3>
               <p>
-                Startdatum och intervall räcker. Appen räknar ut nästa dragning
-                och visar vad som är på väg.
+                Ange förfallodag och hur ofta räkningen kommer. Appen visar hur
+                många dagar som är kvar, och när du klickar Betald flyttas en
+                återkommande räkning fram till nästa förfallodag.
               </p>
             </li>
             <li class="fordel">
@@ -143,23 +144,22 @@
               </svg>
               <h3>Sparmål som syns</h3>
               <p>
-                Sparandet står bredvid utgifterna i stället för att vara det som
-                blir över när månaden är slut.
+                Sätt ett målbelopp och, om du vill, ett slutdatum. Stapeln visar
+                hur långt du har kommit. Ingår från Plus.
               </p>
             </li>
             <li class="fordel">
-              <!-- Hushållet: ett tak över två personer. -->
+              <!-- Översikten: en kalender med två markerade dagar. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-                <path class="sv-linje-gron" d="M3 15 16 5l13 10" />
-                <path class="sv-linje-gron" d="M6.5 16.5V28h19V16.5" />
-                <circle class="sv-fyll-guld" cx="12.6" cy="19.5" r="2.2" />
-                <circle class="sv-fyll-guld" cx="19.4" cy="19.5" r="2.2" />
-                <path class="sv-linje-bla" d="M9 28c0-2.4 1.6-4 3.6-4s3.6 1.6 3.6 4M15.8 28c0-2.4 1.6-4 3.6-4s3.6 1.6 3.6 4" />
+                <rect class="sv-linje-bla" x="5" y="7" width="22" height="20" rx="2.5" />
+                <path class="sv-linje-bla" d="M5 13h22M11 4v6M21 4v6" />
+                <rect class="sv-fyll-guld" x="9" y="17" width="4" height="4" rx="1" />
+                <rect class="sv-fyll-gron" x="19" y="17" width="4" height="4" rx="1" />
               </svg>
-              <h3>Hela hushållet</h3>
+              <h3>Hela året på en gång</h3>
               <p>
-                Ni ser samma siffror. Ingen behöver fråga vad den andra har
-                betalat.
+                Tolv månader i en översikt: vad som kom in, vad som gick ut och
+                vad som blev över.
               </p>
             </li>
           </ul>
@@ -183,7 +183,7 @@
               </svg>
               <h3>Allt på ett ställe</h3>
               <p>
-                Hyran, elen, strömmande tjänster och sparandet i samma lista.
+                Hyran, elen, strömmande tjänster och sparandet i samma månadsvy.
                 Inga kalkylblad som glider isär mellan månaderna.
               </p>
             </li>
@@ -198,7 +198,7 @@
               </svg>
               <h3>Dina siffror stannar hos dig</h3>
               <p>
-                Appen kör på din egen dator och sparar i en fil du äger. Ingen
+                Appen kör på din egen dator, och uppgifterna sparas där. Ingen
                 tredje part får se vad hushållet tjänar eller betalar.
               </p>
             </li>
@@ -212,8 +212,9 @@
               </svg>
               <h3>Räknat i öre, inte på en höft</h3>
               <p>
-                En kvartalsutgift blir rätt månadskostnad och rätt årskostnad.
-                Avrundningen görs en gång, på samma sätt varje gång.
+                Varje belopp lagras i hela ören, så månadens summor stämmer på
+                öret. En kvartalsutgift räknas med hela beloppet i de månader
+                den dras.
               </p>
             </li>
           </ul>
@@ -240,15 +241,17 @@
               <h3>Lägg in din ekonomi</h3>
               <p>
                 Inkomster, fasta utgifter och sparande, en post i taget. Namn,
-                belopp, hur ofta det dras och när det började.
+                belopp och kategori, och för en återkommande post hur ofta den
+                dras.
               </p>
             </li>
             <li class="steg-kort">
               <span class="steg-nummer" aria-hidden="true">3</span>
               <h3>Få överblick</h3>
               <p>
-                Månadskostnad, årskostnad och nästa dragning räknas fram åt dig
-                och står överst varje gång du öppnar appen.
+                Överst i månaden står inkomster, utgifter, sparande och vad som
+                är kvar att leva på. Översikten visar samma summor månad för
+                månad.
               </p>
             </li>
           </ol>
@@ -257,9 +260,8 @@
 
       <!-- ====================================================== 6. Priser
            Tre kort. Mittenkortet är upphöjt och bär guldbadgen Populärast.
-           Knapparna länkar till /app: registrering med planval byggs senare,
-           och ingen knapp får antyda att en betalning sker förrän betalningen
-           finns. -->
+           Knapparna länkar till /app: registreringen har inget planval, och
+           ingen knapp får antyda att en betalning sker. -->
       <section class="priser" id="priser">
         <div class="block">
           <h2>Priser</h2>
@@ -280,7 +282,7 @@
       </section>
 
       <!-- ========================================================= 7. FAQ
-           Sex frågor i details och summary. Inget JavaScript behövs för att
+           Frågorna står i details och summary. Inget JavaScript behövs för att
            öppna dem, och sidan fungerar även om skript är avstängt. -->
       <section class="faq" id="faq">
         <div class="block block-smal">
@@ -289,16 +291,20 @@
           <details class="fraga">
             <summary>Vad kostar Hem och Ekonomi?</summary>
             <p>
-              Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån. Du
-              väljer plan när registreringen är på plats och kan byta senare.
+              Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån.
+              Det här är en demoversion och kostar ingenting &ndash; ingen betalning tas ut.
+              Du byter plan under Min plan i appen.
             </p>
           </details>
 
           <details class="fraga">
             <summary>Var sparas mina uppgifter?</summary>
             <p>
-              I en datafil på din egen dator. Appen körs lokalt och skickar
-              ingenting vidare, varken till oss eller till någon annan.
+              På den dator där appen körs: i en databasfil när du kör appen
+              själv, och i webbläsarens lagring i demon. Uppgifterna om din
+              ekonomi skickas aldrig vidare. Det enda som kan lämna datorn är
+              din e-postadress och inloggningskoden, när appen är inställd på
+              att mejla koden.
             </p>
           </details>
 
@@ -311,26 +317,20 @@
           </details>
 
           <details class="fraga">
-            <summary>Kan vi vara flera i hushållet?</summary>
-            <p>
-              Ja. Från Plus kan ni dela samma hushåll, så att alla ser samma
-              inkomster, utgifter och sparande.
-            </p>
-          </details>
-
-          <details class="fraga">
             <summary>Hur hanteras en utgift som dras var tredje månad?</summary>
             <p>
-              Du anger beloppet och intervallet en gång. Appen räknar om det
-              till månadskostnad och årskostnad och visar nästa dragningsdatum.
+              Du lägger in den en gång som en återkommande post och väljer
+              intervallet Kvartalsvis. Den räknas med hela beloppet i de månader
+              den dras och syns inte i månaderna emellan.
             </p>
           </details>
 
           <details class="fraga">
             <summary>Fungerar sidan utan JavaScript?</summary>
             <p>
-              Den här sidan gör det. Frågorna öppnas av webbläsaren själv, och
-              inga typsnitt eller skript hämtas från någon tredje part.
+              Det mesta av den. Frågorna och menyn öppnas av webbläsaren själv,
+              men priskorten ritas med JavaScript. Inga typsnitt eller skript
+              hämtas från någon tredje part.
             </p>
           </details>
         </div>
@@ -342,8 +342,7 @@
          Varje länk här går till en sektion som finns på sidan. Kontakt,
          Villkor och Integritetspolicy stod först som a-element utan href,
          alltså platshållare, men togs bort: en länk som inte leder någonstans
-         ser oavslutad ut, och en sida som säger att delar av den byggs senare
-         inger inte förtroende. De återkommer den dag sidorna finns. -->
+         ser oavslutad ut och lovar en sida som inte finns. -->
     <footer class="sidfot">
       <div class="block sidfot-inre">
         <!-- Samma bild som i headern. Sidfoten är marinblå, och loggan är ritad
@@ -376,8 +375,8 @@
     </footer>
 
     <!-- Demoläget. Samma fil och samma skäl som i index.html: med DEMO falsk gör
-         den ingenting, och landningssidan fungerar fortfarande helt utan
-         JavaScript. Är flaggan sann ritar den bannern högst upp. -->
+         den ingenting, och landningssidan fungerar fortfarande utan JavaScript,
+         utom priskorten. Är flaggan sann ritar den bannern högst upp. -->
     <script type="module" src="/demo/demo-fetch.js"></script>
 
     <!-- Prissidans tre kort. Ligger sist, som varje annat skript på sidan: det

@@ -30,6 +30,7 @@ import { toCsv } from '../src/core/csv.js';
 import { reportRows } from '../src/core/report.js';
 import { reportCsvRows } from '../src/core/report-csv.js';
 import { createSeedState, DEMO_EMAIL, seedMonths } from '../src/web/demo/seed.js';
+import { builtFeatureKeys } from './helpers/built-features.js';
 import { createDemoDom, createStorage, createThrowingStorage } from './helpers/demo-dom.js';
 import { createDom, flush, loadApp } from './helpers/dom.js';
 
@@ -795,10 +796,56 @@ test('bannern säger till när webbläsaren inte ger demon någon lagring', () =
     medLagring.medKlass('demo-banner-hjalp').textContent.includes('ingen lagring'),
     false
   );
-  // Uppräkningen av det demon inte visar står i bannerns hjälptext.
-  for (const ord of ['Prisplaner', 'sparmål', 'delat hushåll', 'Mina funktioner']) {
-    assert.equal(medLagring.medKlass('demo-banner-hjalp').textContent.includes(ord), true, ord);
+});
+
+test('(D17) bannerns hjälptext räknar upp precis de planfunktioner som inte är byggda', async () => {
+  // ARKITEKTUR.md, "Det demon inte visar": en funktionsnyckel är byggd när
+  // src/server/api.js anropar requireFeature(session, '<nyckeln>') för den, med
+  // overview som enda namngivna undantag. Testet prövar bannerns text mot just
+  // den regeln, så att en funktion som byggs senare fäller testet tills texten
+  // rättas.
+  const dom = createDemoDom();
+  mountBanner({ document: dom.document });
+  const text = dom.medKlass('demo-banner-hjalp').textContent;
+
+  // (a) Ordagrant som i ARKITEKTUR.md.
+  assert.equal(
+    text,
+    'Delat hushåll, Mina funktioner och Prioriterad support står på prissidan men är inte byggda. Betalning finns inte heller - planbytet är gratis och sker direkt.'
+  );
+
+  // (b) De byggda nycklarna ur api.js, insamlade av tests/helpers/built-features.js,
+  // som (P14) i tests/plans.test.js också läser.
+  const byggda = new Set(await builtFeatureKeys());
+  // Undantaget: overview ingår i Bas, den lägsta planen, och går därför inte
+  // genom requireFeature. Källan rensas från kommentarer på samma sätt som i
+  // hjälpfunktionen, radkommentarerna först: api.js har /api/* inuti
+  // radkommentarer, och ett /* där hade annars kunnat bli början på en
+  // blockkommentarsträff.
+  const kalla = await fs.readFile(API_PATH, 'utf8');
+  const kod = kalla.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.equal(PLANS.bas.features.includes('overview'), true, 'overview ingår inte i Bas');
+  assert.equal(kod.includes("'/api/oversikt/'"), true, 'api.js har ingen väg för översikten');
+  for (const nyckel of byggda) {
+    assert.equal(FEATURES.includes(nyckel), true, `${nyckel} står inte i FEATURES`);
   }
+
+  // (c) En byggd funktion nämns inte, och en funktion som inte är byggd nämns
+  // med sitt namn ur FEATURE_LABELS.
+  for (const nyckel of FEATURES) {
+    if (byggda.has(nyckel)) {
+      assert.equal(
+        text.toLocaleLowerCase('sv').includes(FEATURE_LABELS[nyckel].toLocaleLowerCase('sv')),
+        false,
+        `${nyckel} är byggd men står i bannerns hjälptext`
+      );
+    } else {
+      assert.equal(text.includes(FEATURE_LABELS[nyckel]), true, `${nyckel} är inte byggd men saknas i bannerns hjälptext`);
+    }
+  }
+
+  // (d) Betalningen är ingen planfunktion men saknas lika fullt.
+  assert.equal(text.includes('Betalning'), true);
 });
 
 // ---------------------------------------------------------------- app.js körd mot attrappen

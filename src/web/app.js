@@ -16,7 +16,7 @@ import { isValidIsoDate, monthLabel, monthName, monthOfIsoDate, shiftMonth, toda
 import { CATEGORY_LABELS, INTERVAL_LABELS } from '/core/entry.js';
 import { ITEM_KINDS, ITEM_KIND_LABELS } from '/core/item.js';
 import { GOAL_STATUSES, PERCENT_FULL, PERCENT_MIN } from '/core/goal.js';
-import { FEATURE_LABELS, PLANS, PLAN_LABELS } from '/core/plans.js';
+import { FEATURE_LABELS, featureText, PLANS, PLAN_LABELS } from '/core/plans.js';
 import { divideRoundHalfUp, formatSek, oreToSek } from '/core/money.js';
 import { reportFileName } from '/core/report-csv.js';
 
@@ -2279,7 +2279,7 @@ function renderPlan(body) {
       .map((feature) => {
         const row = document.createElement('li');
         row.className = 'item';
-        row.append(cell('item-name', FEATURE_LABELS[feature]));
+        row.append(cell('item-name', featureText(feature)));
         return row;
       })
   );

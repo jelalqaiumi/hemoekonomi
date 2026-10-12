@@ -34,15 +34,12 @@ import { ORE_PER_SEK, divideRoundHalfUp, normalizeZero, sekToOre } from './money
 // skriver om ett värde skulle annars flytta hela appens statusregel utan att
 // någon fil visar det.
 //
-// Ingen anropare i src/ utanför den här filen sedan steg 4 — körd:
-// grep -rn "GOAL_STATUSES" src/ ger definitionen, en kommentar och
-// destruktureringen nedan. Exporten finns för att sparmålskortet i src/web/app.js
-// ska kunna räkna upp de tre utseendena ur listan i stället för att skriva av dem,
-// på samma sätt som räkningskortet läser BILL_STATUSES. Kortet är inte byggt:
-// steg 4 lämnades vidare efter API-vägarna, och gränssnittet står kvar hos
-// arkitekten. Läser kortet inte listan när det byggs ska exporten tas bort
-// (LARDOMAR.md 2026-09-16). Detsamma gäller PERCENT_MIN och PERCENT_FULL nedan,
-// som stapelns bredd ska läsa sina två ändar ur.
+// Utöver destruktureringen nedan läses exporten av sparmålskortet i
+// src/web/app.js: goalClassName och goalBarClassName prövar radens status mot
+// listan, så att raden och stapeln får sina klasser ur listan i stället för ur
+// avskrivna strängar, på samma sätt som billClassName läser BILL_STATUSES.
+// PERCENT_MIN och PERCENT_FULL nedan läses av samma fil: goalBarWidth räknar
+// stapelns bredd ur dem, och percentFromResponse faller tillbaka på PERCENT_MIN.
 export const GOAL_STATUSES = Object.freeze(['klart', 'pagaende', 'forsenat']);
 
 // De tre värdena läses ur listan ovan och skrivs inte en andra gång som literaler

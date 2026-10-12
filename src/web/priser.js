@@ -5,10 +5,10 @@
 // (ARKITEKTUR.md, "Prissidan renderas ur PLANS").
 //
 // Filen läser ingen klocka, hämtar ingenting och har inga händelselyssnare:
-// knapparna är länkar till /app, eftersom registrering med planval byggs senare
-// och ingen knapp får antyda att en betalning sker.
+// knapparna är länkar till /app: registreringen har inget planval, och ingen
+// knapp får antyda att en betalning sker.
 import { formatSek } from '/core/money.js';
-import { FEATURE_LABELS, PLANS, PLAN_LABELS } from '/core/plans.js';
+import { featureText, PLANS, PLAN_LABELS } from '/core/plans.js';
 
 // Texten som ersätter den lägre planens punkter på Plus och Premium. Står som
 // en funktion av den lägre planens namn och inte som tre skrivna strängar:
@@ -80,7 +80,7 @@ function planCard(plan, index, plans) {
     bullets.append(element('li', null, allInLabel(plans[index - 1])));
   }
   for (const feature of PLANS[plan].features) {
-    bullets.append(element('li', null, FEATURE_LABELS[feature]));
+    bullets.append(element('li', null, featureText(feature)));
   }
   card.append(bullets);
 

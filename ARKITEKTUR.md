@@ -9040,11 +9040,11 @@ Sektionerna uppifrån och ned:
 |---|---|---|
 | 1 | Header, fast | Logga vänster, menyn `Funktioner`, `Priser`, `FAQ` i mitten, `Logga in` som kontur och `Registrera` som fylld till höger. På mobil blir menyn en hamburgare, men `Registrera` syns alltid. |
 | 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar, knapparna `Kom igång` och `Se hur det fungerar`, och loggan till höger. Bakgrund: gradient från `--bla-marin` till `--gron-djup` med ett svagt rutnät. |
-| 3 | Fördelar | Fyra punkter med ikon: budget, räkningar, sparmål, hushållet. |
+| 3 | Fördelar | Punkter med ikon: budget, räkningar, sparmål och översikten över året. Punkten om hushållet ersattes 2026-10-11, se "Landningssidan lovar inget som inte finns" under "Det demon inte visar". |
 | 4 | Varför Hem och Ekonomi | Tre kolumner med ikon, rubrik och kort text. |
 | 5 | Så fungerar det | Tre numrerade steg: registrera, lägg in din ekonomi, få överblick. |
 | 6 | Priser | Tre kort. Mittenkortet upphöjt med guldbadge `Populärast`. |
-| 7 | FAQ | Sex frågor som fälls ut med `<details>` och `<summary>` — inget JavaScript behövs för att öppna dem. |
+| 7 | FAQ | Frågor som fälls ut med `<details>` och `<summary>` — inget JavaScript behövs för att öppna dem. Frågan om flera i hushållet ströks 2026-10-11, se "Landningssidan lovar inget som inte finns". |
 | 8 | Footer | Logga, länkarna `Priser`, `FAQ`, `Kontakt`, `Villkor`, `Integritetspolicy`, och upphovsrättsrad. Bakgrund `--bla-marin`. |
 
 **Varannan sektion** har `--bakgrund` respektive en svag grön ton, så att sidan
@@ -9066,6 +9066,10 @@ sidan ska inte skicka en förfrågan till en tredje part för att läsa den.
 | Bas | `99 kr/mån` | Budget och utgiftsregistrering, räkningspåminnelser, grundläggande översikt |
 | Plus | `149 kr/mån` | Allt i Bas, sparmål, delat hushåll, diagram och rapporter |
 | Premium | `179 kr/mån` | Allt i Plus, Mina funktioner, prioriterad support |
+
+Kortens punkter skrivs med `featureText` sedan 2026-10-11. En funktion som inte
+är byggd får tillägget ` - finns inte i appen`; se "Landningssidan lovar inget
+som inte finns".
 
 Varje kort har en knapp `Välj Bas`, `Välj Plus` respektive `Välj Premium`.
 Knapparna länkar i det här steget till `/app`, eftersom registreringen med
@@ -9436,10 +9440,446 @@ utanför `localStorage`.
 
 ### Det demon inte visar
 
-Skrivs ut i bannerns hjälptext och i README: prisplaner, behörighet, sparmål,
-räkningspåminnelser, delat hushåll och Mina funktioner är **inte byggda**. De
-står på landningssidan som design. En planväxlare har därför inget att växla
-mellan och byggs inte.
+*Avsnittet skrevs om efter steg 5 (2026-10-11). Den första lydelsen räknade
+prisplaner, behörighet, sparmål och räkningspåminnelser till det som inte är
+byggt; de byggdes alla i del 5, och rapporten i steg 5. Skälet och den gamla
+lydelsen står i beslutsloggen sist i filen, under "Beslutslogg [rättelse: det
+demon inte visar]".*
+
+Det som står på prissidan men inte finns i appen eller i demon, kontrollerat mot
+koden 2026-10-11:
+
+| Det som saknas | Funktionsnyckel i `src/core/plans.js` | Vad koden visar |
+|---|---|---|
+| Delat hushåll | `sharedHousehold` (Plus) | nyckeln står bara i `plans.js`; ingen väg i `src/server/api.js` anropar `requireFeature` med den, och `src/web/demo/demo-fetch.js` har ingen väg för den |
+| Mina funktioner | `customFeatures` (Premium) | samma som ovan |
+| Prioriterad support | `prioritySupport` (Premium) | samma som ovan |
+| Betalning | ingen — betalning är ingen planfunktion | `PUT /api/plan` byter plan direkt utan betalning ("Byta plan" i del 5), och demons `/api/plan` gör detsamma |
+
+Det demon **visar** och som den första lydelsen räknade bort: prisplanerna och
+planväxlaren (`/api/plan` i `demo-fetch.js`, knapparna i `#plan-buttons` i
+`index.html`), behörigheten (`kraverFunktion` i `demo-fetch.js`, `requireFeature`
+i `api.js`), räkningar med påminnelse (`/api/rakningar`), sparmål
+(`/api/sparmal`) och rapporten (`/api/rapport/`).
+
+**Vad som räknas som byggt avgörs av koden, inte av den här tabellen.** En
+funktionsnyckel i `FEATURES` är byggd när `src/server/api.js` anropar
+`requireFeature(session, '<nyckeln>')` för den. Ett namngivet undantag:
+`overview` är byggd (`/api/oversikt/` sedan etapp 5) men går inte genom
+`requireFeature`, eftersom den ingår i Bas, och Bas är den lägsta planen — varje
+användare har den. Varje annan nyckel i `FEATURES` är inte byggd. (D17) nedan
+prövar bannerns text mot just den regeln, så att en funktion som byggs senare
+fäller testet tills texten rättas. Sedan användarens beslut 2026-10-11 finns
+regelns utfall också som listan `NOT_BUILT_FEATURES` i `src/core/plans.js`, som
+prissidan och Min plan läser. (P14) håller listan lika med regeln. Se
+"Landningssidan lovar inget som inte finns" nedan.
+
+#### Bannerns hjälptext — bindande ordagrant
+
+`NOT_BUILT_TEXT` i `src/web/demo/banner.js` är:
+
+```
+const NOT_BUILT_TEXT =
+  'Delat hushåll, Mina funktioner och Prioriterad support står på prissidan men är inte byggda. Betalning finns inte heller - planbytet är gratis och sker direkt.';
+```
+
+Strängen består av ASCII-tecken och bokstäverna `å`, `ä` och `ö`. Strecket i
+` - ` är bindestreck-minus (U+002D), samma tecken som i `BANNER_TEXT`. Inget
+osynligt tecken ingår. Funktionernas namn skrivs exakt som i `FEATURE_LABELS`
+(versal begynnelsebokstav), så att (D17) kan söka efter dem.
+
+Kommentaren ovanför konstanten i `banner.js` ersätts av:
+
+```
+// Det demon inte visar: de planfunktioner som står på prissidan men inte är
+// byggda, och betalningen. Texten står ordagrant i ARKITEKTUR.md under "Det demon
+// inte visar", och (D17) i tests/demo.test.js prövar den mot FEATURE_LABELS och
+// mot de requireFeature-anrop src/server/api.js gör. README:s avsnitt "Inte
+// byggt" är längre och ägs av README.
+```
+
+Med `storageMissing` sann är hjälptexten fortfarande
+`` `${NOT_BUILT_TEXT} ${NO_STORAGE_TEXT}` `` — den raden i `mountBanner` ändras
+inte.
+
+#### HTML-kommentaren vid Min plan i `index.html`
+
+Kommentaren i `src/web/index.html` ovanför `<button type="button"
+class="secondary" id="show-plan">Min plan</button>` skrivs om, och stryks inte:
+dess första stycke förklarar varför knappen inte är en router, och det är
+fortfarande sant. Det andra stycket räknade upp funktioner som "inte är byggda
+ännu" och ersätts av ett skäl som inte åldras. Hela kommentaren blir:
+
+```
+          <!-- Vägen till Min plan [steg 1 i del 5]. Samma mönster som Översikt:
+               knappen byter vilken sektion som bär hidden, ingen router och
+               ingen egen sida.
+
+               Ingen låsikon står i menyn. En låst funktion visas med en låsrad
+               på sin egen plats i månadsvyn, med texten om vilken plan som
+               krävs och knappen Se planer (ARKITEKTUR.md, "Sparmål" i steg 4
+               och "Gränssnittet" i steg 5). Kommentaren räknar medvetet inte
+               upp vilka funktioner som är byggda: en sådan lista blir falsk
+               när nästa funktion byggs (LARDOMAR.md 2026-10-11). -->
+```
+
+Kommentaren får inte innehålla mellanslag följt av `id="`: `tests/helpers/dom.js`
+samlar id:n med `/\sid="([^"]+)"/g` över hela filen, kommentarer inräknade, och
+(56) jämför den listan mot attrappen. Lydelsen ovan har inget sådant. Inget
+annat test jämför de raderna ordagrant: blocket som (90) jämför börjar vid
+`<section class="card" id="report-card" hidden>`, och `tests/server.test.js`
+jämför den serverade filen mot filen på disk, inte mot en lydelse.
+
+#### Kravlista för `tests/demo.test.js` [rättelse: det demon inte visar]
+
+| # | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|
+| (D17) | bannerns hjälptext räknar upp precis det som inte är byggt | testfallet heter `(D17) bannerns hjälptext räknar upp precis de planfunktioner som inte är byggda`. Det monterar bannern med `createDemoDom()` och `mountBanner({ document })` (utan `storageMissing`) och läser `.demo-banner-hjalp`. (a) `textContent` är `assert.equal` med strängen i "Bannerns hjälptext" ovan, ordagrant. (b) Det läser `src/server/api.js`, tar bort kommentarerna med samma två `replace` som (RA35) men i omvänd ordning — radkommentarerna först — eftersom `api.js` har `/api/*` inuti radkommentarer (sök `/api/*` i filen), och ett `/*` där hade kunnat bli början på en blockkommentarsträff; därefter samlar det de byggda nycklarna ur `/requireFeature\(session, '([A-Za-z]+)'\)/g`, plus `overview`; för undantaget asserterar det att `PLANS.bas.features.includes('overview')` och att den kommentarsfria källan innehåller `'/api/oversikt/'`. Varje insamlad nyckel ska finnas i `FEATURES`. (c) För varje nyckel i `FEATURES` (importerad ur `src/core/plans.js`): är den byggd ska `textContent.toLocaleLowerCase('sv')` **inte** innehålla `FEATURE_LABELS[nyckel].toLocaleLowerCase('sv')`; är den inte byggd ska `textContent` innehålla `FEATURE_LABELS[nyckel]` exakt. Assertionsmeddelandet namnger nyckeln. (d) `textContent` innehåller `Betalning`. Loopen i testfallet `bannern säger till när webbläsaren inte ger demon någon lagring` som kräver orden `Prisplaner`, `sparmål`, `delat hushåll` och `Mina funktioner` (den står direkt efter kommentaren `// Uppräkningen av det demon inte visar står i bannerns hjälptext.`) stryks tillsammans med kommentaren: de kräver den gamla lydelsen och motsäger (c) | var och en för sig: (1) hela strängen i `NOT_BUILT_TEXT` → den gamla lydelsen `'Prisplaner, behörighet, sparmål, räkningspåminnelser, delat hushåll och Mina funktioner är inte byggda - de står på landningssidan som design.'` (fälls av (a) och av (c) för `savingsGoals` och `billReminders`); (2) ` och Prioriterad support` struket ur `NOT_BUILT_TEXT`, så att strängen börjar `'Delat hushåll, Mina funktioner står på prissidan` (fälls av (a) och av (c) för `prioritySupport`); (3) i `src/server/api.js`: `requireFeature(session, 'savingsGoals')` → `requireFeature(session, 'sharedHousehold')`, vilket är formen en framtida byggd funktion får (fälls av (c) för `sharedHousehold`, oberoende av (a)); (4) i `src/core/plans.js`: `customFeatures: 'Mina funktioner'` → `customFeatures: 'Egna funktioner'` (fälls av (c) för `customFeatures`, oberoende av (a)) |
+
+Mängden byggda nycklar som (b) samlar in skrivs ut i redovisningen av den
+körning som lämnar testet vidare; med koden 2026-10-11 ska den vara `budget`,
+`billReminders`, `reports` och `savingsGoals` ur `api.js`, plus undantaget
+`overview`.
+
+Mutation (3) och (4) rör inte `banner.js`, så (a) kan inte fälla dem: de visar att
+(c) är knuten till `api.js` respektive `plans.js` och inte bara till den
+ordagranna strängen. Andra testfall i sviten faller också av (3) och (4); kravet
+är att (D17):s kryssrad finns i utfallet.
+
+#### Landningssidan lovar inget som inte finns (bindande) [användarens beslut 2026-10-11]
+
+Användaren har bestämt att appen inte ska lova något som inte finns.
+
+*Hur kontrollen gjordes, rättat 2026-10-12.* Den första kontrollen, 2026-10-11,
+gick från funktionsnamnen till sidan: den sökte efter `FEATURE_LABELS`, efter
+nycklarna i `NOT_BUILT_FEATURES` och efter orden `dela`, `hushåll`, `support` och
+`Mina funktioner`. Den hittade därför bara löften om planfunktioner, och
+meningen här sade felaktigt att den hittat "löften på tre ställen".
+- Granskaren visade 2026-10-12 att sidan på fem ställen lovade månadskostnad,
+  årskostnad och nästa dragning, som appen inte räknar fram (`LARDOMAR.md`
+  2026-10-12).
+- Den andra kontrollen läste hela `landning.html` och `priser.js` mening för
+  mening och prövade varje påstående mot `src/web/app.js`, `src/web/index.html`
+  och servern. Utfallet står som en rad per synlig text under "Landningssidans
+  synliga text" nedan.
+
+De tre fynden från den första kontrollen var:
+
+- **Landningssidan.** FAQ-svaret "Ja. Från Plus kan ni dela samma hushåll" och
+  fördelen "Hela hushållet" ("Ni ser samma siffror") lovar delat hushåll.
+  FAQ-svaret "Du väljer plan när registreringen är på plats" lovar ett planval
+  vid registreringen, som inte finns.
+- **Prissidans kort** (`src/web/priser.js`). Punkterna är `FEATURE_LABELS` för
+  varje funktion i `PLANS[plan].features`, så Plus visar `Delat hushåll` och
+  Premium visar `Mina funktioner` och `Prioriterad support`. Det är sant om
+  planens innehåll, alltså vad behörigheten släpper igenom. Men ett priskort
+  läses som ett löfte om vad man får, och de tre funktionerna finns inte.
+- **Vyn Min plan** (`renderPlan` i `src/web/app.js`). Den räknar upp samma
+  etiketter för användarens egen plan. En Premium-användare får alltså höra att
+  hen har `Mina funktioner`.
+
+Beslutet håller planens innehåll oförändrat: `PLANS`, `FEATURES`,
+`FEATURE_LABELS`, behörigheten och databasens `CHECK` rörs inte. Det som ändras
+är *texten* om en funktion som inte är byggd.
+
+##### Tillägg i `src/core/plans.js`
+
+Tillägget står efter `FEATURE_LABELS`:
+
+```
+NOT_BUILT_FEATURES -> fryst lista med funktionsnycklar, i FEATURES ordning
+featureText(feature) -> string
+```
+
+- `NOT_BUILT_FEATURES` exporteras och är i dag
+  `Object.freeze(['sharedHousehold', 'customFeatures', 'prioritySupport'])`.
+  Kommentaren ovanför säger att nycklarna är planens innehåll men att ingen väg
+  och ingen vy finns för dem. Den hänvisar till (P14) och till det här avsnittet.
+- Tilläggets text är en modullokal konstant, `NOT_BUILT_NOTE = 'finns inte i appen'`.
+  Den exporteras inte, eftersom bara `featureText` läser den.
+- `featureText` är den enda funktion som skriver en funktions namn i en lista
+  över vad en plan innehåller.
+
+Ingångsspärrar i `featureText` (bindande, första träff vinner):
+
+| # | Villkor | Feltyp | Meddelande |
+|---|---|---|---|
+| 1 | `!FEATURES.includes(feature)` | `RangeError` | `` `featureText kräver en känd funktion, fick "${String(value)}".` `` |
+
+Texten läggs i `MESSAGES` som `unknownFeatureText`. Den har samma form som
+`unknownFeature` och läses av den som läser ett stackspår, aldrig av användaren:
+båda anroparna skickar bara nycklar som står i `FEATURE_LABELS`.
+
+Facit för `featureText`. Strängarna har inga andra blanktecken än vanligt
+mellanslag (U+0020):
+
+| Indata | Utdata |
+|---|---|
+| `'budget'` | `'Budget och utgiftsregistrering'` |
+| `'savingsGoals'` | `'Sparmål'` |
+| `'reports'` | `'Diagram och rapporter'` |
+| `'sharedHousehold'` | `'Delat hushåll - finns inte i appen'` |
+| `'customFeatures'` | `'Mina funktioner - finns inte i appen'` |
+| `'prioritySupport'` | `'Prioriterad support - finns inte i appen'` |
+| `'okänd'`, `undefined`, `'constructor'`, `1n`, `Symbol('x')` | `RangeError` med rad 1:s text |
+
+Strecket är bindestreck-minus (U+002D), samma som i bannerns texter.
+
+##### Anropare
+
+- **`src/web/priser.js`.** I loopen över `PLANS[plan].features` byts
+  `FEATURE_LABELS[feature]` mot `featureText(feature)`. Importen blir
+  `import { featureText, PLANS, PLAN_LABELS } from '/core/plans.js';`, eftersom
+  `FEATURE_LABELS` inte längre läses i filen. Raden `Allt i <plan>` är oförändrad.
+- **`src/web/app.js`, `renderPlan`.** `cell('item-name', FEATURE_LABELS[feature])`
+  byts mot `cell('item-name', featureText(feature))`, och `featureText` läggs
+  till i importen ur `/core/plans.js`. Filtret
+  `Object.hasOwn(FEATURE_LABELS, feature)` står kvar. Det släpper bara igenom
+  nycklar som `featureText` godtar, eftersom ett testfall kräver att
+  `FEATURE_LABELS` och `FEATURES` har samma nycklar. `lockedText` rörs inte: en
+  låsrad visas bara för en väg som svarar `403`, och bara byggda funktioner har
+  en sådan väg.
+- **`src/web/demo/banner.js`.** Oförändrad. `NOT_BUILT_TEXT` är en mening och
+  inte en lista, och den står ordagrant ovan.
+
+##### Ändringar i `src/web/landning.html`, ordagrant
+
+1. **Kommentaren över avsnitt 3.** Raden
+   `Fyra punkter med ikon: budget, räkningar, sparmål, hushållet.` blir
+   `Punkter med ikon: budget, räkningar, sparmål och översikten över året.`
+2. **Den fjärde fördelen.** Hela `<li class="fordel">` som börjar med
+   kommentaren `<!-- Hushållet: ett tak över två personer. -->` ersätts av
+   blocket nedan. I filen dras `<li>` in lika långt som de tre andra fördelarna,
+   alltså tolv mellanslag. Blockets eget indrag här följer listan i det här
+   dokumentet:
+
+   ```
+               <li class="fordel">
+                 <!-- Översikten: en kalender med två markerade dagar. -->
+                 <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                   <rect class="sv-linje-bla" x="5" y="7" width="22" height="20" rx="2.5" />
+                   <path class="sv-linje-bla" d="M5 13h22M11 4v6M21 4v6" />
+                   <rect class="sv-fyll-guld" x="9" y="17" width="4" height="4" rx="1" />
+                   <rect class="sv-fyll-gron" x="19" y="17" width="4" height="4" rx="1" />
+                 </svg>
+                 <h3>Hela året på en gång</h3>
+                 <p>
+                   Tolv månader i en översikt: vad som kom in, vad som gick ut och
+                   vad som blev över.
+                 </p>
+               </li>
+   ```
+
+   Påståendet stämmer mot koden: `readOverview` svarar med tolv månader
+   (`OVERVIEW_MONTHS` i `src/server/api.js`), var och en med `incomeOre`,
+   `expenseOre`, `savingOre` och `leftOre`, och `overview` ingår i Bas. Rubriken
+   `Fyra saker du får direkt` stod först kvar. Den ändrades 2026-10-12 till
+   `Fyra saker appen gör`, eftersom sparmål kräver Plus och alltså inte är något
+   man "får direkt" (T18 under "Landningssidans synliga text").
+   Klasserna finns i `src/web/landning.css`.
+3. **FAQ-kommentaren.** `Sex frågor i details och summary.` blir
+   `Frågorna står i details och summary.`
+4. **Frågan om hushållet stryks helt.** Det gäller hela
+   `<details class="fraga">` med `<summary>Kan vi vara flera i hushållet?</summary>`
+   och den tomma raden efter. Ett ärligt svar ("Nej") säljer ingenting. Priskortet
+   säger redan `Delat hushåll - finns inte i appen`.
+5. **FAQ-svaret om priset.** Meningen
+   `Du väljer plan när registreringen är på plats och kan byta senare.` blir
+   `Du byter plan under Min plan i appen.` Priserna i samma svar rörs inte.
+6. **FAQ-svaret om priset får en demomening (användarens beslut och lydelse
+   2026-10-11).** Svaret är bindande ordagrant. Så som användaren läser det är
+   det följande. `<U+2013>` står för tankstrecket och är inte en del av texten:
+
+   ```
+   Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån. Det här är en demoversion och kostar ingenting <U+2013> ingen betalning tas ut. Du byter plan under Min plan i appen.
+   ```
+
+   I testkod skrivs tankstrecket som `String.fromCodePoint(0x2013)` (se (P19)) och
+   aldrig som rått tecken. Övriga blanktecken är vanliga mellanslag
+   (U+0020). I källan står varje mening på en egen rad, med samma indrag som
+   raderna runt den:
+
+   ```
+               <p>
+                 Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån.
+                 Det här är en demoversion och kostar ingenting &ndash; ingen betalning tas ut.
+                 Du byter plan under Min plan i appen.
+               </p>
+   ```
+
+   **Tankstrecket skrivs som teckenreferensen `&ndash;`, aldrig som rått
+   tecken.** Webbläsaren visar referensen som U+2013, så användaren ser ett
+   tankstreck.
+   - Ett rått U+2013 går inte att skilja från bindestreck-minus i en
+     genomläsning. Lärdomen 2026-09-14 kräver escape för just det tecknet, och
+     `&ndash;` är HTML:s motsvarighet till en escape.
+   - Referensen är ren ASCII och går att söka efter med `grep -n "&ndash;"`.
+   - Den namngivna formen valdes före `&#8211;`, eftersom namnet säger vilket
+     tecken det är. Filen har redan `&#169;` i sidfoten, men den har ingen
+     namngiven motsvarighet som läses lika lätt.
+   - Den översta raden i blocket ovan skriver tecknet som escape och inte som
+     rått tecken, av samma skäl.
+
+##### Landningssidans synliga text — bindande ordagrant [godkänd av användaren 2026-10-12]
+
+Användaren beslutade 2026-10-11/12 att texten ska beskriva det appen gör i dag
+och att omräkningen till månads- och årskostnad inte byggs tillbaka. Tabellen
+nedan är **hela** den text en besökare kan läsa på `landning.html`, i
+dokumentordning, plus sidans `meta description`. Varje rad som påstår något om
+appen har sitt belägg i koden. En text som inte står här får inte finnas på
+sidan, och (P20) prövar det.
+
+**Hur den synliga texten tas ut.** Algoritmen är bindande och står i
+`tests/helpers/landning-text.js`, som `export function visibleTexts(html)`:
+1. Ta bort `<!-- … -->`, `<script …>…</script>` och `<svg …>…</svg>`, i den
+   ordningen, var och en med ett icke-girigt `[\s\S]*?`.
+2. Ersätt varje tagg (`/<[^>]+>/g`) med avgränsaren `<>`, och dela på `<>`.
+3. I varje del: ersätt `&ndash;` med `String.fromCodePoint(0x2013)` och `&#169;`
+   med `String.fromCodePoint(0xa9)`, slå ihop blanktecken med
+   `.replace(/\s+/g, ' ')` och kör `.trim()`.
+4. Släng tomma delar.
+
+Ingen del får därefter innehålla `&`. Det fångar en ny teckenreferens som
+algoritmen inte avkodar. `meta description` tas ut för sig, med
+`/name="description"\s+content="([^"]*)"/`.
+
+| # | Text | Påstående om appen? | Belägg |
+|---|---|---|---|
+| meta | `Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar vad som är kvar att leva på varje månad och när räkningarna förfaller.` | ja | summeringens `Kvar att leva på` i `index.html`; kolumnen förfallodag i `billRow`, `src/web/app.js` |
+| T1 | `Hem och Ekonomi \| Full koll på hemmet och ekonomin` | nej, sidans titel | – |
+| T2 | `Hoppa till innehållet` | nej | – |
+| T3 | `Hem och Ekonomi` | nej | – |
+| T4–T6 | `Funktioner`, `Priser`, `FAQ` | nej, menyn | – |
+| T7–T8 | `Logga in`, `Registrera` | nej, länkar till `/app` | – |
+| T9–T12 | `Funktioner`, `Priser`, `FAQ`, `Logga in` | nej, den smala menyn | – |
+| T13 | `Hemmets ekonomi, samlad` | nej | – |
+| T14 | `Full koll på hemmet och ekonomin på ett ställe` | nej, rubrik | – |
+| T15 | `Inkomster, fasta utgifter och sparande i samma vy, räknade i hela ören. Du ser vad som är kvar att leva på varje månad och när nästa räkning förfaller, utan att öppna ett enda kalkylblad.` | ja | månadsvyns tre listor och summering i `index.html`; belopp i `amountOre`; `billRow` visar `bill.dueDate` |
+| T16–T17 | `Kom igång`, `Se hur det fungerar` | nej | – |
+| T18 | `Fyra saker appen gör` | ja, antalet | (P20): talordet motsvarar antalet `<li class="fordel">` |
+| T19 | `Inget att ställa in först. Lägg in en återkommande post en gång, så kommer den med i varje månad den dras.` | ja | mallarna ("Återkommande poster", etapp 4); `item-recurring` och `item-interval` i `index.html` |
+| T20 | `Budget som håller` | nej, rubrik | – |
+| T21 | `Sätt ett tak per kategori för månaden, så visar appen hur mycket som är kvar. Drar du över taket syns det som ett minusbelopp.` | ja | budgetkortet: `budget-category` och `budget-amount`; `budgetLeftText(leftOre)` och klassen `left-negative` i `app.js`; "Kvar av budgeten" (`leftOre` får vara negativt) |
+| T22 | `Räkningar i tid` | nej, rubrik | – |
+| T23 | `Ange förfallodag och hur ofta räkningen kommer. Appen visar hur många dagar som är kvar, och när du klickar Betald flyttas en återkommande räkning fram till nästa förfallodag.` | ja | `bill-due-date` och `bill-interval` i `index.html`; `billDaysText` i `src/core/bill.js`; `BILL_PAID_LABEL = 'Betald'`; "Betald, och vad som händer sedan" |
+| T24 | `Sparmål som syns` | nej, rubrik | – |
+| T25 | `Sätt ett målbelopp och, om du vill, ett slutdatum. Stapeln visar hur långt du har kommit. Ingår från Plus.` | ja | `goal-target` och `goal-target-date` (`Slutdatum (valfritt)`); `goalBarClassName` och stapelns bredd i `app.js`; (P20): `Plus` är `PLAN_LABELS[planFor('savingsGoals')]` |
+| T26 | `Hela året på en gång` | nej, rubrik | – |
+| T27 | `Tolv månader i en översikt: vad som kom in, vad som gick ut och vad som blev över.` | ja | översiktens kolumner `Inkomst`, `Utgift`, `Kvar` i `index.html`; (P20): talordet motsvarar `OVERVIEW_MONTHS` i `src/server/api.js` |
+| T28 | `Varför Hem och Ekonomi` | nej | – |
+| T29 | `Allt på ett ställe` | nej, rubrik | – |
+| T30 | `Hyran, elen, strömmande tjänster och sparandet i samma månadsvy. Inga kalkylblad som glider isär mellan månaderna.` | ja | månadsvyns listor `Inkomster`, `Utgifter`, `Sparande` |
+| T31 | `Dina siffror stannar hos dig` | ja | se T32 |
+| T32 | `Appen kör på din egen dator, och uppgifterna sparas där. Ingen tredje part får se vad hushållet tjänar eller betalar.` | ja | servern lyssnar på `127.0.0.1` ("Beteende vid start"); SQLite-filen `HEMOCHEKONOMI_DB_FILE`; demon sparar i `localStorage`; den enda utgående förfrågan är kodmejlet via Resend, som bär adress och kod men inga belopp |
+| T33 | `Räknat i öre, inte på en höft` | nej, rubrik | – |
+| T34 | `Varje belopp lagras i hela ören, så månadens summor stämmer på öret. En kvartalsutgift räknas med hela beloppet i de månader den dras.` | ja | `amount_ore INTEGER`; `monthTotals` i `src/core/budget.js` summerar heltal; körningen i `LARDOMAR.md` 2026-10-12 (900 kr i `2026-10` och `2027-01`, `0` emellan) |
+| T35 | `Så fungerar det` | nej | – |
+| T36 | `1` | nej, stegnummer | – |
+| T37 | `Registrera` | nej, rubrik | – |
+| T38 | `Du anger din e-postadress och får en engångskod tillbaka. Inget lösenord att komma ihåg och inget att välja bort.` | ja | "Inloggning med engångskod" (etapp 2) |
+| T39 | `2` | nej | – |
+| T40 | `Lägg in din ekonomi` | nej, rubrik | – |
+| T41 | `Inkomster, fasta utgifter och sparande, en post i taget. Namn, belopp och kategori, och för en återkommande post hur ofta den dras.` | ja | `item-name`, `item-amount`, `item-category`, `item-recurring`, `item-interval` i `index.html` |
+| T42 | `3` | nej | – |
+| T43 | `Få överblick` | nej, rubrik | – |
+| T44 | `Överst i månaden står inkomster, utgifter, sparande och vad som är kvar att leva på. Översikten visar samma summor månad för månad.` | ja | summeringen står direkt under månadsväljaren, före listorna, i `index.html`; översiktens tabell en rad per månad |
+| T45 | `Priser` | nej | – |
+| T46 | `Tre planer. Samma app, olika mycket av den.` | ja, antalet | (P20): talordet motsvarar `Object.keys(PLANS).length` |
+| T47 | `Detta är en demo - du kan byta plan fritt och ingen betalning dras.` | ja | "Byta plan" i del 5 |
+| T48 | `Vanliga frågor` | nej | – |
+| T49 | `Vad kostar Hem och Ekonomi?` | nej, fråga | – |
+| T50 | `Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån. Det här är en demoversion och kostar ingenting <U+2013> ingen betalning tas ut. Du byter plan under Min plan i appen.` | ja | (P19); (P20): varje pris är `PLANS[plan].priceOre / ORE_PER_SEK` och ett heltal; `show-plan` i `index.html` |
+| T51 | `Var sparas mina uppgifter?` | nej, fråga | – |
+| T52 | `På den dator där appen körs: i en databasfil när du kör appen själv, och i webbläsarens lagring i demon. Uppgifterna om din ekonomi skickas aldrig vidare. Det enda som kan lämna datorn är din e-postadress och inloggningskoden, när appen är inställd på att mejla koden.` | ja | som T32; `RESEND_API_KEY` i "E-post: utvecklingsläge och drift" |
+| T53 | `Behöver jag ett lösenord?` | nej, fråga | – |
+| T54 | `Nej. Du anger din e-postadress och loggar in med en engångskod. Det finns inget lösenord att glömma bort eller återställa.` | ja | som T38 |
+| T55 | `Hur hanteras en utgift som dras var tredje månad?` | ja, talet | (P20): ordningstalet motsvarar `MONTHS_PER_PERIOD.quarterly` i `src/core/schedule.js` |
+| T56 | `Du lägger in den en gång som en återkommande post och väljer intervallet Kvartalsvis. Den räknas med hela beloppet i de månader den dras och syns inte i månaderna emellan.` | ja | `INTERVAL_LABELS.quarterly` i `src/core/entry.js`; körningen i `LARDOMAR.md` 2026-10-12 |
+| T57 | `Fungerar sidan utan JavaScript?` | nej, fråga | – |
+| T58 | `Det mesta av den. Frågorna och menyn öppnas av webbläsaren själv, men priskorten ritas med JavaScript. Inga typsnitt eller skript hämtas från någon tredje part.` | ja | `<details>` för FAQ och `meny-smal`; `#pris-lista` är tom i HTML och fylls av `/priser.js`; inga externa `src` eller `href` |
+| T59 | `Hem och Ekonomi` | nej | – |
+| T60–T62 | `Funktioner`, `Priser`, `FAQ` | nej, sidfoten | – |
+| T63 | `© 2026 Hem och Ekonomi. Appen kör lokalt på din egen dator.` | ja | som T32 |
+
+`\|` i T1 är `|` på sidan, eftersom tabellcellen kräver escape. `<U+2013>` i T50
+står för tankstrecket. I testet skrivs det `String.fromCodePoint(0x2013)`.
+
+**Ändringar i `landning.html` som följer av tabellen.** Varje ändrad text byter
+bara textinnehållet i sitt element. Radbrytningen inne i elementet är fri, eftersom
+(P20) slår ihop blanktecken. FAQ-svaret om priset (T50) ändras inte, och
+(P19):s krav på raden med `&ndash;` gäller oförändrat. Följande texter ändras:
+- meta (rad 9);
+- T15 (hero-under);
+- T18 (`<h2>` i Fördelar);
+- T19 (ingressen);
+- T21 och T23;
+- T25 (texten under `Sparmål som syns`);
+- T30, T32 och T34;
+- T41 och T44;
+- T52, T56 och T58.
+
+Tre kommentarer skrivs om, eftersom de pekar framåt eller är felaktiga:
+- Över avsnitt 6 i `landning.html`: `Knapparna länkar till /app: registrering med
+  planval byggs senare, och ingen knapp får antyda att en betalning sker förrän
+  betalningen finns.` blir `Knapparna länkar till /app: registreringen har inget
+  planval, och ingen knapp får antyda att en betalning sker.`
+- Över footern ersätts hela kommentaren av följande, med samma indrag som i
+  filen. Frasen "byggs senare" och meningen `De återkommer den dag sidorna
+  finns.` finns inte kvar:
+
+  ```
+      <!-- ====================================================== 8. Footer
+           Bakgrund --bla-marin. Logga, länkar och upphovsrättsrad.
+           Varje länk här går till en sektion som finns på sidan. Kontakt,
+           Villkor och Integritetspolicy stod först som a-element utan href,
+           alltså platshållare, men togs bort: en länk som inte leder någonstans
+           ser oavslutad ut och lovar en sida som inte finns. -->
+  ```
+- Över demoskriptet: `och landningssidan fungerar fortfarande helt utan
+  JavaScript` blir `och landningssidan fungerar fortfarande utan JavaScript,
+  utom priskorten`.
+
+`src/web/priser.js` rad 8–9: `knapparna är länkar till /app, eftersom
+registrering med planval byggs senare och ingen knapp får antyda att en
+betalning sker.` blir `knapparna är länkar till /app: registreringen har inget
+planval, och ingen knapp får antyda att en betalning sker.` `priser.js` har ingen
+annan text mot användaren än `Allt i <plan>`, `Välj <plan>`, `/mån`,
+`Populärast`, priset ur `formatSek` och `featureText`, och alla prövas redan av
+(P16) och testerna för priskorten.
+
+De citerade kommentarerna löper över flera rader i filerna. Radbrytningen i den
+nya lydelsen är fri, men indraget följer kommentaren runt den.
+
+##### Vad som prövade `landning.html` före (P18)
+
+Inget test jämförde `landning.html` ordagrant före (P18). Sedan 2026-10-12 gör
+(P20) det för hela den synliga texten. Kontrollerat 2026-10-11:
+- `tests/priser.test.js` läser filen men prövar bara avsnittet Priser och demotexten.
+- `tests/demo.test.js` prövar bara att attrappen laddas.
+- `tests/server.test.js` jämför den serverade filen mot filen på disk.
+
+(P18) nedan blir det första testet som prövar sidans löften.
+
+##### Kravlista [användarens beslut 2026-10-11]
+
+| # | Fil | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|---|
+| (P14) | `tests/plans.test.js` | `NOT_BUILT_FEATURES` är precis det som inte är byggt | `assert.deepEqual(NOT_BUILT_FEATURES, FEATURES.filter((f) => !byggda.includes(f)))`. `byggda` kommer ur hjälpfunktionen i `tests/helpers/built-features.js`, som (D17) också använder (se nedan). Listan är fryst: `Object.isFrozen(NOT_BUILT_FEATURES)` | (1) `'prioritySupport'` struken ur `NOT_BUILT_FEATURES`; (2) i `src/server/api.js`: `requireFeature(session, 'savingsGoals')` → `requireFeature(session, 'sharedHousehold')`; (3) `Object.freeze([` runt listan borttagen |
+| (P15) | `tests/plans.test.js` | `featureText` följer facit | varje rad i facittabellen ovan, med `assert.equal` för strängarna och `assert.throws` som asserterar hela `message` för varje kastande värde | (1) `!FEATURES.includes(feature)` → `false` (fälls av `'constructor'` och `'okänd'`); (2) tillägget ` - finns inte i appen` borttaget för alla (`NOT_BUILT_FEATURES.includes(feature)` → `false`) |
+| (P16) | `tests/priser.test.js` | prissidans punkter går genom `featureText` | i testfallet `kortens punkter är FEATURE_LABELS, och arvet står som en rad` byts `FEATURE_LABELS[feature]` i `egna` mot `featureText(feature)`, och testfallet döps om till `(P16) kortens punkter är featureText, och arvet står som en rad`. Dessutom: Plus-kortets punkter innehåller `'Delat hushåll - finns inte i appen'`, och ingen punkt på något kort är exakt `FEATURE_LABELS[f]` för något `f` i `NOT_BUILT_FEATURES` | i `src/web/priser.js`: `featureText(feature)` → `FEATURE_LABELS[feature]`, med importen återställd |
+| (P17) | `tests/app.test.js` | Min plan går genom `featureText` | jämförelserna av `plan-features` mot `.map((feature) => FEATURE_LABELS[feature])` byts mot `.map((feature) => featureText(feature))` i testfallen `knappen Min plan hämtar planen och byter vy`, `ett klick på en planknapp byter plan, ritar om vyn och visar demotexten` och `ett byte nedåt kortar funktionslistan i stället för att bygga på den`. `[FEATURE_LABELS.budget]` i `en plan och en funktion som inte finns i modulen skrivs inte ut` står kvar, eftersom `budget` är byggd och de två ger samma sträng. I klicktestet mot Premium asserteras dessutom att raderna innehåller `'Mina funktioner - finns inte i appen'` och inte `'Mina funktioner'`. Klicktestet döps om till `(P17) ett klick på en planknapp byter plan, ritar om vyn och visar demotexten` | i `src/web/app.js`: `cell('item-name', featureText(feature))` → `cell('item-name', FEATURE_LABELS[feature])` |
+| (P18) | `tests/priser.test.js` | landningssidan nämner ingen funktion som inte är byggd [omskriven 2026-10-12] | testfallet `(P18) landning.html lovar ingen funktion som inte är byggd` tar ut sidans text med `visibleTexts` ur `tests/helpers/landning-text.js` plus `meta description`, och sänker varje text med `toLocaleLowerCase('sv')`. Ingen text får innehålla `FEATURE_LABELS[f].toLocaleLowerCase('sv')` för något `f` i `NOT_BUILT_FEATURES`. Den slutna fraslistan (`dela samma hushåll`, `kan vi vara flera`, `hela hushållet`, `när registreringen är på plats`) och kraven på `<h3>Hela året på en gång</h3>` och `Du byter plan under Min plan i appen.` stryks ur (P18). (P20) jämför hela texten ordagrant och täcker dem | var och en för sig: (1) i FAQ-svaret om priset läggs meningen `Premium ger dig Mina funktioner.` till; (2) i `src/core/plans.js`: `'savingsGoals'` läggs till i `NOT_BUILT_FEATURES`. Den fälls bara av (P18) och (P14), inte av (P20), eftersom `Sparmål` står på sidan och sidan är oförändrad |
+| (P20) | `tests/priser.test.js` | landningssidans synliga text är tabellen i "Landningssidans synliga text", och talen på sidan följer koden | testfallet `(P20) landning.html säger ordagrant det tabellen säger, och talen följer koden`. (a) Testet har en lista `SYNLIG_TEXT` med texterna T1 till T63 i tabellens ordning, där T50 skrivs med `${TANKSTRECK}` och T63 med `©`. Det kräver i den här ordningen: först att ingen text ur `visibleTexts(html)` innehåller `&`, med den första sådana texten i meddelandet; därefter `visibleTexts(html).length === SYNLIG_TEXT.length`; därefter för varje index `assert.equal(visibleTexts(html)[i], SYNLIG_TEXT[i], \`T${i + 1}\`)`. `&`-kravet står först, eftersom ingen text i tabellen innehåller `&` och en oavkodad teckenreferens därför alltid hade fällts av jämförelsen först, med ett meddelande som inte säger varför. [Ordningen ändrad 2026-10-12.] (b) `meta description` är `assert.equal` med raden meta. (c) Talen: testet har `TALORD = { 3: 'Tre', 4: 'Fyra', 12: 'Tolv' }` och `ORDNINGSTAL = { 3: 'tredje' }`, och för varje uppslag krävs att nyckeln finns. Det kräver att T18 börjar med `${TALORD[n]} saker`, där `n` är antalet `<li class="fordel">` i `html`; att T27 börjar med `${TALORD[m]} månader`, där `m` är talet ur `src/server/api.js` med `/^const OVERVIEW_MONTHS = (\d+);$/m` (exakt en träff krävs); att T46 börjar med `` `${TALORD[Object.keys(PLANS).length]} planer.` ``; att T55 innehåller `` `var ${ORDNINGSTAL[MONTHS_PER_PERIOD.quarterly]} månad` ``; att T56 innehåller `` `intervallet ${INTERVAL_LABELS.quarterly}` ``; att T25 slutar med `` `Ingår från ${PLAN_LABELS[planFor('savingsGoals')]}.` ``; och att T50 börjar med `` `${PLAN_LABELS.bas} kostar ${kr('bas')} kr/mån, ${PLAN_LABELS.plus} ${kr('plus')} kr/mån och ${PLAN_LABELS.premium} ${kr('premium')} kr/mån.` ``, där `kr(p)` är `PLANS[p].priceOre / ORE_PER_SEK` och `Number.isInteger` krävs för varje värde. Importerna: `PLANS`, `PLAN_LABELS` och `planFor` ur `plans.js`, `MONTHS_PER_PERIOD` ur `schedule.js`, `INTERVAL_LABELS` ur `entry.js` och `ORE_PER_SEK` ur `money.js`. Sökvägarna byggs ur `import.meta.url` | var och en för sig: (1) `Tolv månader i en översikt` → `Tretton månader i en översikt` i `landning.html` (fälls av (a) och (c)); (2) i `src/server/api.js`: `const OVERVIEW_MONTHS = 12;` → `const OVERVIEW_MONTHS = 13;` (fälls bara av (c), och den fälls också av andra tester); (3) meningen `Du ser också månadskostnaden och årskostnaden.` läggs till sist i T15 (fälls av (a)); (4) i `src/core/plans.js`: `priceOre: 14900` → `priceOre: 15900` (fälls av (c)); (5) ett nytt `<p>` med texten `Ny text.` sist i footern (fälls av (a), längdkravet); (6) `&#169;` → `&copy;` (fälls av `&`-kravet i (a), som prövas före jämförelsen; den första byggda ordningen fällde den i stället på jämförelsen för `T63`, med jämförelsen först) |
+| (P19) | `tests/priser.test.js` | FAQ-svaret om priset är användarens lydelse, med tankstrecket som teckenreferens | testfallet `(P19) FAQ-svaret om priset säger att demon inte kostar något`. Det läser `src/web/landning.html` och skär ut texten mellan `<summary>Vad kostar Hem och Ekonomi?</summary>` och närmast följande `</details>`; i det utsnittet tas innehållet mellan `<p>` och `</p>`. (a) Rått innehåll: utsnittet innehåller `ingenting &ndash; ingen`, och det innehåller inte `TANKSTRECK`. Testet definierar `const TANKSTRECK = String.fromCodePoint(0x2013);`, så att tecknet aldrig står rått i testfilen. (b) Det som visas för användaren: `inner.replaceAll('&ndash;', TANKSTRECK).replace(/\s+/g, ' ').trim()` är `assert.equal` med strängen under punkt 6 ovan, där `<U+2013>` skrivs som `${TANKSTRECK}` i en mallsträng. Svaret ska stå i samma `<details>` som frågan, inte någonstans på sidan | var och en för sig: (1) raden `Det här är en demoversion och kostar ingenting &ndash; ingen betalning tas ut.` struken (fälls av (a) och (b)); (2) `&ndash;` → ` - `, så att raden lyder `… kostar ingenting - ingen betalning tas ut.` (fälls av (a) och (b)); (3) `&ndash;` → rått U+2013 (fälls bara av (a), eftersom (b) ger samma visade text); (4) `ingen betalning tas ut` → `ingen betalning dras` (fälls av (b)) |
+
+**Hjälpfunktionen.** `tests/helpers/built-features.js` exporterar
+`async function builtFeatureKeys()`. Den returnerar en lista med de nycklar som
+(D17) (b) samlar in: `requireFeature`-nycklarna ur den kommentarsfria
+`src/server/api.js`, med radkommentarerna borttagna först, plus `overview`.
+Sökvägen byggs ur `import.meta.url`. Insamlingen flyttas ur (D17) till
+hjälpfunktionen, så att (D17) och (P14) läser samma regel och inte var sin kopia
+av den. (D17):s assertioner, inklusive undantagets två assertioner, står kvar i
+(D17).
 
 ### Publicering
 
@@ -9744,11 +10184,22 @@ Texten under korten blir:
 Detta är en demo - du kan byta plan fritt och ingen betalning dras.
 ```
 
-**Sidomenyn visar låsta funktioner** med en låsikon. Ett klick ger en ruta:
+**En låst funktion visas med en låsrad på sitt kort, inte i sidomenyn.** Rättat
+2026-10-11 på användarens beslut. Här stod först att sidomenyn visar låsta
+funktioner med en låsikon och att ett klick ger en ruta. Den formen byggdes inte.
+Sedan steg 4 är det låsraden i månadsvyn som gäller: `#goal-locked` och
+`#report-locked` i `index.html`, där kortet döljs och raden visas när vägen
+svarar `403`. Raden har låsikonen, texten ur `lockedText` i `src/web/app.js` och
+knappen `Se planer`:
 
 ```
-Funktionen ingår i <Plan>. Uppgradera för att låsa upp.   [Se planer]
+<Funktion> ingår i <Plan>.   [Se planer]
 ```
+
+`<Funktion>` är `FEATURE_LABELS[feature]` och `<Plan>` är
+`PLAN_LABELS[requiredPlan]`, båda ur `403`-svaret, till exempel
+`Sparmål ingår i Plus.`. Sidomenyn har ingen låsikon. Uppmärkningen står under
+"Sparmål" i steg 4 och "Gränssnittet" i steg 5.
 
 **Inställningar → Min plan** visar nuvarande plan och tre knappar. Byte sker
 direkt, och vyn ritas om så att låsta funktioner låses upp utan omladdning.
@@ -9966,7 +10417,8 @@ utkastvaliderare bor.
 
 ### Räkningar och påminnelser (bindande) [steg 3]
 
-Priskortet lovar `Räkningspåminnelser` på Bas. Ingenting av det finns.
+Priskortet lovar `Räkningspåminnelser` på Bas. Ingenting av det fanns när steg 3
+började; steg 3 byggde det.
 
 **Datumlogiken ska inte skrivas om.** `src/core/schedule.js` äger sedan paket 7
 `nextDueDate` med klampning för den 29 till 31 och hopp över flera perioder, och
@@ -10404,7 +10856,7 @@ låsmekanismen från steg 1 får något att låsa.
 ### Diagram och rapporter (bindande) [steg 5]
 
 Priskortet lovar `Diagram och rapporter` på Plus. `FEATURE_LABELS.reports` bär
-den texten. Ingenting av det finns.
+den texten. Ingenting av det fanns när steg 5 började; steg 5 byggde det.
 
 #### Gränsen mot `overview`, som Bas redan har
 
@@ -11855,3 +12307,267 @@ poster):
   sanning på något som byggs senare. (påverkat av lärdom: **ja**, `2026-10-11 —
   dokumentation: rättningen av de okörda ordrarna lade till en ny, som
   sökmönstret inte fångar`)
+
+#### Beslutslogg [rättelse: det demon inte visar]
+
+- **"Det demon inte visar" skrevs om efter koden, och bara delat hushåll, Mina
+  funktioner, Prioriterad support och betalning står kvar** — den första lydelsen
+  var: "Skrivs ut i bannerns hjälptext och i README: prisplaner, behörighet,
+  sparmål, räkningspåminnelser, delat hushåll och Mina funktioner är **inte
+  byggda**. De står på landningssidan som design. En planväxlare har därför inget
+  att växla mellan och byggs inte." Varje punkt kontrollerades mot koden
+  2026-10-11: `src/web/demo/demo-fetch.js` har vägarna `PLAN_PATH`
+  (`/api/plan`), `BILLS_PATH` (`/api/rakningar`), `GOALS_PATH` (`/api/sparmal`)
+  och `REPORT_PATH_PREFIX` (`/api/rapport/`) samt spärren `kraverFunktion`;
+  `src/web/index.html` har planväxlaren `#plan-buttons`; `src/server/api.js`
+  anropar `requireFeature` med `budget`, `reports`, `billReminders` och
+  `savingsGoals`. En sökning efter `sharedHousehold`, `customFeatures`,
+  `prioritySupport`, `hushåll`, `Mina funktioner` och `support` i `src/` gav
+  träffar bara i `src/core/plans.js`, i bannerns gamla text, i HTML-kommentaren
+  och i `src/web/landning.html` (prissidans text); ingen väg och ingen vy finns
+  för dem. Betalning: `api.js` och `demo-fetch.js` byter plan utan betalning, och
+  `app.js` visar `PLAN_DEMO_NOTE`. (påverkat av lärdom: **ja**, `2026-10-11 —
+  dokumentation: "inte byggda" om sparmål, rapporter och planer står kvar på tre
+  ställen, varav ett visas för användaren`)
+- **Tabellen i avsnittet är en beskrivning; regeln för "byggt" bor i koden** —
+  avsnittet säger att en nyckel är byggd när `api.js` anropar
+  `requireFeature(session, '<nyckeln>')`, med `overview` som enda namngivna
+  undantag. Skälet är att listan annars åldras på samma sätt som den första
+  lydelsen: när delat hushåll byggs får det ett `requireFeature`-anrop, och (D17)
+  faller då tills bannerns text rättas. *Att lägga en egen lista över byggda
+  funktioner i `src/core/plans.js` förkastades först:* den hade varit en andra,
+  handskriven källa som lika lätt glöms, och `plans.js` beskriver vad en plan
+  innehåller, inte vad projektet har hunnit bygga. **Upphävt samma dag** av
+  posten "`NOT_BUILT_FEATURES` och `featureText` i `plans.js`" nedan. När
+  prissidan och Min plan också behövde svaret fanns det tre läsare, och två av
+  dem körs i webbläsaren, där `api.js` inte går att läsa. *Att bygga `NOT_BUILT_TEXT` ur
+  `FEATURE_LABELS` vid körning förkastades:* texten är användarvänd och ska stå
+  ordagrant här, och en sammanfogad mening ur en lista får fel svensk
+  uppräkning (komman och "och") så snart listans längd ändras. (påverkat av
+  lärdom: **ja**, `2026-09-12 — dokumentation: fyra framtidspåståenden om paket 7
+  är nu falska, och den nya rutinen fångar inget av dem` — kontrollen förankras i
+  rollen, inte i en sluten lista)
+- **`NOT_BUILT_TEXT` får en ny ordagrann lydelse och nämner betalning** —
+  bannerns första rad, `BANNER_TEXT`, säger redan "ingen riktig data eller
+  betalning"; hjälptexten säger det som en saknad funktion, eftersom prissidan
+  visar priser. Funktionsnamnen skrivs med versal, som i `FEATURE_LABELS` och i
+  README:s tabell, så att (D17) kan söka efter dem exakt. Ordet "prissidan"
+  ersätter "landningssidan som design": det är priskorten som lovar
+  funktionerna. (påverkat av lärdom: **ja**, `2026-09-14 — test: samma bindande
+  användartext fick två skrivsätt i tests/app.test.js` — bokstäverna `å`, `ä`
+  och `ö` skrivs råa, och strängen har inget osynligt tecken)
+- **HTML-kommentaren vid Min plan skrivs om, inte stryks** — det första stycket
+  (varför knappen inte är en router) är sant och står kvar. Det andra stycket
+  ersätts av ett skäl som inte nämner vilka funktioner som är byggda. Den nya
+  lydelsen beskriver koden: inga låsikoner i sidomenyn, låsraderna `#goal-locked`
+  och `#report-locked` i månadsvyn. Den meningen i del 5, "Gränssnittet", som
+  säger att sidomenyn visar låsta funktioner med en låsikon, beskriver en form
+  som inte byggdes; låsraden på kortet beslutades i steg 4 ("För en
+  Bas-användare visas kortet inte alls"). *Att stryka hela kommentaren
+  förkastades:* knappens första stycke är det enda stället som förklarar varför
+  vyn växlas med `hidden`. (påverkat av lärdom: **ja**, `2026-10-11 —
+  dokumentation: "inte byggda" om sparmål, rapporter och planer står kvar på tre
+  ställen`)
+- **(D17) ersätter loopen i testfallet om lagring** — loopen i
+  `tests/demo.test.js` som kräver orden `Prisplaner`, `sparmål`, `delat hushåll`
+  och `Mina funktioner` låste den gamla lydelsen och hade fällt den nya. (D17)
+  prövar texten ordagrant och mot koden. (påverkat av lärdom: **ja**,
+  `2026-10-11 — dokumentation: "inte byggda" …` — "En användarvänd konstant som
+  räknar upp vad som 'inte är byggt' ska ha ett test som jämför uppräkningen mot
+  `FEATURE_LABELS`")
+- **Övriga "inte byggt"-påståenden, sökta 2026-10-11** — sökningen
+  `grep -rniE "inte (är )?byggd|byggs inte|inte byggt|inte byggda" ARKITEKTUR.md src README.md`
+  kördes före den här rättelsen. Träffarna, bedömda var för sig:
+  - `ARKITEKTUR.md`, "Det demon inte visar" (två rader): föråldrade, omskrivna
+    ovan.
+  - `ARKITEKTUR.md`, "Härledning av nästa dragningsdatum" ("Skälet till att de
+    inte byggdes tidigare"): dåtid, sann.
+  - `ARKITEKTUR.md`, avsnittet "Beslutslogg" före del 2 ("det som inte står i en tabell
+    blev inte byggt"): dåtid om ett fel som inträffade, sann.
+  - `ARKITEKTUR.md`, "Budget per kategori" ("en återkommande budget är en annan
+    funktion och byggs inte nu"): sann; ingen återkommande budget finns i `src/`.
+  - `ARKITEKTUR.md`, beslutsloggen för steg 5 del 3 ("`lockRow(feature)` byggs
+    inte"): sann; `lockRow` förekommer inte i `src/`.
+  - `src/web/index.html`, kommentaren vid Min plan: föråldrad, ny lydelse ovan.
+  - `src/web/demo/banner.js`, `NOT_BUILT_TEXT`: föråldrad, ny lydelse ovan.
+  - `src/server/months.js`, kommentaren om återkommande budget: sann, samma sak
+    som "Budget per kategori".
+  - `src/core/bill.js`, kommentaren ovanför `BILL_STATUSES` ("gränssnittet är
+    ännu inte byggt"): föråldrad; `src/web/app.js` importerar `BILL_STATUSES`,
+    `REMIND_DAYS_MIN`, `REMIND_DAYS_MAX` och `REMIND_DAYS_DEFAULT` och läser dem i
+    `billClassName` och i fältet Påminn mig.
+  - `src/core/goal.js`, kommentaren ovanför `GOAL_STATUSES` ("Kortet är inte
+    byggt"): föråldrad; `app.js` importerar `GOAL_STATUSES`, `PERCENT_MIN` och
+    `PERCENT_FULL` och läser dem i `goalClassName`, `goalBarClassName` och
+    stapelns bredd.
+  - `README.md`, innehållsförteckningen och avsnittet "Inte byggt", samt
+    stycket under plantabellen: sanna; de räknar upp betalning, delat hushåll,
+    Mina funktioner och Prioriterad support, och README:s övriga punkter
+    (påminnelser utanför appen, historik över betalda räkningar, flytt från
+    `entries.json`, andra valutor) har ingen motsvarighet i `src/`.
+  Utöver mönstret: "Diagram och rapporter" i steg 5 sade "Ingenting av det
+  finns." i presens, vilket var falskt efter steg 5; meningen står nu i dåtid.
+  (påverkat av lärdom: **ja**, `2026-10-11 — dokumentation: "inte byggda" …`)
+- **Låsraden på kortet gäller, inte en låsikon i sidomenyn (användarens beslut
+  2026-10-11)** — "Gränssnittet" i del 5 sade att sidomenyn visar låsta
+  funktioner med en låsikon och att ett klick ger en ruta med texten
+  `Funktionen ingår i <Plan>. Uppgradera för att låsa upp.` Den formen byggdes
+  inte. Steg 4 och 5 byggde låsrader på korten med texten ur `lockedText`.
+  Användaren beslutade att specen ska följa koden. Meningen är omskriven, och
+  ingen kod ändras. Kommentaren i `index.html` ("Ingen låsikon står i menyn")
+  stämmer därmed med dokumentet. (påverkat av lärdom: **ja**, `2026-09-02 —
+  dokumentation: ARKITEKTUR.md:s exempelsträng för formatSek är inte den koden
+  ger` — en skillnad mellan dokument och kod rättas i dokumentet först)
+- **`NOT_BUILT_FEATURES` och `featureText` i `plans.js` (användarens linje
+  2026-10-11: appen lovar inget som inte finns)** — prissidan och Min plan räknar
+  upp `FEATURE_LABELS` för varje funktion i en plan. Det är sant om planens
+  innehåll men läses som ett löfte. *Att ta bort de obyggda nycklarna ur
+  `PLANS` förkastades:* det ändrar behörigheten och gör Premium till Plus med
+  högre pris utan att säga det, och priskortens innehåll är användarens
+  produktbeslut. *Att låta korten tiga om funktionerna förkastades av samma
+  skäl.* Planen har dem, och kortet säger nu bara att de inte finns i appen.
+  *Att bygga tillägget i varje anropare förkastades:* två läsare med var sin
+  mall är två facit (`LARDOMAR.md` 2026-09-02, ägarregeln). Listan är
+  handskriven men kan inte glida isär från koden: (P14) kräver att den är
+  precis de nycklar som `api.js` inte spärrar med `requireFeature`, utom
+  `overview`. Tillägget lyder ` - finns inte i appen` och inte "kommer snart"
+  eller "inte än", eftersom båda de senare lovar något. (påverkat av lärdom:
+  **ja**, `2026-10-11 — dokumentation: "inte byggda" om sparmål, rapporter och
+  planer …` och `2026-09-07 — arkitektur: saveEntries blev en export utan
+  anropare` — `NOT_BUILT_NOTE` exporteras inte, eftersom bara `featureText`
+  läser den)
+- **Landningssidans löften rättas (användarens beslut 2026-10-11)** — en
+  genomgång av `landning.html` och `priser.js` med sökorden `dela`, `hushåll`,
+  `support`, `Mina funktioner` och `funktioner`, och därefter en läsning av varje
+  fördel och varje FAQ-svar, gav tre löften om något som inte finns:
+  - FAQ-frågan `Kan vi vara flera i hushållet?` **stryks helt**. Ett ärligt svar
+    är "Nej", och priskortet säger redan `Delat hushåll - finns inte i appen`.
+  - Fördelen `Hela hushållet` ersätts av `Hela året på en gång`, alltså
+    översikten, som finns och ingår i Bas. Här stod först att rubriken
+    `Fyra saker du får direkt` förblir sann. Det var fel, eftersom sparmål kräver
+    Plus. Rubriken ändrades 2026-10-12, se posten om landningssidans text nedan.
+  - FAQ-svaret `Du väljer plan när registreringen är på plats …` blir
+    `Du byter plan under Min plan i appen.` Registreringen har inget planval,
+    men Min plan finns.
+
+  Lästa och bedömda som sanna: `Dina siffror stannar hos dig` (appen kör lokalt
+  och sparar i en fil), `Räkningar i tid` (nästa dragning räknas ut),
+  `Sparmål som syns` (sparmålen finns, i Plus), FAQ-svaren om lagring, lösenord,
+  kvartalsutgifter och JavaScript, samt sidfotens rad. Kommentarer som inte
+  visas för användaren och som pekar framåt ("registrering med planval byggs
+  senare" i `landning.html` och `priser.js`, "byggs senare" under "Priskorten")
+  är inga löften till användaren och rörs inte av det här beslutet. (påverkat av
+  lärdom: **ja**, `2026-10-11 — dokumentation: "inte byggda" …` och
+  `2026-09-23 — validering: appen visar belopp …` — varje format och varje
+  påstående appen visar ska stämma mot vad appen gör)
+- **FAQ-svaret om priset säger att demon inte kostar något (användarens beslut
+  och lydelse 2026-10-11)** — användaren godkände hela svarets lydelse, och den
+  står ordagrant under punkt 6 i "Ändringar i `src/web/landning.html`". Bara
+  FAQ-svaret ändras. Priskorten och texten under dem är orörda.
+  - *Tankstrecket skrivs `&ndash;` i källan:* ett rått U+2013 går inte att skilja
+    från `-` i en genomläsning, och den sökning lärdomen 2026-09-14 föreskriver
+    efter tecknets byte ska inte få en ny träff i `src`. (P19) (a) kräver
+    referensen och förbjuder det råa tecknet, och (P19) (b) kräver den visade
+    texten. Mutationen "rått tecken" fälls bara av (a), och därför står båda.
+  - *Varje mening står på en egen rad:* (P18) söker redan efter
+    `Du byter plan under Min plan i appen.` med `includes`, och en mening som
+    bryts över två rader kan inte hittas så. (P19) (b) normaliserar ändå
+    blanktecknen, så radbrytningen är inget den förutsätter.
+  - *Krockar kontrollerade 2026-10-11:*
+    - Bannerns `NOT_BUILT_TEXT` ("Betalning finns inte heller - planbytet är
+      gratis och sker direkt."), noten under priskorten ("Detta är en demo - du
+      kan byta plan fritt och ingen betalning dras.") och `PLAN_DEMO_NOTE`
+      ("Demo: ingen betalning genomförs.") säger samma sak som den nya meningen,
+      med andra ord. Ingen av dem säger emot den. Noten under korten säger redan
+      "demo" utan villkor, så meningen gör det också, fast landningssidan visas
+      även när `DEMO` är falsk.
+    - De tre texterna skriver strecket som bindestreck-minus med mellanslag runt.
+      Den nya meningen har tankstreck, och det är användarens val. Skillnaden
+      ligger i två olika ägare och rör ingen jämförelse: ingen test jämför
+      texterna med varandra.
+    - Svaret säger både "Bas kostar 99 kr/mån" och "kostar ingenting". Det är
+      användarens lydelse. Den andra meningen läses som en avgränsning av den
+      första, i samma svar.
+    - `README.md` "Planer och vad de låser upp" säger "Ingen betalning sker" och
+      att priserna "visas bara". Det stämmer med meningen, så README behöver
+      inte ändras. Dokumentatorn kan nämna FAQ-svaret om README någon gång
+      citerar landningssidans FAQ.
+
+  (påverkat av lärdom: **ja**, `2026-09-14 — dokumentation: U+2013 står rått i
+  ARKITEKTUR.md, även i meningen som förbjuder det` och `2026-09-14 — test: samma
+  bindande användartext fick två skrivsätt` — escape bara för det osynliga
+  tecknet, och `å` står rått)
+- **Landningssidans text beskriver appen som den är i dag; hela den synliga
+  texten blir ett facit (användarens beslut 2026-10-11/12, lydelserna godkända av
+  användaren oförändrade 2026-10-12)** — granskaren visade att sidan lovade
+  månadskostnad, årskostnad och nästa dragning, som appen slutade räkna fram när
+  den byggdes om till en månadsbudget. En kvartalspost på 900 kr syns som 900 kr i
+  dragningsmånaden och `0` emellan. Användaren beslutade att texten ändras och
+  att funktionen inte byggs tillbaka.
+  - **Läsningen.** Den här gången lästes hela `landning.html` och `priser.js`
+    mening för mening, och varje påstående prövades mot `index.html`, `app.js`
+    och servern.
+  - **Fynd utöver granskarens fem ställen:**
+    - `Fyra saker du får direkt` med sparmål, som kräver Plus;
+    - `Räkningar i tid` ("Startdatum och intervall räcker. Appen räknar ut
+      nästa dragning"), där en räkning har en förfallodag och flyttas fram av
+      Betald;
+    - `Summan längst ned`, fast summeringen står överst;
+    - `i samma lista`, fast inkomster, utgifter och sparande är tre listor;
+    - "sparar i en fil du äger" och "I en datafil på din egen dator", fast demon
+      sparar i webbläsaren;
+    - "skickar ingenting vidare", fast koden mejlas via Resend när
+      `RESEND_API_KEY` är satt;
+    - "Den här sidan gör det" om JavaScript, fast priskorten ritas av `priser.js`;
+    - `Avrundningen görs en gång`, som inte har någon motsvarighet i månadsvyn;
+    - "hur ofta det dras och när det började", fast formuläret frågar efter
+      namn, belopp, kategori och intervall.
+  - **Kommentarer som pekar framåt** skrevs om: "registrering med planval byggs
+    senare" i `landning.html` och `priser.js`, "De återkommer den dag sidorna
+    finns." och "fungerar fortfarande helt utan JavaScript".
+  - **Facit är hela den synliga texten, inte en lista med förbjudna fraser.**
+    (P18) var förankrad i en sluten fraslista, och det är just det fel
+    `LARDOMAR.md` 2026-10-12 beskriver som återfall. *Att lägga till
+    `månadskostnad`, `årskostnad` och `nästa dragning` i fraslistan förkastades*
+    av samma skäl: nästa felaktiga påstående har andra ord. (P20) jämför i
+    stället varje synlig text ordagrant mot tabellen, där varje rad som påstår
+    något har sitt belägg i koden. En ny eller ändrad text fäller testet tills
+    tabellen har en rad för den.
+  - **Talen på sidan knyts till koden.** `Fyra` till antalet fördelar, `Tolv`
+    till `OVERVIEW_MONTHS`, `Tre` till planerna, `tredje` till
+    `MONTHS_PER_PERIOD.quarterly`, priserna till `PLANS` och `Plus` till
+    `planFor('savingsGoals')`.
+    - *Att exportera `OVERVIEW_MONTHS` ur `api.js` för testets skull
+      förkastades:* en export utan anropare i `src/` är förbjuden
+      (`LARDOMAR.md` 2026-09-07). Testet läser i stället konstanten ur källan
+      och kräver exakt en träff.
+  - **(P18)** behåller bara etikettkontrollen mot `NOT_BUILT_FEATURES`, som är
+    knuten till `plans.js` och inte till en fraslista.
+  - **Två meningar i steg 3 och 5** ("Ingenting av det finns.") var falska i
+    presens och står nu i dåtid.
+
+  (påverkat av lärdom: **ja**, `2026-10-12 — dokumentation: landningssidan lovar
+  fortfarande månadskostnad, årskostnad och nästa dragning, som appen inte
+  räknar fram` och `2026-10-12 — test: talet i den nya fördelen "Tolv månader i
+  en översikt" skyddas inte av något test`)
+- **Footerkommentaren får en hel ny lydelse, och `&`-kravet i (P20) prövas först
+  (2026-10-12, efter byggarens körning)** —
+  - **Footerkommentaren.** Avsnittet föreskrev först bara att meningen
+    `De återkommer den dag sidorna finns.` skulle strykas. Meningen före den,
+    "en sida som säger att delar av den byggs senare inger inte förtroende",
+    stod kvar med frasen "byggs senare", som slutkontrollen kräver noll träffar
+    på. Skälet i den nya lydelsen ("lovar en sida som inte finns") säger samma
+    sak utan att peka framåt. *Att skriva om slutkontrollen förkastades:* en
+    kommentar som säger att något "byggs senare" är just den sortens påstående
+    kontrollen finns för.
+  - **`&`-kravet.** Byggaren visade att kravet aldrig kunde fälla något när det
+    stod efter jämförelsen text för text. Ingen text i tabellen innehåller `&`,
+    så mutation (6) föll på `T63` och inte på kravet, som tabellen påstod. Kravet
+    flyttades före jämförelsen. *Att stryka det förkastades:* det ger det enda
+    meddelandet som säger att en teckenreferens inte avkodas, och utan det fäller
+    jämförelsen med ett meddelande som bara visar två olika strängar.
+    Mutationskolumnen har uppdaterats.
+
+  (påverkat av lärdom: **ja**, `2026-08-23 — test: kontrollen av antalet fält i
+  isEntry skyddas inte av något test` — en spärr som en annan kontroll alltid
+  hinner före är inget skydd)

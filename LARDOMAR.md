@@ -3956,3 +3956,108 @@ till det som prövats, och den som granskar ska köra minst en adress per
 grupp i `STATIC_ROUTES`, `/core/`, `/api/` och en okänd sidadress. Här räcker
 lydelsen "En felstavad sidadress, till exempel `/apps`, svarar `404` utan
 innehåll, så webbläsaren visar en tom sida."
+
+### 2026-10-12 — dokumentation: landningssidan lovar fortfarande månadskostnad, årskostnad och nästa dragning, som appen inte räknar fram
+**Vad gick fel:** Återfall av posten 2026-09-12 ("fyra framtidspåståenden om
+paket 7 är nu falska, och den nya rutinen fångar inget av dem"), i rättelsen
+som skulle göra att landningssidan "lovar inget som inte finns".
+`ARKITEKTUR.md` ("Landningssidan lovar inget som inte finns", rad ca 9549) säger
+att "Kontrollen mot koden 2026-10-11 hittade löften på tre ställen", och alla tre
+gäller planfunktioner. `src/web/landning.html` lovar dock på fem ställen det som
+appen från paket 1–8 gjorde och som dagens app inte gör:
+- rad 9, sidans `meta description`: "visar månadskostnad, årskostnad och vad som
+  dras härnäst";
+- rad 87, inledningen: "Du ser månadskostnaden, årskostnaden och vad som dras
+  härnäst";
+- rad 214, "Räknat i öre": "En kvartalsutgift blir rätt månadskostnad och rätt
+  årskostnad";
+- rad 249, "Få överblick": "Månadskostnad, årskostnad och nästa dragning räknas
+  fram åt dig och står överst";
+- rad 317, FAQ-svaret om en utgift som dras var tredje månad: "Appen räknar om
+  det till månadskostnad och årskostnad och visar nästa dragningsdatum".
+
+Körning mot en server i en kopia, med data i scratchpad: en kvartalsmall på
+900 kr skapad i `2026-10` gav `expenseOre` `90000` i `2026-10` och `2027-01` och
+`0` i `2026-11` och `2026-12`. Ingen omräkning till månads- eller årskostnad
+sker. Postraden i `renderItem` (`src/web/app.js`) visar namn, kategori, belopp
+och återkommandemärket, men inget dragningsdatum, och `src/web/app.js`
+importerar varken `cost.js` eller `nextDueDate`. Överst i månadsvyn står
+Inkomster, Utgifter, Sparande och Kvar att leva på.
+**Varför:** Kontrollen gick från `FEATURE_LABELS` och `NOT_BUILT_FEATURES` till
+sidan, och (P18) söker efter funktionsnamn och fyra fasta fraser. Den hittar
+därför bara löften om *planfunktioner*. Användarens beslut gäller allt som inte
+finns, och de här meningarna skrevs för appen i paket 1–8 (månadskostnad per
+post, `Kommande dragningar`). När appen byggdes om till en månadsbudget lästes
+de aldrig om. Kontrollen var förankrad i en sluten lista (funktionsnycklarna) i
+stället för i rollen "ett påstående om vad appen gör". Det är samma fel som
+posterna 2026-09-07 (`saveEntries as X`), 2026-09-12 och 2026-09-22
+(klockkontrollen) beskriver.
+**Regel framåt:** En kontroll av att en sida "inte lovar något som inte finns"
+läser varje mening på sidan, inte bara de meningar som innehåller ett
+funktionsnamn. Ta ut den synliga texten (taggar, kommentarer, `<script>` och
+`<svg>` bortrensade, `meta description` med), och skriv i specen en rad per
+mening med påstående och den kodrad eller körning som visar att det stämmer.
+Konkret ska arkitekten skriva om de fem meningarna ovan efter dagens app, lägga
+in lydelsen ordagrant i "Landningssidan lovar inget som inte finns" och lägga
+till `månadskostnad`, `årskostnad` och `nästa dragning` i (P18):s förbjudna
+fraser. `Räkningar i tid` (rad 133) ska bedömas för sig: räkningar har
+förfallodag och intervall, och `Betald` flyttar fram dem.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-12 — test: talet i den nya fördelen "Tolv månader i en översikt" skyddas inte av något test
+**Vad gick fel:** `ARKITEKTUR.md` skriver fördelen `Hela året på en gång` med
+stycket "Tolv månader i en översikt: …" som bindande ordagrant och motiverar
+det med "Påståendet stämmer mot koden: `readOverview` svarar med tolv månader
+(`OVERVIEW_MONTHS` i `src/server/api.js`)". Mutationen `Tolv månader i en
+översikt` → `Tretton månader i en översikt` i `src/web/landning.html`, körd i en
+kopia av trädet, gav `node --test tests/priser.test.js` med `fail 0` och
+`EXIT=0`. (P18) kräver bara rubriken `<h3>Hela året på en gång</h3>`, inte
+stycket.
+**Varför:** Specen kontrollerade påståendet mot koden när det skrevs, men
+kopplingen mellan talet på sidan och `OVERVIEW_MONTHS` står bara i prosa. Ändras
+översiktens längd, eller texten, lovar sidan något annat än appen gör utan att
+något test märker det. Det är samma lucka som posten 2026-10-11 om F2:s
+kolumnrubriker: en bindande text utan test.
+**Regel framåt:** Ett påstående på landningssidan som specen säger "stämmer mot
+koden" ska ha ett test som läser båda: här ska (P18) kräva stycket ordagrant och
+kontrollera att talordet motsvarar `OVERVIEW_MONTHS`, till exempel med en tabell
+`{ 12: 'Tolv' }` i testet och en assertion som faller om konstanten ändras.
+Mutationen `Tolv` → `Tretton` ska stå i (P18):s mutationskolumn och ge `EXIT=1`.
+
+### 2026-10-12 — test: låstestets 20 processtarter har ingen omförsöksväg, och en barnprocess som startar långsamt gör hela sviten röd
+**Vad gick fel:** Återfall av posten 2026-09-15 (SIGKILL-testets 200 forkar), i
+ett annat test. `tests/lock.test.js` rad 272, `fall 1: instans två startar inte
+mot samma datafil, 20 omgångar`, startar en server och därefter 20 instanser
+mot samma datafil (`OMGANGAR = 20`, rad 47). Den väntar på varje instans med
+`waitForClose` (rad 227–237) och tidsgränsen `CHILD_START_TIMEOUT_MS = 30000`.
+Ett `timeout` går rakt till `assert.equal(utfall.kind, 'close', …)` på rad 289.
+I loggarna i scratchpad har testet körts i 86 fullkörningar, och de två som föll
+(`mut-P20-5.log`, 181 091 ms, och `npm4-2.log`, 36 420 ms) föll båda med
+`omgång 1: instans två avslutades aldrig (timeout): exitCode=null,
+signalCode=null, stdout="", stderr=""`. Koden var oförändrad: övriga 84 körningar
+gav `✔` på cirka 4–6 s, och granskarens tre körningar 2026-10-12 gav
+`ℹ tests 1154`, `ℹ fail 0` och `EXIT=0` var. `exitCode=null` och tom utdata
+betyder att barnprocessen levde men inte hann skriva sin rad på 30 s. Barnet
+dog alltså inte, och låset fungerade.
+**Varför:** Regeln från 2026-09-15 kräver att varje icke-deterministiskt utfall
+i en loop med processtarter antingen tas om upp till ett tak, eller står i
+`ARKITEKTUR.md` som ett hårt fel med skälet utskrivet. Den skrevs och tillämpades
+bara för SIGKILL-testet i `tests/storage.test.js`. Ingen sökning gjordes efter
+andra tester med samma form, alltså en loop med `spawn` och en tidsgräns som
+domare. Därför står låstestet kvar med en tidsgräns som skiljer "barnet dog"
+från "barnet startade långsamt" bara genom att båda blir ett fel. Följden är att
+`CLAUDE.md`:s grind "`npm test` ska ge `fail 0` och exit 0" är icke-deterministisk
+också i det här testet. Den har slagit fel i ungefär 2 av 86 körningar på den
+här maskinen, och felet syns för en byggare som en regression i det paket hen
+just arbetar med.
+**Regel framåt:** Kör `grep -lnE "spawn\(|fork\(" tests/*.test.js` och tillämpa
+regeln från 2026-09-15 på varje träff, inte bara på det test en lärdom namnger.
+För `fall 1` i `tests/lock.test.js`: ett `timeout` där barnet lever
+(`exitCode === null` och `signalCode === null`) ska döda barnet, kassera omgången
+och köra en ny, upp till ett tak som skrivs i `ARKITEKTUR.md` (förslagsvis 3
+kasserade omgångar). Antalet kasserade omgångar asserteras mot taket och skrivs
+ut i felmeddelandet. Ett barn som avslutas med fel kod, skriver till stdout
+eller skriver en annan stderr är fortfarande ett hårt fel. Felet ligger utanför
+den rättelse där det upptäcktes och rättas som ett eget paket. Tills dess räknas
+en röd körning med just det här meddelandet som ogiltig och tas om, och tre
+gröna körningar i rad krävs, enligt posten 2026-09-07 om `fail 1`.
