@@ -587,6 +587,9 @@ src/web/       Det webbläsaren får: landningssidan, appen och demoläget.
 tests/         Testsviten som npm test kör.
 ```
 
+Fotot i landningssidans hero är taget av N. Voitkevich och hämtat från Pexels
+(pexels-n-voitkevich-7173046). Filen ligger i `src/web/bilder/hero-ekonomi.jpg`.
+
 | Fil | Innehåll |
 |---|---|
 | `ARKITEKTUR.md` | Bindande beslut: datamodell, felmeddelanden, avrundnings- och datumregler. |
