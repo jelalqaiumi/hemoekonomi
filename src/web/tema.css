@@ -104,10 +104,15 @@
   --ikon-mynt-text: var(--bla-marin);
 
   /* ---------------------------------------------- hero och mörka block */
-  --hero-fran: var(--bla-marin);
-  --hero-till: var(--gron-djup);
-  /* Rutnätet i hero. Åtta hexsiffror: de två sista är genomskinligheten. */
-  --rutnat: #ffffff14;
+  /* Slöjan över fotot i hero: --bla-marin (#022d68) med genomskinligheten cc,
+     204/255 = 0,8. Hexkoden står utskriven eftersom en var() inte kan få en
+     genomskinlighet. Den svagaste texten i hero, --text-svag-pa-mork, ska nå
+     minst 4,5:1 mot slöjan ovanpå en helt vit bildpunkt; tests/hero.test.js
+     (H4) räknar det ur den här filen. Samma värde i båda lägena: fotot byter
+     inte läge. */
+  --hero-sloja: #022d68cc;
+  /* Hovringen på konturknappen i hero: en svag ljus ton ovanpå slöjan. */
+  --hover-pa-mork: #ffffff14;
   --morkt-block: var(--bla-marin);
 
   /* ---------------------------------------------- skuggor */
@@ -170,7 +175,7 @@
     --ikon-bla: var(--ikon-bla-pa-mork);
     --ikon-guld: var(--guld-ljus);
 
-    --rutnat: #ffffff0f;
+    --hover-pa-mork: #ffffff0f;
 
     --skugga-kort: 0 1px 2px #00102c66, 0 8px 24px #00102c59;
     --skugga-upphojd: 0 2px 6px #00102c73, 0 18px 42px #00102c8c;

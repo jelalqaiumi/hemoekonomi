@@ -9010,7 +9010,7 @@ SVG-symbol byggdes först, men användaren bad om originalet i stället, och
 
 | Fil | Mått | Plats |
 |---|---|---|
-| `logga-beskuren.png` | 1200 x 653 | Hero |
+| `logga-beskuren.png` | 1200 x 653 | Ingen sida. Den visades i hero tills loggan där togs bort; filen ligger kvar och serveras under `/bilder/` |
 | `logga-liten.png` | 480 x 261 | Header, sidomeny, sidfot, favicon |
 
 **Båda är beskurna till motivet.** Originalet `logga.png` är kvadratiskt och har
@@ -9039,7 +9039,7 @@ Sektionerna uppifrån och ned:
 | # | Sektion | Innehåll |
 |---|---|---|
 | 1 | Header, fast | Logga vänster, menyn `Funktioner`, `Priser`, `FAQ` i mitten, `Logga in` som kontur och `Registrera` som fylld till höger. På mobil blir menyn en hamburgare, men `Registrera` syns alltid. |
-| 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar, knapparna `Kom igång` och `Se hur det fungerar`, och loggan till höger. Bakgrund: gradient från `--bla-marin` till `--gron-djup` med ett svagt rutnät. |
+| 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar och knapparna `Kom igång` och `Se hur det fungerar`. Ingen logga: den togs bort på användarens begäran (kommentaren ovanför `@media (min-width: 840px)` i hero-blocket i `landning.css`). Bakgrund: ett foto med en mörk slöja ovanpå sedan 2026-10-13, se "Del 6: foto i hero på landningssidan". Gradienten och rutnätet som stod här först är borttagna. |
 | 3 | Fördelar | Punkter med ikon: budget, räkningar, sparmål och översikten över året. Punkten om hushållet ersattes 2026-10-11, se "Landningssidan lovar inget som inte finns" under "Det demon inte visar". |
 | 4 | Varför Hem och Ekonomi | Tre kolumner med ikon, rubrik och kort text. |
 | 5 | Så fungerar det | Tre numrerade steg: registrera, lägg in din ekonomi, få överblick. |
@@ -12571,3 +12571,479 @@ poster):
   (påverkat av lärdom: **ja**, `2026-08-23 — test: kontrollen av antalet fält i
   isEntry skyddas inte av något test` — en spärr som en annan kontroll alltid
   hinner före är inget skydd)
+
+---
+
+## Del 6: foto i hero på landningssidan [användarens beslut 2026-10-13]
+
+**Användarens beslut 2026-10-13**, markerade med [användaren] nedan:
+
+- [användaren] Hero-sektionen på `src/web/landning.html` (`<section class="hero">`)
+  får ett foto som bakgrund.
+- [användaren] Bakgrundsfärgen och gradienten, alltså `--hero-fran` och
+  `--hero-till`, tas bort.
+- [användaren] En mörk, halvgenomskinlig slöja ligger över fotot, så att den
+  ljusa texten och knapparna förblir läsbara.
+- [användaren] Fotot är `pexels-n-voitkevich-7173046.jpg` av N. Voitkevich, från
+  Pexels. Originalet är 6240 x 4160 bildpunkter (måtten är lästa ur filen) och
+  enligt användaren 4,8 MB. Motivet är taget ovanifrån: en orange miniräknare
+  till vänster, ett diagram över mitten, choklad- och foliemynt i mitten och
+  nedtill, händer uppifrån och från höger, och ett rutat block nedtill, allt på
+  ett vitt bord.
+
+Allt annat i den här delen är arkitektens beslut, med skäl i beslutsloggen
+längst ned.
+
+### Filer
+
+| Fil | Ändring |
+|---|---|
+| `src/web/bilder/hero-ekonomi.jpg` | **Ny.** Fotot, nedskalat. Binärfil. |
+| `src/web/landning.css` | `.hero` skrivs om; kommentaren ovanför `.knapp-kontur-ljus` och `var(--rutnat)` i `.knapp-kontur-ljus:hover` ändras. |
+| `src/web/tema.css` | `--hero-fran` och `--hero-till` tas bort, `--hero-sloja` tillkommer, `--rutnat` döps om till `--hover-pa-mork` på båda ställena. |
+| `src/web/landning.html` | Bara HTML-kommentaren ovanför `<section class="hero">`. Ingen synlig text och inget element ändras. |
+| `src/server/server.js` | `IMAGE_FILE_PATTERN` och `IMAGE_TYPES` får `jpg`. |
+| `tests/server.test.js` | Punkt (H1) och (H3). |
+| `tests/hero.test.js` | **Ny.** Punkt (H2), (H4) och (H5). Ingen server: filen läser filer från disk. |
+
+Inget beroende tillkommer. Nedskalningen görs med `System.Drawing` i PowerShell,
+som redan användes för att mäta paletten ur loggan (se "Färgpaletten").
+
+### Bilden
+
+**Namn och plats:** `src/web/bilder/hero-ekonomi.jpg`. Namnet följer
+`IMAGE_FILE_PATTERN` (gemener, siffror och bindestreck) och projektets svenska
+filnamn i `src/web/` (`landning`, `bilder`, `logga-liten`). Ändelsen är `.jpg`,
+aldrig `.jpeg`: servern känner bara den ena (se "Servern").
+
+**Mått: exakt 1920 x 1280 bildpunkter.** Originalet har förhållandet 3:2
+(6240/4160 = 1,5), och 1920/1,5 = 1280, så nedskalningen behöver ingen
+beskärning. 1920 är den vanligaste bredden på ett brett fönster; på en skärm
+med högre pixeltäthet skalas fotot upp, och slöjan döljer den mjukhet det ger.
+
+**Storlek: högst 400 000 byte.** Kvaliteten i JPEG-kodaren börjar på `75`. Blir
+filen större än gränsen sänks kvaliteten i steg om 5 till lägst `60`. Är filen
+fortfarande över gränsen vid `60` lämnas paketet tillbaka till arkitekten. Gränsen
+höjs inte av byggaren.
+
+**Metod.** `System.Drawing` i PowerShell på den här maskinen:
+
+1. `[System.Drawing.Image]::FromFile` läser originalet.
+2. En ny `System.Drawing.Bitmap` på 1920 x 1280 ritas med
+   `Graphics.DrawImage`, med `InterpolationMode` `HighQualityBicubic`,
+   `PixelOffsetMode` `HighQuality`, `CompositingQuality` `HighQuality` och en
+   `ImageAttributes` med `SetWrapMode(TileFlipXY)`. Utan `TileFlipXY` blandar
+   bikubisk interpolation in genomskinliga bildpunkter längs kanterna.
+3. Bilden sparas med kodaren vars `MimeType` är `image/jpeg` och en
+   `EncoderParameter` för `[System.Drawing.Imaging.Encoder]::Quality` med
+   kvaliteten som `[long]`.
+4. Ingen metadata kopieras: den nya bitmappen får inga `PropertyItems` från
+   originalet, så kamerans och fotografens EXIF följer inte med.
+
+Skriptet kördes 2026-10-13 och står ordagrant, med sin utdata, i posten
+"Nedskalningen kördes med kvalitet 75" i beslutsloggen nedan. Kvaliteten `75`
+räckte: filen blev 263 236 byte, alltså under gränsen, och ingen sänkning
+behövdes.
+
+**Git.** Filen är binär. `core.autocrlf` är `true` på den här maskinen och
+`.gitattributes` saknas, så byggaren kontrollerar efter `git add` att
+`git ls-files --eol src/web/bilder/hero-ekonomi.jpg` visar `i/-text`, alltså att
+git inte behandlar filen som text.
+
+### Servern
+
+`/bilder/` serverade före den här delen bara `png` och `svg`:
+`IMAGE_FILE_PATTERN` var `/^[a-z0-9-]+\.(png|svg)$/`, och en `.jpg` gav därför
+`404`. Ändringen i `src/server/server.js`:
+
+```js
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg|jpg)$/;
+const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  jpg: 'image/jpeg'
+}));
+```
+
+Kommentaren i `resolveStaticFile` som säger att `match[1]` är `'png'` eller
+`'svg'` skrivs om till att räkna upp `'png'`, `'svg'` och `'jpg'`. Inget annat i
+servern ändras: sökvägsfiltret, prefixkontrollen och `404` utan kropp gäller
+oförändrade, och mönstret prövas fortfarande på namnet före `path.join`.
+
+### CSS
+
+**`.hero` i `src/web/landning.css`** ersätts av följande regel och kommentar.
+Kommentaren ovanför (rubrikraden `2. hero` och de tre raderna om gradient och
+rutnät) ersätts i sin helhet:
+
+```css
+/* ============================================================= 2. hero
+   Foto som bakgrund med en mörk slöja ovanpå (användarens beslut 2026-10-13).
+   Fotot: N. Voitkevich, Pexels. Det är dekorativt och står därför här och inte
+   som <img> med alt-text i landning.html.
+   Slöjan är det övre bildlagret: en linear-gradient med två lika stopp är en
+   enfärgad yta, inte en övergång. Dess färg och genomskinlighet är
+   --hero-sloja i tema.css, och tests/hero.test.js (H4) kräver att den ljusa
+   texten når 4,5:1 mot slöjan också ovanpå en helt vit bildpunkt.
+   --morkt-block syns bara om fotot inte laddas; under slöjan blir den samma
+   marinblå ton som slöjan själv. */
+
+.hero {
+  background-color: var(--morkt-block);
+  background-image:
+    linear-gradient(var(--hero-sloja), var(--hero-sloja)),
+    url("bilder/hero-ekonomi.jpg");
+  background-size: cover;
+  background-position: 35% 50%;
+  background-repeat: no-repeat;
+  color: var(--text-pa-mork);
+}
+```
+
+- **`url("bilder/hero-ekonomi.jpg")` är relativ.** En relativ adress i en
+  stilmall löses mot stilmallens egen adress, `/landning.css`, och ger
+  `/bilder/hero-ekonomi.jpg`. Det är samma adress som den absoluta formen ger
+  när sidan ligger i värdens rot, och den fortsätter att stämma om `landning.css`
+  och `bilder/` flyttas tillsammans.
+- **`background-size: cover`** fyller hela sektionen oavsett höjd; fotot
+  beskärs i stället för att förvrängas.
+- **`background-position: 35% 50%`.** Lodrätt mitten: på ett brett fönster är
+  hero lägre än fotot i skala, och mittbandet är diagrammet och mynten. Vågrätt
+  35 %: på en smal skärm syns bara en dryg tredjedel av fotots bredd, och 35 %
+  lägger det fönstret över foliemyntet och chokladmynten i stället för över
+  handen till höger eller den tomma bordskanten. Värdet är arkitektens
+  bedömning av motivet och ingen mätning. Ingen agent kan öppna en webbläsare.
+  Användaren godkände utseendet vid 320 och 1280 bildpunkters bredd 2026-10-13.
+- **`background-repeat: no-repeat`** gör ingen skillnad med `cover` så länge
+  fotot laddas, men hindrar en upprepning om `background-size` någon gång ändras.
+- **Ingen `background-attachment: fixed`.** Den ger ryckig skrollning på mobil
+  och ritar om sektionen vid varje skrollsteg.
+- **`--morkt-block` som reservfärg.** Den syns bara om fotot inte laddas, eller
+  innan det har laddats. Den är `--bla-marin`, och slöjan är `--bla-marin` med
+  genomskinlighet, så sektionen får då en enda jämn marinblå ton. Mot den ytan,
+  `B0` i (H4), gav byggarens körning av (H4) 2026-10-13 kvoten 12,21:1 för
+  `--text-pa-mork`. Det är samma värde som kommentaren om det mörka läget i
+  `tema.css` anger för `--text` på `--bakgrund`, som är samma färgpar. Den
+  tidigare HTML-kommentaren i hero angav 13,31:1 för samma par, och det talet var
+  fel. Det är inte
+  gradienten användaren ville ta bort: det är en enda färg, och den syns bara när
+  fotot saknas. Utan den hade sektionen under laddningen visat sidans ljusa
+  bakgrund genom slöjan.
+
+**Slöjan, `--hero-sloja`, i `src/web/tema.css`.** Färgen är `--bla-marin`,
+`#022d68`, med genomskinligheten `cc`, alltså 204/255 = 0,8:
+
+```css
+  /* ---------------------------------------------- hero och mörka block */
+  /* Slöjan över fotot i hero: --bla-marin (#022d68) med genomskinligheten cc,
+     204/255 = 0,8. Hexkoden står utskriven eftersom en var() inte kan få en
+     genomskinlighet. Den svagaste texten i hero, --text-svag-pa-mork, ska nå
+     minst 4,5:1 mot slöjan ovanpå en helt vit bildpunkt; tests/hero.test.js
+     (H4) räknar det ur den här filen. Samma värde i båda lägena: fotot byter
+     inte läge. */
+  --hero-sloja: #022d68cc;
+  /* Hovringen på konturknappen i hero: en svag ljus ton ovanpå slöjan. */
+  --hover-pa-mork: #ffffff14;
+  --morkt-block: var(--bla-marin);
+```
+
+Blocket ersätter raderna från `/* ---- hero och mörka block */` till och med
+`--morkt-block: var(--bla-marin);` i `:root`. I `@media (prefers-color-scheme:
+dark)` döps `--rutnat: #ffffff0f;` om till `--hover-pa-mork: #ffffff0f;`, med
+samma värde.
+
+**Hur kontrasten räknas.** Fotot är ljust, men beräkningen förutsätter inget om
+dess bildpunkter. Varje kanal i en bildpunkt är högst 255. Slöjan läggs över
+bildpunkten kanal för kanal:
+
+```
+c = a * s + (1 - a) * b      a = 204/255, s = slöjans kanal, b = bildpunktens kanal
+```
+
+`c` växer med `b`, och relativ luminans växer med varje kanal. Den ljusaste
+tänkbara ytan bakom texten är alltså slöjan ovanpå rent vitt, `b = 255` i alla
+tre kanalerna, och eftersom texten är ljusare än den ytan är det också det
+sämsta fallet för kontrasten. JPEG-kodning och nedskalning kan inte ge en kanal
+över 255, så resultatet gäller vilken bildpunkt som helst i vilket foto som
+helst. Ingen mätning av fotot behövs.
+
+Kontrasten räknas enligt WCAG 2: varje kanal `s = c / 255` linjäriseras med
+`s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4`, luminansen är
+`L = 0.2126 R + 0.7152 G + 0.0722 B`, och kvoten är
+`(L_ljus + 0.05) / (L_mörk + 0.05)`. Kravet är 4,5:1 (AA för brödtext) för varje
+text i hero, också rubriken, som som stor text bara hade behövt 3:1. Paren står
+i (H4). Guldknappen ingår inte: den har en egen ogenomskinlig yta, `--guld`, och
+dess text står aldrig mot fotot.
+
+**Kvoterna, körda.** Byggarens körning av (H4) 2026-10-13 gav dessa värden.
+Utskriften har två decimaler.
+
+| Läge | Yta | `--text-pa-mork` | `--text-svag-pa-mork` | `--guld-ljus` |
+|---|---|---|---|---|
+| ljust | `B1`: slöjan över rent vitt | 6,74:1 | 5,07:1 | 6,17:1 |
+| ljust | `B2`: `--hover-pa-mork` över `B1` | 5,54:1 | - | - |
+| mörkt | `B1` | 6,74:1 | 5,07:1 | 6,17:1 |
+| mörkt | `B2` | 5,81:1 | - | - |
+| båda | `B0`: slöjan över `--morkt-block` | 12,21:1 | 9,19:1 | 11,17:1 |
+
+`B2` prövas bara med `--text-pa-mork`, eftersom bara konturknappens text står på
+den ytan. Värdena för `B0` redovisades utan läge. Ingen av de tokener som bygger
+upp `B0` och texterna byts i det mörka läget, så raden gäller båda. Det lägsta värdet var 5,07:1 för `--text-svag-pa-mork` mot `B1`.
+Mutationen `--hero-sloja: #022d68cc` → `#022d68bf` gav 4,32:1 för samma par,
+alltså under 4,5:1, och fälldes av (H4).
+
+**`--hero-fran` och `--hero-till` tas bort ur `tema.css`.** De används bara i
+`.hero` (sökt i `src`, `tests` och `ARKITEKTUR.md` före det här beslutet), och en
+token utan användare är en osann uppgift om vad temat bär. Kommentaren
+`/* Konturknapp mot den mörka hero-gradienten. */` ovanför `.knapp-kontur-ljus` i
+`landning.css` skrivs om till `/* Konturknapp mot den mörka slöjan i hero. */`.
+
+**`--rutnat` döps om till `--hover-pa-mork`.** Rutnätet i hero ritades med två
+`repeating-linear-gradient`, och båda försvinner med gradienten. Tokenens enda
+kvarvarande användare är `.knapp-kontur-ljus:hover`, och kommentaren
+`/* Rutnätet i hero. … */` hade annars blivit falsk. Värdena behålls.
+
+### Tillgänglighet
+
+Fotot är dekorativt: det bär ingen information som texten inte redan säger. Det
+ligger därför som CSS-bakgrund, utan `<img>` och utan alt-text, och en
+skärmläsare läser ingenting om det. `landning.html` får inget nytt element.
+
+HTML-kommentaren ovanför `<section class="hero">` ersätts av:
+
+```html
+      <!-- ======================================================== 2. Hero
+           Foto som bakgrund med en mörk slöja ovanpå, se .hero i landning.css.
+           Fotot är dekorativt och ligger därför som CSS-bakgrund utan alt-text. -->
+```
+
+Den gamla kommentaren beskrev gradienten och mätvärdena mot den, och hade blivit
+falsk.
+
+### Licens och attribution
+
+Enligt användaren kräver Pexels licens ingen attribution. Fotografen och källan
+skrivs ändå ut på två ställen, eftersom det kostar en rad och gör det möjligt att
+visa varifrån fotot kommer och på vilka villkor det används:
+
+- i kommentaren ovanför `.hero` i `landning.css` (se blocket ovan), som följer
+  med filen;
+- i `README.md`, en rad som dokumentatorn skriver: `Fotot i landningssidans hero
+  är taget av N. Voitkevich och hämtat från Pexels (pexels-n-voitkevich-7173046).`
+
+Ingen synlig text på sidan nämner fotot. En sådan rad hade krävt en ny rad i
+"Landningssidans synliga text" och i (P20), och licensen kräver den inte.
+
+### Synlig text och (P20)
+
+(P20) läser bara `src/web/landning.html` och tar ut texten med `visibleTexts`
+i `tests/helpers/landning-text.js`, vars första steg tar bort varje
+HTML-kommentar. CSS-ändringarna rör inte filen, och den omskrivna kommentaren
+försvinner i steg 1. (P18), (P19) och (P20) ska därför passera oförändrade, och
+tabellen "Landningssidans synliga text" ändras inte.
+
+### Demon och publiceringen
+
+Demon publiceras som statiska filer (se "Publicering" i del 4): `landning.html`,
+`index.html`, `app.js`, CSS-filerna, `bilder/` och `core/`. Det finns ingen
+byggkedja och ingen `scripts/`-katalog, och ingen fil under `src/web/demo/` eller
+i `tests/demo.test.js` räknar upp bilderna. `hero-ekonomi.jpg` följer alltså med
+när `bilder/` kopieras, utan att något ändras. Attrappen i `demo-fetch.js`
+ersätter `globalThis.fetch`, men webbläsaren hämtar en CSS-bakgrund utan
+`fetch`, så attrappen påverkar inte fotot. En statisk värd sätter själv
+`Content-Type` efter ändelsen. Den relativa adressen i `landning.css` ger samma
+sökväg som de övriga filerna så länge `landning.css` och `bilder/` ligger i samma
+katalog.
+
+### Kravlista [hero-foto]
+
+| # | Fil | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|---|
+| (H1) | `tests/server.test.js` | `/bilder/` serverar `jpg` med `image/jpeg` | konstanten `JPEG_TYPE = 'image/jpeg'`. I testfallet `bilderna under /bilder/ ger 200 med sin egen Content-Type` läggs `assertFileServed(port, '/bilder/hero-ekonomi.jpg', path.join(getImageDir(), 'hero-ekonomi.jpg'), JPEG_TYPE)` till, och kommentaren i testfallet om att mutation (2) i kolumnen till höger inte går att upptäcka skrivs om med det körda utfallet. I testfallet `varje bild i src/web/bilder levereras …` tar filtret med `.jpg`, typen slås upp ur ändelsen i en tabell med `png`, `svg` och `jpg`, och testet kräver `names.includes('hero-ekonomi.jpg')`. Sonderna i `sökvägsfiltret för /bilder/ …` får `/bilder/hero-ekonomi.JPG` och `/bilder/hero-ekonomi.jpeg`, som båda ska ge `404` utan kropp | var och en för sig: (1) `jpg: 'image/jpeg'` → `jpg: 'image/png'`; (2) `type: IMAGE_TYPES[match[1]]` → `type: IMAGE_TYPES.png`; (3) `(png\|svg\|jpg)` → `(png\|svg)` i `IMAGE_FILE_PATTERN` |
+| (H2) | `tests/hero.test.js` | fotot är en JPEG på 1920 x 1280 och högst 400 000 byte | sökvägen byggs ur `import.meta.url`. Filen läses som `Buffer`. Krav i den här ordningen: `buffer.length <= 400000`, med längden i meddelandet; de tre första byten är `0xFF 0xD8 0xFF` och de två sista `0xFF 0xD9`; bredden är `1920` och höjden `1280`. Måtten läses ur den första SOF-markören: från index 2, för varje segment krävs `0xFF` först; fyllnadsbyte `0xFF` hoppas över; markörerna `0xD0`-`0xD7` och `0x01` saknar längd och hoppas över med 2; annars är längden `readUInt16BE(i + 2)`. Är markören en av `0xC0`-`0xC3`, `0xC5`-`0xC7`, `0xC9`-`0xCB` eller `0xCD`-`0xCF` är höjden `readUInt16BE(i + 5)` och bredden `readUInt16BE(i + 7)`. Nås `0xDA` eller filens slut före en SOF-markör faller testet med ett eget meddelande | var och en för sig: (1) filen ersatt av originalet (fäller längdkravet); (2) filen nedskalad till 1280 x 853 med samma metod (fäller måttkravet, inte längdkravet) |
+| (H3) | `tests/server.test.js` | adressen i `landning.css` ger fotot med `image/jpeg` | testfallet `landning.css pekar ut hero-fotot, och adressen ger image/jpeg`. Det läser `src/web/landning.css`, tar ut varje `url("…")` med `/url\("([^"]+)"\)/g`, och kräver exakt en träff, med värdet `bilder/hero-ekonomi.jpg`. Adressen löses med `new URL(värdet, 'http://127.0.0.1/landning.css').pathname`, som ska vara `/bilder/hero-ekonomi.jpg`, och därefter krävs `assertFileServed` för den sökvägen med `JPEG_TYPE` | var och en för sig: (1) `url("bilder/hero-ekonomi.jpg")` → `url("bilder/finns-inte.jpg")`; (2) en andra rad `url("bilder/logga.png")` tillagd i `.hero` (fäller kravet på exakt en träff) |
+| (H4) | `tests/hero.test.js` | den ljusa texten når 4,5:1 mot slöjan | läser `src/web/tema.css`. Tokenvärdena tas ur det första `:root { … }`; för det mörka läget skrivs de över av `:root { … }` inuti `@media (prefers-color-scheme: dark)`. `var(--x)` löses upp tills värdet är en hexkod. Hexkoder med 6 eller 8 siffror, gemener och versaler, tolkas; allt annat fäller testet. Formeln står under "Hur kontrasten räknas". Kraven, för vart och ett av de två lägena: (a) `--hero-sloja` har 8 siffror, och dess sex första är `--bla-marin`:s; (b) ytan `B1` = `--hero-sloja` över `#ffffff`; `--text-pa-mork`, `--text-svag-pa-mork` och `--guld-ljus` har var och en högre luminans än `B1` och kvoten minst 4,5; (c) ytan `B2` = `--hover-pa-mork` över `B1`; `--text-pa-mork` mot `B2` minst 4,5; (d) ytan `B0` = `--hero-sloja` över `--morkt-block`; de tre texterna mot `B0` minst 4,5. Varje kvot skrivs ut med `t.diagnostic` med två decimaler, och meddelandet vid fel namnger läge, text och yta. Hexkoderna står bara i `tema.css`; testet skriver ingen färg själv utom `#ffffff` för den vita bildpunkten | var och en för sig: (1) `--hero-sloja: #022d68cc` → `#022d68bf` (ska fällas av (b) för `--text-svag-pa-mork`; ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (2) `--hero-sloja: #022d68cc` → `#014085cc` (fäller (a)); (3) `--hover-pa-mork: #ffffff14` → `#ffffff40` i `:root` (fäller (c)) |
+| (H5) | `tests/hero.test.js` | `landning.css` har fotot och inte gradienten | läser `src/web/landning.css` och `src/web/tema.css`. Blocket `.hero { … }` tas ut med `/^\.hero \{([\s\S]*?)^\}/m`, och blanktecken slås ihop till ett mellanslag. Blocket innehåller `background-color: var(--morkt-block);`, `background-image: linear-gradient(var(--hero-sloja), var(--hero-sloja)), url("bilder/hero-ekonomi.jpg");`, `background-size: cover;` och `background-position: 35% 50%;`, och innehåller inte `repeating-linear-gradient`. Ingen av de två filerna innehåller `--hero-fran`, `--hero-till` eller `--rutnat` | var och en för sig: (1) `repeating-linear-gradient(to right, var(--hover-pa-mork) 0 1px, transparent 1px 48px),` tillagd först i `background-image`; (2) `background-size: cover` → `background-size: contain`; (3) raden `linear-gradient(var(--hero-sloja), var(--hero-sloja)),` borttagen; (4) `--hero-fran: var(--bla-marin);` tillagd i `tema.css` |
+
+Varje mutation körs en i taget i en kopia av trädet under scratchpad-katalogen,
+aldrig i `src/`, och kryssraden klistras in (`LARDOMAR.md` 2026-09-07,
+felsökningsutskrifterna). Mutationerna i (H2) är byten av en binärfil och görs
+också i kopian.
+
+### Byggarens instruktioner [hero-foto]
+
+I den här ordningen:
+
+1. Kopiera de filer som ändras till scratchpad-katalogen och skriv ned deras
+   `sha256sum` innan något annat körs (`LARDOMAR.md` 2026-09-10, `git checkout
+   --`).
+2. Skala ned fotot enligt "Bilden" till `src/web/bilder/hero-ekonomi.jpg`. Skriv
+   in skriptet och dess utdata ordagrant i beslutsloggen nedan.
+3. Ändra `IMAGE_FILE_PATTERN`, `IMAGE_TYPES` och kommentaren i
+   `resolveStaticFile` i `src/server/server.js` enligt "Servern".
+4. Ändra `src/web/tema.css` enligt blocket under "CSS": ta bort `--hero-fran`
+   och `--hero-till`, lägg till `--hero-sloja`, och döp om `--rutnat` till
+   `--hover-pa-mork` både i `:root` och i det mörka läget.
+5. Ändra `src/web/landning.css`: ersätt hero-kommentaren och `.hero` med blocket
+   under "CSS", skriv om kommentaren ovanför `.knapp-kontur-ljus`, och byt
+   `var(--rutnat)` mot `var(--hover-pa-mork)` i `.knapp-kontur-ljus:hover`.
+6. Ersätt HTML-kommentaren ovanför `<section class="hero">` i
+   `src/web/landning.html` enligt "Tillgänglighet". Inget annat i filen ändras.
+7. Skriv (H1) och (H3) i `tests/server.test.js` och (H2), (H4) och (H5) i
+   `tests/hero.test.js`. Testnamnen i den nya filen börjar med punktens nummer,
+   till exempel `(H4) den ljusa texten i hero når 4,5:1 mot slöjan`. I
+   `tests/server.test.js` skrivs också kommentaren i testfallet
+   `varje bild i src/web/bilder …` om, som säger att katalogen har två bilder och
+   räknar upp `logga.png` och `logga-liten.png` — katalogen har dessutom
+   `logga-beskuren.png`, och efter det här steget `hero-ekonomi.jpg`. Skriv
+   kommentaren utan antal.
+8. Kör varje mutation i kravlistan i en kopia och klistra in kryssraderna.
+9. Kör `npm test` och klistra in raderna `ℹ tests`, `ℹ pass`, `ℹ fail` och
+   `EXIT=` från den sista körningen.
+10. Sök med `grep -rn "hero-fran\|hero-till\|rutnat\|hero-gradient" src tests` och
+    redovisa utfallet; varje träff ska vara borta. Sök med
+    `grep -rni "gradient" src/web/landning.html src/web/landning.css` och bedöm
+    varje träff; kvar får bara `linear-gradient(var(--hero-sloja), var(--hero-sloja))`
+    och kommentaren som förklarar den stå.
+11. Kontrollera `git ls-files --eol src/web/bilder/hero-ekonomi.jpg` efter
+    `git add` enligt "Bilden".
+12. Användaren såg förhandsbilder av `/` vid 1280 och 320 bildpunkters bredd och
+    godkände utsnittet och slöjan oförändrade 2026-10-13. Se posten om
+    godkännandet i beslutsloggen nedan.
+
+Steg 1–11 utfördes av byggaren 2026-10-13. Skriptet och dess utdata från steg 2
+står i beslutsloggen. Enligt byggarens redovisning gav `npm test` `tests 1158`
+och `fail 0` i tre körningar i rad, och varje mutation i (H1)–(H5) fälldes.
+
+Hittar byggaren en skillnad mellan det här avsnittet och vad koden eller
+körningen visar, lämnas paketet tillbaka till arkitekten innan det redovisas
+(`LARDOMAR.md` 2026-09-02, exempelsträngen för `formatSek`).
+
+#### Beslutslogg [hero-foto]
+
+- **Foto i hero, gradienten bort, mörk slöja ovanpå (användarens beslut
+  2026-10-13)** — beslutet är användarens och genomförs som det står. Raden för
+  hero i sektionstabellen under "Landningssidan" i del 3 är omskriven, så att
+  filen har ett svar på frågan om bakgrunden. (påverkat av lärdom: **ja**,
+  `2026-09-02 — dokumentation: "tom lista ger 0 för samtliga fyra funktioner"
+  motsägs av koden` — ett påstående som ändras söks upp i hela filen)
+- **Raden för hero i del 3 nämnde loggan till höger, och tabellen "Loggan" satte
+  `logga-beskuren.png` i hero; båda är rättade** — loggan i hero togs bort på
+  användarens begäran, enligt kommentaren ovanför `@media (min-width: 840px)` i
+  hero-blocket i `landning.css`, och `<section class="hero">` i `landning.html`
+  har inget `<img>`. `logga-beskuren.png` förekommer i ingen fil under `src`
+  eller `tests` (sökt med Grep på filnamnet). Rättningen ligger utanför
+  uppdragets ord men i de två meningar uppdraget ändå skriver om; den redovisas
+  här som en egen ändring (`LARDOMAR.md` 2026-08-23, oombedd språkändring).
+  Om `logga-beskuren.png` ska tas bort är ett eget beslut och fattas inte här.
+  (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation: oombedd språkändring
+  gjorde en korrekt mening felaktig`)
+- **Fotot som CSS-bakgrund, inte som `<img>`** — fotot är dekorativt. En
+  `<img>` med tom alt-text hade gett samma tystnad för skärmläsaren men krävt ett
+  nytt element och en positionering ovanpå texten. (påverkat av lärdom: nej)
+- **1920 x 1280 och högst 400 000 byte, nedskalat med `System.Drawing`** — inget
+  beroende. `System.Drawing` i PowerShell är redan använt i projektet för
+  palettmätningen. *Att låta originalet ligga kvar förkastades:* 4,8 MB vid varje
+  första sidvisning. *Att skriva ett nedskalningsskript i `scripts/` förkastades:*
+  det körs en gång, och projektet har ingen `scripts/`. (påverkat av lärdom:
+  **ja**, `2026-08-18 — miljö: testkommandot i ARKITEKTUR.md skrevs ned utan att
+  köras` — metoden står här, skriptet skrivs in först när det är kört)
+- **Servern får `jpg`, inte `jpeg`** — en ändelse per typ håller mönstret
+  avgörbart, och sonden `/bilder/hero-ekonomi.jpeg` kräver `404`. `svg` står
+  kvar i mönstret och tabellen utan fil; det beslutet (kommentaren i
+  `tests/server.test.js` om `IMAGE_TYPES.svg`) ligger utanför den här delen. Med
+  en `jpg` i katalogen går mutationen `IMAGE_TYPES[match[1]]` →
+  `IMAGE_TYPES.png` att fälla igen, och den står därför i (H1). (påverkat av
+  lärdom: **ja**, `2026-09-04 — test: två konstruktioner i storage.js körs aldrig
+  och överlever mutation`)
+- **Slöjan är `--bla-marin` med genomskinligheten `cc` (0,8)** — marinblått är
+  sidans mörka ton, och sidfoten och sidomenyn har den. Genomskinligheten är det
+  minsta värde i steg om ungefär 0,05 som gav minst 4,5:1 för
+  `--text-svag-pa-mork` mot slöjan över rent vitt. Valet gjordes med en
+  handräkning. Byggarens körning av (H4) 2026-10-13 gav sedan 5,07:1 för det
+  paret, och mutation (1) i (H4), `cc` → `bf`, gav 4,32:1 och fälldes. Alla
+  kvoter står under "Kvoterna, körda". *Att mäta fotots ljusaste bildpunkt förkastades:* rent vitt är en övre
+  gräns för varje foto, och kravet håller då också om fotot byts. *Svart slöja
+  förkastades:* den gör fotot grått, och marinblått knyter hero till resten av
+  sidan. (påverkat av lärdom: **ja**, `2026-08-23 — dokumentation:
+  gränsvärdespåstående om flyttal skrevs ned utan att köras` och `2026-09-14 —
+  dokumentation: fem antal skrevs in i ARKITEKTUR.md utan kommandot`)
+- **Slöjan ritas som en `linear-gradient` med två lika stopp** — CSS saknar en
+  egen syntax för en enfärgad yta som bildlager. *Ett `::before`-element
+  förkastades:* det kräver `position` och `z-index` på texten. *En inset
+  `box-shadow` förkastades:* den är svårläst och beror på ett godtyckligt stort
+  mått. (H5) kräver exakt den här formen och förbjuder `repeating-linear-gradient`,
+  så att gradienten inte kan komma tillbaka under samma ord. (påverkat av lärdom:
+  nej)
+- **Reservfärgen är `--morkt-block`, ingen ny token** — se "CSS". Under slöjan
+  ger den samma ton som slöjan, så sektionen ser likadan ut med och utan foto
+  bortsett från motivet. (påverkat av lärdom: **ja**, `2026-09-02 — datamodell:
+  cost.js har en egen, svagare kopia av "är detta ett objekt"` — ett begrepp som
+  redan har en ägare får ingen andra kopia)
+- **`--hero-fran` och `--hero-till` tas bort, och `--rutnat` döps om till
+  `--hover-pa-mork`** — de två första får inga användare. `--rutnat`:s enda
+  kvarvarande användare är hovringen, och namnet och kommentaren hade blivit
+  osanna. (H5) kräver att de tre gamla namnen inte finns. (påverkat av lärdom:
+  **ja**, `2026-09-07 — dokumentation: en byggarinstruktion i beslutsloggen pekar
+  på writeQueue, som inte längre finns` — ett namnbyte söks i hela trädet)
+- **Kontrastkravet räknas i ett test och inte i en kommentar** — (H4) läser
+  `tema.css`, så ett senare byte av en textfärg eller av slöjan fälls utan att
+  någon räknar om för hand. Båda lägena räknas, eftersom det mörka läget byter
+  `--hover-pa-mork`. (påverkat av lärdom: **ja**, `2026-09-02 — dokumentation:
+  "exakt heltalsaritmetik utan flyttal" skrevs in i koden utan att köras`)
+- **`background-position: 35% 50%` godkändes av användaren 2026-10-13** —
+  utsnittet är en bedömning av motivet. Ingen agent kan öppna en webbläsare, och därför finns
+  inget test av utseendet; (H5) kräver bara värdet. (påverkat av lärdom: **ja**,
+  `2026-09-07 — gränssnitt: withoutField-grenen i app.js kan inget serversvar nå`
+  — det ingen agent kan pröva skrivs ut som en manuell kontroll)
+- **Attribution i en CSS-kommentar och en rad i README, ingen synlig text** —
+  se "Licens och attribution". (påverkat av lärdom: **ja**, `2026-09-23 —
+  dokumentation: paket 8:s nya beloppstext gjorde README.md:s beskrivning av
+  samma fel falsk` — README:s rad skrivs av dokumentatorn)
+- **Demon och publiceringen ändras inte** — se "Demon och publiceringen".
+  (påverkat av lärdom: nej)
+- **Nedskalningen kördes med kvalitet 75 (2026-10-13)** — byggaren körde
+  arkitektens utkast oförändrat i PowerShell på den här maskinen:
+
+  ```powershell
+  Add-Type -AssemblyName System.Drawing
+  $in  = 'C:\Users\qaium\OneDrive\Desktop\pexels-n-voitkevich-7173046.jpg'
+  $out = 'C:\Users\qaium\source\repos\hemochekonomi\src\web\bilder\hero-ekonomi.jpg'
+  $q = [long]75
+  $src = [System.Drawing.Image]::FromFile($in)
+  $dst = New-Object System.Drawing.Bitmap 1920, 1280
+  $g = [System.Drawing.Graphics]::FromImage($dst)
+  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+  $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+  $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+  $attr = New-Object System.Drawing.Imaging.ImageAttributes
+  $attr.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
+  $g.DrawImage($src, (New-Object System.Drawing.Rectangle 0, 0, 1920, 1280), 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $attr)
+  $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+  $p = New-Object System.Drawing.Imaging.EncoderParameters 1
+  $p.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality, $q)
+  $dst.Save($out, $codec, $p)
+  "$($dst.Width) x $($dst.Height), kvalitet $q"
+  $g.Dispose(); $attr.Dispose(); $dst.Dispose(); $src.Dispose()
+  (Get-Item $out).Length
+  ```
+
+  Utdatan var:
+
+  ```
+  1920 x 1280, kvalitet 75
+  263236
+  ```
+
+  Kvalitet `75` räckte. Filen blev 263 236 byte, under gränsen på 400 000, och
+  ingen sänkning behövdes. Originalets sha256 var `1a27b746…851363` både före och
+  efter körningen, så originalet ändrades inte. Den färdiga filens sha256 var
+  `60bce7df…eb94b8e`. Båda hashvärdena återges förkortade så som byggaren
+  redovisade dem. (påverkat av lärdom: **ja**, `2026-08-18 — miljö:
+  testkommandot i ARKITEKTUR.md skrevs ned utan att köras` — skriptet stod inte
+  här förrän det var kört)
+- **Utsnittet och slöjan godkändes av användaren oförändrade (användarens beslut
+  2026-10-13)** — användaren såg förhandsbilder vid 1280 och 320 bildpunkters
+  bredd och godkände `background-position: 35% 50%` och `--hero-sloja:
+  #022d68cc` som de är. Steg 12 i byggarens instruktioner är därmed avslutat.
+  (påverkat av lärdom: nej)

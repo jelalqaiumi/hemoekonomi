@@ -4061,3 +4061,99 @@ eller skriver en annan stderr är fortfarande ett hårt fel. Felet ligger utanf�
 den rättelse där det upptäcktes och rättas som ett eget paket. Tills dess räknas
 en röd körning med just det här meddelandet som ogiltig och tas om, och tre
 gröna körningar i rad krävs, enligt posten 2026-09-07 om `fail 1`.
+
+### 2026-10-13 — test: sonden /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas, inte för att mönstret avvisar ändelsen
+**Vad gick fel:** Beslutsloggen i `ARKITEKTUR.md` del 6 motiverar "Servern får
+`jpg`, inte `jpeg`" med att "sonden `/bilder/hero-ekonomi.jpeg` kräver `404`",
+men sonden kan inte fälla den mutation beslutet handlar om: `IMAGE_FILE_PATTERN`
+i `src/server/server.js` ändrat från `(png|svg|jpg)$/` till
+`(png|svg|jpg|jpeg)$/` ger med `tests/hero.test.js` och `tests/server.test.js`
+`ℹ fail 0` och `EXIT=0`, eftersom någon fil `hero-ekonomi.jpeg` inte finns och
+servern därför svarar `404` oavsett mönstret. Sonden `.JPG` bär däremot sitt
+skydd: flaggan `/i` på samma mönster ger `EXIT=1` och
+`✖ sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp`,
+eftersom NTFS hittar `hero-ekonomi.jpg` under det versala namnet.
+**Varför:** Sonden skrevs efter det utfall den förväntas ge (`404`) och inte
+efter den kodväg som ska ge det; en `404` kan komma både från mönstret och från
+att filen saknas, och bara det första är det beslutet kräver. Mutationslistan i
+(H1) räknar inte upp "lägg till `jpeg` i mönstret", så ingen körning visade att
+sonden inte kan skilja de två orsakerna åt. Samma form som posten 2026-09-07
+(`app.js` hämtas över HTTP och jämförs byte mot byte, så vilket innehåll som
+helst passerar).
+**Regel framåt:** En sond som ska bevisa att ett mönster avvisar ett namn ska
+gälla ett namn vars fil **finns** på disk under en form filsystemet hittar, så
+att `404` bara kan komma från mönstret — eller kombineras med ett direkt test av
+mönstret (`IMAGE_FILE_PATTERN.test('hero-ekonomi.jpeg') === false`). Varje
+motivering i beslutsloggen av formen "sonden X kräver Y" ska ha en mutation i
+kravlistan som tar bort det skydd sonden påstås ge, körd med `EXIT=1`.
+
+### 2026-10-13 — test: (H3):s krav på exakt en url() i landning.css ser bara dubbelfnuttade adresser
+**Vad gick fel:** (H3) i `tests/server.test.js` tar ut adresserna i
+`src/web/landning.css` med `/url\("([^"]+)"\)/g` och kräver exakt en träff, men
+CSS tillåter också `url('…')` och `url(…)` utan citattecken. Körd i en kopia:
+raden `background-image: url(bilder/finns-inte.png);` tillagd i `.hero-inre` ger
+`ℹ fail 0` och `EXIT=0` — en andra bildadress till en fil som inte finns passerar
+alltså det krav som ska fånga en andra adress. Mutationen i kravlistan,
+`url("bilder/logga.png")`, fälls bara därför att den råkar vara skriven med samma
+citattecken som mönstret.
+**Varför:** Spärren läser källkod som text och prövades bara med den stavning den
+själv är skriven för — samma fel som posterna 2026-09-07 (`saveEntries as X`),
+2026-09-12 (paketmarkörerna) och 2026-09-22 (WeakSet-spärren och `t.test`).
+**Regel framåt:** Ett mönster som plockar ut `url(...)` ur CSS ska täcka alla tre
+stavningarna: `/url\(\s*(["']?)([^"')]+)\1\s*\)/g`. Mutationslistan för en
+textspärr ska ha en rad per stavning språket tillåter, och varje rad ska ha körts
+med `EXIT=1`.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-13 — tema: --gron-djup blev en token utan användare när --hero-till togs bort
+**Vad gick fel:** `ARKITEKTUR.md` del 6 tar bort `--hero-fran` och `--hero-till`
+med skälet "en token utan användare är en osann uppgift om vad temat bär", men
+`--hero-till` var den enda användaren av `--gron-djup`: `git grep -n
+"var(--gron-djup)" HEAD -- src` gav en träff (`--hero-till` i `src/web/tema.css`)
+och samma sökning i arbetsträdet ger noll, medan `--gron-djup: #025b38;` står kvar
+på rad 19 och i palettabellen i `ARKITEKTUR.md`. Den gamla HTML-kommentaren i
+hero ("8,22:1 mot --gron-djup") försvann i samma ändring.
+**Varför:** Principen tillämpades på de tokener uppdraget namngav men inte ett
+led längre ner: ingen sökte efter vilka tokener som förlorade sin sista användare
+när `--hero-till` försvann. Samma grundorsak som posten 2026-09-07 om
+`saveEntries`, som blev en export utan anropare när `updateEntries` tog över.
+**Regel framåt:** När en token, export eller variabel tas bort ska varje token den
+refererar till (`var(--x)` i dess värde) sökas med `grep -rn "var(--x)" src` efter
+borttagningen. Ger sökningen noll ska den antingen tas bort i samma ändring eller
+få en rad i `ARKITEKTUR.md` som säger att den står kvar och varför — för en
+palettoken uppmätt ur loggan är "den hör till paletten" ett godtagbart skäl, men
+det ska stå skrivet.
+
+### 2026-10-13 — dokumentation: steg 10 kräver noll träffar på ett mönster som (H5) måste innehålla
+**Vad gick fel:** Byggarens instruktion 10 i del 6 säger att
+`grep -rn "hero-fran\|hero-till\|rutnat\|hero-gradient" src tests` ska köras och
+att "varje träff ska vara borta", men (H5) i samma kravlista kräver att
+`tests/hero.test.js` förbjuder just de namnen, så kommandot ger alltid
+`tests/hero.test.js:223:    for (const name of ['--hero-fran', '--hero-till', '--rutnat']) {`
+och `EXIT=0`. Instruktionen går inte att uppfylla bokstavligt.
+**Varför:** Sökningen skrevs innan testet som förbjuder namnen fanns, och ingen
+körde den mot den färdiga kravlistan. Samma fel som posten 2026-09-10
+(sökmönstret skrevs in i filen det söker i).
+**Regel framåt:** En sökning som ska ge noll träffar ska utesluta den fil som
+äger förbudet, och uteslutningen skrivs ut i kommandot (här
+`grep -rn … src tests | grep -v "^tests/hero.test.js:"`). Kör varje sådant
+kommando efter att kravlistan är färdigskriven och klistra in utdatan.
+
+### 2026-10-13 — test: kommentaren om bildkatalogen säger att alla png-loggor hämtas av sidorna
+**Vad gick fel:** Den omskrivna kommentaren i testfallet `varje bild i
+src/web/bilder levereras under /bilder/ med sitt eget innehåll` i
+`tests/server.test.js` säger "Katalogen har loggorna i png, som headern,
+sidfoten, appens sidomeny och faviconen hämtar", men av de tre png-filerna hämtas
+bara `logga-liten.png`: `grep -rn "logga\.png\|logga-beskuren" src/web --include=*.html --include=*.js`
+ger ingen `src`- eller `href`-träff för `logga.png` eller `logga-beskuren.png`.
+`ARKITEKTUR.md` säger i samma ändring rätt sak om `logga-beskuren.png` ("Ingen
+sida").
+**Varför:** Kommentaren skrevs om för att stryka ett antal (instruktion 7), och
+den nya meningen skrevs ur minnet av vad loggan används till i stället för ur en
+sökning — samma form som posten 2026-09-10 (kommentaren i `app.js` räknar upp två
+av filens fem strängar).
+**Regel framåt:** En kommentar som säger vilka filer som hämtar en resurs ska
+skrivas efter en sökning på resursens namn i `src/web`, och kommentaren ska bara
+räkna upp de filer sökningen visar. Skriv om till exempel: "Katalogen har
+loggorna i png — `logga-liten.png` hämtas av headern, sidfoten, appens sidomeny
+och faviconen — och hero-fotot `hero-ekonomi.jpg`, som `landning.css` hämtar."

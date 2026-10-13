@@ -45,6 +45,7 @@ const JS_TYPE = 'text/javascript; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
 const PNG_TYPE = 'image/png';
 const SVG_TYPE = 'image/svg+xml';
+const JPEG_TYPE = 'image/jpeg';
 
 // http.request och inte fetch: både fetch och new URL() normaliserar bort
 // punktsegment och avkodar delar av sökvägen innan anropet skickas, så en
@@ -205,14 +206,15 @@ test('/ ger landningssidan och /app ger appen, och de är inte samma fil', async
 
 test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
   const { port } = await useServer(t);
-  // Bilderna är båda PNG sedan symbol.svg och symbol-mork.svg togs bort: loggan
-  // som visas är användarens egen, och den ritade symbolen finns inte längre.
-  // Den mutation den här kommentaren tidigare åberopade,
-  //   type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png,
-  // går därför inte längre att upptäcka: det krävs en fil med en annan ändelse
-  // än png under src/web/bilder, och det finns ingen. Körd i en kopia efter
-  // borttagningen: mutationen ger ℹ fail 0 och EXIT=0 på hela sviten.
-  // Raden IMAGE_TYPES.svg i src/server/server.js har alltså ingen fil och
+  // Loggorna är PNG och hero-fotot är JPEG. Med en fil med en annan ändelse
+  // än png under src/web/bilder går mutationen
+  //   type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png
+  // att upptäcka igen. Körd i en kopia av trädet under scratchpad, med
+  // tests/hero.test.js och tests/server.test.js: EXIT=1, ℹ fail 3 och
+  //   ✖ bilderna under /bilder/ ger 200 med sin egen Content-Type
+  //   ✖ landning.css pekar ut hero-fotot, och adressen ger image/jpeg
+  //   ✖ varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll
+  // Raden IMAGE_TYPES.svg i src/server/server.js har fortfarande ingen fil och
   // därmed inget test — det är arkitektens beslut om svg ska stå kvar i
   // IMAGE_FILE_PATTERN och i tabellen eller tas bort, och mönstret är en
   // säkerhetskontroll som inte ändras här.
@@ -223,23 +225,45 @@ test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
     path.join(getImageDir(), 'logga-liten.png'),
     PNG_TYPE
   );
+  await assertFileServed(
+    port,
+    '/bilder/hero-ekonomi.jpg',
+    path.join(getImageDir(), 'hero-ekonomi.jpg'),
+    JPEG_TYPE
+  );
+});
+
+test('landning.css pekar ut hero-fotot, och adressen ger image/jpeg', async (t) => {
+  // (H3). Adressen i stilmallen är relativ och löses mot stilmallens egen
+  // adress, /landning.css, precis som webbläsaren gör.
+  const css = await fs.readFile(path.join(getWebDir(), 'landning.css'), 'utf8');
+  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1]);
+  assert.deepEqual(urls, ['bilder/hero-ekonomi.jpg'], `landning.css har url(): ${urls.join(', ')}`);
+  const pathname = new URL(urls[0], 'http://127.0.0.1/landning.css').pathname;
+  assert.equal(pathname, '/bilder/hero-ekonomi.jpg');
+  const { port } = await useServer(t);
+  await assertFileServed(port, pathname, path.join(getImageDir(), 'hero-ekonomi.jpg'), JPEG_TYPE);
 });
 
 test('varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll', async (t) => {
   const imageDir = getImageDir();
+  const typeByExtension = { png: PNG_TYPE, svg: SVG_TYPE, jpg: JPEG_TYPE };
   const names = (await fs.readdir(imageDir))
-    .filter((name) => name.endsWith('.png') || name.endsWith('.svg'))
+    .filter((name) => Object.hasOwn(typeByExtension, path.extname(name).slice(1)))
     .sort();
   // Listan läses ur katalogen så att en ny bild kommer med utan att den här
-  // filen ändras; antalet asserteras så att en tom katalog inte tyst gör
-  // testet innehållslöst. Samma form som testet för /core/ ovan. Talet är två
-  // sedan de två ritade symbolerna togs bort: kvar är logga.png, som visas stor
-  // i hero, och logga-liten.png, som headern, sidfoten, appens sidomeny och
-  // faviconen hämtar.
-  assert.ok(names.length >= 2, `förväntade minst två bilder i ${imageDir}, fick ${names.join(', ')}`);
+  // filen ändras. Samma form som testet för /core/ ovan. Katalogen har
+  // loggorna i png, som headern, sidfoten, appens sidomeny och faviconen
+  // hämtar, och hero-fotot hero-ekonomi.jpg, som landning.css hämtar. Att
+  // fotot finns asserteras med namn, så att en tom eller ofullständig katalog
+  // inte tyst gör testet innehållslöst.
+  assert.ok(
+    names.includes('hero-ekonomi.jpg'),
+    `förväntade hero-ekonomi.jpg i ${imageDir}, fick ${names.join(', ')}`
+  );
   const { port } = await useServer(t);
   for (const name of names) {
-    const type = name.endsWith('.png') ? PNG_TYPE : SVG_TYPE;
+    const type = typeByExtension[path.extname(name).slice(1)];
     await assertFileServed(port, `/bilder/${name}`, path.join(imageDir, name), type);
   }
 });
@@ -276,6 +300,8 @@ test('sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 ut
     '/bilder/logga.txt',
     '/bilder/logga.js',
     '/bilder/finns-inte.png',
+    '/bilder/hero-ekonomi.JPG',
+    '/bilder/hero-ekonomi.jpeg',
     '/bilder/',
     '/bilder'
   ]) {

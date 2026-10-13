@@ -168,7 +168,7 @@ a:hover {
   color: var(--knapp-kontur-text);
 }
 
-/* Konturknapp mot den mörka hero-gradienten. */
+/* Konturknapp mot den mörka slöjan i hero. */
 .knapp-kontur-ljus {
   background: transparent;
   border-color: var(--text-pa-mork);
@@ -176,7 +176,7 @@ a:hover {
 }
 
 .knapp-kontur-ljus:hover {
-  background: var(--rutnat);
+  background: var(--hover-pa-mork);
   color: var(--text-pa-mork);
 }
 
@@ -467,16 +467,24 @@ a:hover {
 }
 
 /* ============================================================= 2. hero
-   Gradient från --bla-marin till --gron-djup med ett svagt rutnät ovanpå.
-   Rutnätet ritas med två repeating-linear-gradient och kräver därför ingen
-   bildfil. */
+   Foto som bakgrund med en mörk slöja ovanpå (användarens beslut 2026-10-13).
+   Fotot: N. Voitkevich, Pexels. Det är dekorativt och står därför här och inte
+   som <img> med alt-text i landning.html.
+   Slöjan är det övre bildlagret: en linear-gradient med två lika stopp är en
+   enfärgad yta, inte en övergång. Dess färg och genomskinlighet är
+   --hero-sloja i tema.css, och tests/hero.test.js (H4) kräver att den ljusa
+   texten når 4,5:1 mot slöjan också ovanpå en helt vit bildpunkt.
+   --morkt-block syns bara om fotot inte laddas; under slöjan blir den samma
+   marinblå ton som slöjan själv. */
 
 .hero {
-  background-color: var(--hero-fran);
+  background-color: var(--morkt-block);
   background-image:
-    repeating-linear-gradient(to right, var(--rutnat) 0 1px, transparent 1px 48px),
-    repeating-linear-gradient(to bottom, var(--rutnat) 0 1px, transparent 1px 48px),
-    linear-gradient(140deg, var(--hero-fran) 0%, var(--hero-till) 100%);
+    linear-gradient(var(--hero-sloja), var(--hero-sloja)),
+    url("bilder/hero-ekonomi.jpg");
+  background-size: cover;
+  background-position: 35% 50%;
+  background-repeat: no-repeat;
   color: var(--text-pa-mork);
 }
 

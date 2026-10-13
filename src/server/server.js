@@ -93,10 +93,11 @@ const DEMO_TYPES = Object.freeze(Object.assign(Object.create(null), {
 // Ändelsen fångas av gruppen och avgör innehållstypen, så en fil kan aldrig
 // serveras med en typ som inte hör till dess namn.
 const IMAGE_PREFIX = '/bilder/';
-const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg)$/;
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg|jpg)$/;
 const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
   png: 'image/png',
-  svg: 'image/svg+xml'
+  svg: 'image/svg+xml',
+  jpg: 'image/jpeg'
 }));
 
 function sendNotFound(res) {
@@ -163,7 +164,7 @@ function resolveStaticFile(pathname) {
     if (match === null) {
       return null;
     }
-    // match[1] är 'png' eller 'svg' och ingenting annat: mönstret har redan
+    // match[1] är 'png', 'svg' eller 'jpg' och ingenting annat: mönstret har redan
     // avgjort det. Uppslaget kan alltså inte ge undefined, och tabellen har
     // nollprototyp av samma skäl som STATIC_ROUTES.
     return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPES[match[1]] };
