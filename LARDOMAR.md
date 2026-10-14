@@ -4157,3 +4157,200 @@ skrivas efter en sökning på resursens namn i `src/web`, och kommentaren ska ba
 räkna upp de filer sökningen visar. Skriv om till exempel: "Katalogen har
 loggorna i png — `logga-liten.png` hämtas av headern, sidfoten, appens sidomeny
 och faviconen — och hero-fotot `hero-ekonomi.jpg`, som `landning.css` hämtar."
+
+### 2026-10-13 — test: (H12) och (H13) kräver att en regel innehåller en deklaration, men inte att den vinner kaskaden
+**Vad gick fel:** Testet `(H12) landning.css har bilden utan slöja, och texten kan
+inte hamna på bilden` och testet (H13) passerar trots att texten hamnar på bilden
+eller vågen på bilden. Fyra mutationer kördes, var och en i en egen kopia under
+scratchpad, med `tests/hero.test.js`, `tests/server.test.js`, `tests/demo.test.js`
+och `tests/priser.test.js`. Alla fyra gav `ℹ tests 96`, `ℹ fail 0` och `EXIT=0`:
+(G-5) raden `background-size: cover;` tillagd sist i det översta `.hero`, så att
+bilden täcker hela sektionen och texten står på den på smal skärm; (G-2) regeln
+`.hero-text { max-width: 46rem; }` tillagd efter `@media (min-width: 960px)`, så
+att texten vid 960 bildpunkter blir 736 bred och når in i bildens halva;
+(G-1) regeln `.hero { padding-bottom: 56.25%; }` tillagd efter `.hero-vag-yta`,
+så att remsan försvinner och vågen ligger på bildens nederkant; (G-3) raden
+`padding-bottom: 0;` tillagd sist i `.hero` i `@media (min-width: 960px)`.
+**Varför:** Kraven är skrivna som `body.includes(deklaration)` och som
+`bodies.some(...)`. Båda är sanna så länge deklarationen står någonstans, också när
+en senare deklaration eller regel tar över. `HERO_SELECTORS` jämförs som en mängd
+(`new Set`), så en andra regel med en selektor som redan finns syns inte.
+`.hero-vag` skyddas mot just detta med `vagRules.length === 1`, men samma kontroll
+gjordes inte för `.hero` och `.hero-text`, som bär layoutens hela bevis. Detta är
+samma fel som posterna 2026-09-07 (`saveEntries as X`), 2026-09-22 (WeakSet och
+`t.test`) och 2026-10-13 (`url()` med en stavning): en textspärr som bara prövats
+med de stavningar den själv skrevs för.
+**Regel framåt:** En spärr som läser CSS som text ska kräva att den bindande
+deklarationen är den som gäller. Varje egenskap ska förekomma exakt en gång i
+varje regelkropp som prövas, och antalet regler per selektor ska jämföras som en
+lista med antal (här `.hero` 2, `.hero-text` 2, `.hero-inre` 2, `.hero h1` 2) och
+inte som en mängd. Mutationslistan för en sådan spärr ska alltid ha tre rader per
+skyddad deklaration: deklarationen ändrad, en andra deklaration av samma egenskap
+sist i samma regel, och en ny regel med samma selektor sist i filen. Varje rad ska
+ha körts med `EXIT=1`.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-13 — dokumentation: del 7 beskriver fortfarande den tillfälliga bilden i presens efter bytet till den slutliga
+**Vad gick fel:** `hero.png` är den slutliga bilden: sha256 `de69bcc5…daba9b` och
+279 561 byte, identisk med `Utgiftskollen – 1920×1080@1x.png` på skrivbordet
+(kontrollerat med `cmp`). Ändå står flera meningar i `ARKITEKTUR.md` del 7 kvar i
+presens om den tillfälliga bilden. Rad 13143 under "Bilden" säger "Längden ska vara
+256 547 byte", medan steg 2 i "Byggarens instruktioner [hero-våg]" kräver 279 561.
+Den bindande texten har alltså två svar på samma fråga. Rad 13630–13632 säger att
+"den tillfälliga bilden visar dessutom fel namn", men telefonen visar inget namn.
+Rad 13690 säger att kontrollen "görs för den tillfälliga bilden nu". Rad 13658
+pekar på README "i dag rad 590–591", men raden är struken. Rad 14182 inleds med
+`**Kvar efter steg 13, en order till byggaren:**`, fast ordern är utförd: den nya
+kommentaren står i `tests/server.test.js` rad 255–264. `tests/hero.test.js` rad 22
+säger fortfarande "bilden är tillfällig".
+**Varför:** Bytet till den slutliga bilden fördes in som en ny post i
+beslutsloggen. Avsnitten som skrevs när bilden var tillfällig lästes inte om. Det
+är samma grundorsak som posterna 2026-09-04 (`Kvar i paket 3`) och 2026-09-07
+("I dagens ..."): en mening i presens blir falsk när det den beskriver har hänt.
+**Regel framåt:** När ett användarbeslut inträffar som en tidigare del väntade på
+(här "när den slutliga bilden finns"), kör
+`grep -n "tillfällig\|slutliga\|i dag rad\|Kvar efter\|ska vara [0-9]" ARKITEKTUR.md`
+över hela delen och samma sökning i de testfiler delen styr. Varje träff skrivs om
+i dåtid eller stryks, och utfallet före och efter klistras in. En rad som börjar
+med `**Kvar` får inte stå kvar när ordern är utförd. Den skrivs om till
+`**Utfört 2026-…:**` med det som gjordes.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-13 — dokumentation: mutation E-10 är skriven utan ankare, och läst bokstavligt träffar den fel svg
+**Vad gick fel:** (H13):s mutationskolumn i `ARKITEKTUR.md` anger
+"(E-10) i `landning.html`: `focusable="false"` borttaget ur vågens `<svg>`", men
+strängen står nio gånger i filen (`grep -c 'focusable="false"' src/web/landning.html`
+ger `9`). Mutationen läst som "ta bort `focusable="false"`" träffar den första
+förekomsten, som ligger i menyikonen på rad 60. Den mutationen gav `ℹ fail 0` och
+`EXIT=0` (granskarens G-4). Byggarens skript ankrade rätt, med strängen
+`focusable="false">` följd av radbrytningen och `<path class="hero-vag-yta"`, och
+den mutationen fälls. Skyddet finns alltså, men dokumentet beskriver det inte så
+att någon kan upprepa det.
+**Varför:** (H13) mutation (4) fick ett ankare när arkitekten såg att
+`aria-hidden="true" ` står nio gånger. E-10 fördes in i tabellen från byggarens
+redovisning och prövades inte på samma sätt. Kontrollen `grep -c "<uttrycket före
+pilen>"` kräver bara minst en träff och ser därför inte att en sträng är tvetydig.
+**Regel framåt:** Kontrollen av en mutationsrad kräver exakt en träff, inte minst
+en. Ger `grep -c -F` mer än `1`, skrivs ankaret ut i tabellen med den omgivande
+texten som gör strängen unik. Skriptet som kör mutationen ska använda samma
+ankare och vägra köra om antalet träffar inte är `1`.
+
+### 2026-10-13 — dokumentation: förhandsbilden sägs visa ett exakt möte "som räkningen ovan säger", men räkningen säger en bildpunkt
+**Vad gick fel:** `ARKITEKTUR.md` rad 13804–13807 säger att bildens nederkant och
+vågens överkant vid 375 bildpunkter båda låg vid 691,99, "alltså ett exakt möte
+utan överlapp, som räkningen ovan säger". Räkningen ovan säger något annat, på rad
+13789–13791: vågen har `bottom: -1px` och höjden `--vag-hojd`, "så den börjar en
+bildpunkt under bildens nederkant". Steg 10 i byggarens instruktioner ritar vågen
+från `headerH + sektionH - vag` utan `-1px`, så skissen räknade inte med den
+bildpunkten.
+**Varför:** Skissens utdata fördes in som en bekräftelse av räkningen utan att de
+två jämfördes tal för tal.
+**Regel framåt:** En mening som säger att en körning "stämmer med räkningen" ska
+skriva ut båda talen, och räkningens tal ska tas ur samma regler som körningen
+använde. Skiljer sig reglerna (här `bottom: -1px`), skriv ut skillnaden och vad den
+betyder i stället för att kalla utfallet ett exakt möte.
+
+### 2026-10-13 — dokumentation: mätningen av den slutliga bilden står i beslutsloggen utan utdata, och "33 stycken" utan kommando
+**Vad gick fel:** Posten "Mätningen av den slutliga hero.png kördes" återger
+mätningen i löptext: "den största kanalavvikelsen där var högst 7" och
+"Kontrasterna blev desamma". Ingen rad ur `matning.mjs` eller `kant.mjs` är
+inklistrad, medan posten om den tillfälliga bilden har hela utdatan. Steg 1–11 i
+"Byggarens instruktioner [hero-våg]" säger "Alla mutationer i (H12) och (H13), 33
+stycken" utan det kommando som räknar dem. Sakligt stämmer båda. Granskarens
+körning av `matning.mjs` gav `längd: 279561 byte`, `vanligaste färgen (vänstra
+området): a3c6f2, 828672 av 829440 bildpunkter, 99.91 %` och samma fem
+kontrastrader som den tillfälliga bilden. `kant.mjs` gav `vänsterkanten (kolumn 0):
+1080 punkter, 0 avviker mer än 8, största avvikelse 7`, med `EXIT=0`. Tabellen har
+9 kvarvarande rader i (H12) och 24 i (H13).
+**Varför:** Den andra mätningen sågs som en upprepning av den första och
+sammanfattades. Lärdomen 2026-09-14 kräver ändå att ett mätvärde står med sitt
+kommando och sin utdata, så att nästa läsare kan kontrollera det.
+**Regel framåt:** Varje mätning som avgör ett stoppvillkor ska klistras in med
+utdata i beslutsloggen, också när den upprepar en tidigare. Det räcker med de
+rader stoppvillkoren läses ur, ordagrant. Ett antal mutationer skrivs med det
+kommando som räknar dem, till exempel antalet `.log`-filer i loggkatalogen, eller
+utan siffra.
+
+### 2026-10-14 — test: kaskadspärrens led 3 och (H9) går förbi med en annan stavning av samma sak
+**Vad gick fel:** Återfall av posterna 2026-10-13 ("(H3):s krav på exakt en
+url() ser bara dubbelfnuttade adresser" och "(H12) och (H13) kräver att en regel
+innehåller en deklaration, men inte att den vinner kaskaden"). Led 3 i
+"Kaskadspärren [hero-kaskad]" i `ARKITEKTUR.md` lovar "Inga vägar runt listan i
+de filer som laddas" och bygger på premissen att "`landning.html` laddar bara
+`/tema.css` och `/landning.css`". (H12)(j) i `tests/hero.test.js` rad 476–484
+prövar det med `includes('!important')`, `includes('@import')`,
+`includes('<style')` och `includes('style=')`, alltså gemener och utan
+mellanslag. Mutationerna kördes en i taget i en kopia av trädet under
+scratchpad, med `node --test tests/hero.test.js tests/server.test.js
+tests/demo.test.js tests/priser.test.js`. Alla sex gav `fail 0` och `EXIT=0`:
+(1) `<div class="hero-text">` → `<div class="hero-text" STYLE="max-width: 46rem">`;
+(2) samma med `style ="max-width: 46rem"`; (3) raden
+`<link rel="stylesheet" href="data:text/css,.hero%7Bpadding-bottom:0%7D" />`
+efter länken till `/landning.css`; (4) `@IMPORT "extra.css";` först i
+`landning.css`; (5) `section { overflow: hidden ! important; }` sist i
+`landning.css`; (6) `.fordel-x { background-image: URL(bilder/finns-inte.png); }`
+sist i `landning.css`, som (H9) i `tests/server.test.js` rad 222–224 släpper
+igenom trots kommentaren "Mönstret ser alla tre stavningarna av adressen".
+HTML-attribut, at-regelnamn, `!important` och CSS-funktionsnamn är okänsliga för
+skiftläge, och `!` och `important` får skiljas av blanktecken. (1), (2) och (3)
+gör alltså det led 3 ska omöjliggöra: en stil i `landning.html` som skriver över
+`HERO_RULES`. Ingen av dem står under "Det spärren inte fångar", och premissen
+om de två stilmallarna prövas inte av något test. (`<STYLE>` i versaler fångas
+av en slump, eftersom (P20) ser elementets innehåll som text.) Mutationerna
+(K-15), (K-16) och (K-17) är skrivna med samma stavning som spärren och fälls
+därför.
+**Varför:** Spärren och mutationerna som ska pröva den skrevs i samma stavning,
+så mutationerna kunde bara visa att spärren fungerar för det fall den redan var
+skriven för. Rättningen av lärdomen om `url()` lade till citattecknens tre
+stavningar men inte skiftläget, och led 3 räknade upp sina förbjudna konstruktioner
+som strängar i stället för som den roll de har ("allt som kan lägga till eller
+väga upp en stil i de tre filerna"). Det är samma fel som posterna 2026-09-07
+(`saveEntries as X`), 2026-09-12 (paketmarkörerna), 2026-09-22 (WeakSet och
+`t.test`) och 2026-10-13 (`url()` med en stavning).
+**Regel framåt:** En textspärr mot CSS eller HTML jämför efter `toLowerCase()`
+och med blanktecken tillåtna där språket tillåter dem: i led 3 betyder det
+`/!\s*important/i`, `/@import\b/i`, `/<style\b/i` och `/\sstyle\s*=/i`, och i
+(H9) flaggan `i` på `url(`-mönstret. Premissen om vilka stilmallar sidan laddar
+ska vara ett eget krav: listan över `href` i varje `<link` vars `rel` innehåller
+`stylesheet`, efter att HTML-kommentarerna tagits bort, ska vara exakt
+`['/tema.css', '/landning.css']`. Mutationstabellen för en textspärr ska ha minst
+en rad per stavning som skiljer sig i skiftläge eller blanktecken från spärrens
+egen, och mutationerna (1)–(6) ovan ska stå i tabellen och ge `EXIT=1`. Skriv
+kravet i `ARKITEKTUR.md` först.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — test: kommentarborttagningen före kaskadspärren äter en regel eller ett attribut som står mellan två kommentarmarkörer i strängar
+**Vad gick fel:** Återfall av posten 2026-10-14 ("kaskadspärrens led 3 och (H9)
+går förbi med en annan stavning av samma sak"). Rättningen fäller nu granskarens
+sex mutationer och alla rader (K-1) till (K-39) i urvalet, men två nya stavningar
+gav `fail 0` och `EXIT=0`. Båda kördes i en kopia under scratchpad med
+`node --test tests/hero.test.js tests/server.test.js tests/demo.test.js tests/priser.test.js`.
+(N1) De tre raderna `.fordel-x::after { content: "/*"; }`,
+`.hero { padding-bottom: 0; }` och `.fordel-y::after { content: "*/"; }` lades
+sist i `landning.css`. (N2) `<div class="hero-text">` i `landning.html` ändrades
+till `<div class="hero-text" title="<!--" style="max-width: 46rem" data-x="-->">`.
+`stripComments` i `tests/hero.test.js` (`/\/\*[\s\S]*?\*\//g`) och
+HTML-borttagningen (`/<!--[\s\S]*?-->/g`) tar bort allt från markören i den första
+strängen till markören i den sista. Därmed försvinner både den andra
+`.hero`-regeln och `style`-attributet ur det led 1, led 2 och led 3 prövar. En
+webbläsare läser `/*` inuti en CSS-sträng och `<!--` inuti ett attributvärde som
+vanliga tecken, så båda stilarna gäller. (N1) skriver över `padding-bottom` i rad 5
+i `HERO_RULES`, och (N2) skriver över `max-width` för texten. Ingen av dem nämns
+under "Det spärren inte fångar" i `ARKITEKTUR.md`.
+**Varför:** Led 1–3 i "Spärrens tre led" säger att "Alla tre läser den
+kommentarfria texten", och kommentarborttagningen behandlades som ett neutralt
+förarbete i stället för som en del av spärren. Ett reguljärt uttryck som tar bort
+kommentarer utan att känna till strängar är självt en textspärr, och den prövades
+inte med någon stavning alls. Rättningen räknade upp de stavningar lärdomen nämnde
+(skiftläge, blanktecken, escape, `@scope`), men inte det steg som avgör vilken text
+de stavningarna prövas mot.
+**Regel framåt:** Varje steg som tar bort text innan en spärr läser den
+(kommentarer, strängar, blanktecken) räknas som en del av spärren och ska ha egna
+mutationer i tabellen. För kaskadspärren ska `stripComments` hoppa över strängar,
+till exempel med `css.replace(/("[^"]*"|'[^']*')|\/\*[\s\S]*?\*\//g, (m, s) => s ?? '')`,
+vilket räcker eftersom `\` redan är förbjudet. Led 3 krav 1 och krav 5 ska prövas
+mot den råa texten i `landning.html` och inte mot den kommentarfria, eller så ska
+borttagningen avvisa en kommentar som börjar inuti ett attributvärde. Skriv
+kravet i `ARKITEKTUR.md` först. (N1) och (N2) ovan ska stå i mutationstabellen och
+ge `EXIT=1`.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.

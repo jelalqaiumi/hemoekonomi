@@ -44,8 +44,6 @@ const CSS_TYPE = 'text/css; charset=utf-8';
 const JS_TYPE = 'text/javascript; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
 const PNG_TYPE = 'image/png';
-const SVG_TYPE = 'image/svg+xml';
-const JPEG_TYPE = 'image/jpeg';
 
 // http.request och inte fetch: både fetch och new URL() normaliserar bort
 // punktsegment och avkodar delar av sökvägen innan anropet skickas, så en
@@ -204,20 +202,9 @@ test('/ ger landningssidan och /app ger appen, och de är inte samma fil', async
   assert.equal(apptext.includes('/landning.css'), false);
 });
 
-test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
+test('(H6) bilderna under /bilder/ ger 200 med image/png', async (t) => {
   const { port } = await useServer(t);
-  // Loggorna är PNG och hero-fotot är JPEG. Med en fil med en annan ändelse
-  // än png under src/web/bilder går mutationen
-  //   type: IMAGE_TYPES[match[1]] -> type: IMAGE_TYPES.png
-  // att upptäcka igen. Körd i en kopia av trädet under scratchpad, med
-  // tests/hero.test.js och tests/server.test.js: EXIT=1, ℹ fail 3 och
-  //   ✖ bilderna under /bilder/ ger 200 med sin egen Content-Type
-  //   ✖ landning.css pekar ut hero-fotot, och adressen ger image/jpeg
-  //   ✖ varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll
-  // Raden IMAGE_TYPES.svg i src/server/server.js har fortfarande ingen fil och
-  // därmed inget test — det är arkitektens beslut om svg ska stå kvar i
-  // IMAGE_FILE_PATTERN och i tabellen eller tas bort, och mönstret är en
-  // säkerhetskontroll som inte ändras här.
+  // Servern har en enda bildtyp, IMAGE_TYPE, sedan ARKITEKTUR.md del 7.
   await assertFileServed(port, '/bilder/logga.png', path.join(getImageDir(), 'logga.png'), PNG_TYPE);
   await assertFileServed(
     port,
@@ -225,46 +212,40 @@ test('bilderna under /bilder/ ger 200 med sin egen Content-Type', async (t) => {
     path.join(getImageDir(), 'logga-liten.png'),
     PNG_TYPE
   );
-  await assertFileServed(
-    port,
-    '/bilder/hero-ekonomi.jpg',
-    path.join(getImageDir(), 'hero-ekonomi.jpg'),
-    JPEG_TYPE
-  );
+  await assertFileServed(port, '/bilder/hero.png', path.join(getImageDir(), 'hero.png'), PNG_TYPE);
 });
 
-test('landning.css pekar ut hero-fotot, och adressen ger image/jpeg', async (t) => {
-  // (H3). Adressen i stilmallen är relativ och löses mot stilmallens egen
-  // adress, /landning.css, precis som webbläsaren gör.
+test('(H9) landning.css pekar ut hero-bilden, och adressen ger image/png', async (t) => {
+  // Adressen i stilmallen är relativ och löses mot stilmallens egen adress,
+  // /landning.css, precis som webbläsaren gör.
+  // Mönstret ser dubbla, enkla och inga citattecken och varje skiftläge av url(,
+  // och image-set() är förbjudet, eftersom det hämtar en bild utan url(.
   const css = await fs.readFile(path.join(getWebDir(), 'landning.css'), 'utf8');
-  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((match) => match[1]);
-  assert.deepEqual(urls, ['bilder/hero-ekonomi.jpg'], `landning.css har url(): ${urls.join(', ')}`);
+  const urls = [...css.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)].map((match) => match[2]);
+  assert.deepEqual(urls, ['bilder/hero.png'], `landning.css har url(): ${urls.join(', ')}`);
+  assert.equal(/image-set\s*\(/i.test(css), false, 'landning.css innehåller image-set(');
   const pathname = new URL(urls[0], 'http://127.0.0.1/landning.css').pathname;
-  assert.equal(pathname, '/bilder/hero-ekonomi.jpg');
+  assert.equal(pathname, '/bilder/hero.png');
   const { port } = await useServer(t);
-  await assertFileServed(port, pathname, path.join(getImageDir(), 'hero-ekonomi.jpg'), JPEG_TYPE);
+  await assertFileServed(port, pathname, path.join(getImageDir(), 'hero.png'), PNG_TYPE);
 });
 
-test('varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll', async (t) => {
+test('(H7) src/web/bilder har bara png, och varje bild levereras under /bilder/ med sitt eget innehåll', async (t) => {
   const imageDir = getImageDir();
-  const typeByExtension = { png: PNG_TYPE, svg: SVG_TYPE, jpg: JPEG_TYPE };
-  const names = (await fs.readdir(imageDir))
-    .filter((name) => Object.hasOwn(typeByExtension, path.extname(name).slice(1)))
-    .sort();
-  // Listan läses ur katalogen så att en ny bild kommer med utan att den här
-  // filen ändras. Samma form som testet för /core/ ovan. Katalogen har
-  // loggorna i png, som headern, sidfoten, appens sidomeny och faviconen
-  // hämtar, och hero-fotot hero-ekonomi.jpg, som landning.css hämtar. Att
-  // fotot finns asserteras med namn, så att en tom eller ofullständig katalog
-  // inte tyst gör testet innehållslöst.
-  assert.ok(
-    names.includes('hero-ekonomi.jpg'),
-    `förväntade hero-ekonomi.jpg i ${imageDir}, fick ${names.join(', ')}`
-  );
+  const names = (await fs.readdir(imageDir)).sort();
+  // Listan läses ur katalogen utan filter, så att en ny bild kommer med utan
+  // att den här filen ändras och en fil med en annan ändelse fäller testet.
+  // Katalogen har loggorna i png — logga-liten.png hämtas av landningssidans
+  // header, sidfot och favicon och av appens sidomeny, medan logga.png och
+  // logga-beskuren.png inte hämtas av någon sida — och hero-bilden hero.png,
+  // som landning.css hämtar. Att hero-bilden finns asserteras med namn, så att
+  // en tom eller ofullständig katalog inte tyst gör testet innehållslöst.
+  const notPng = names.filter((name) => !name.endsWith('.png'));
+  assert.deepEqual(notPng, [], `src/web/bilder har filer som inte är png: ${notPng.join(', ')}`);
+  assert.ok(names.includes('hero.png'), `förväntade hero.png i ${imageDir}, fick ${names.join(', ')}`);
   const { port } = await useServer(t);
   for (const name of names) {
-    const type = typeByExtension[path.extname(name).slice(1)];
-    await assertFileServed(port, `/bilder/${name}`, path.join(imageDir, name), type);
+    await assertFileServed(port, `/bilder/${name}`, path.join(imageDir, name), PNG_TYPE);
   }
 });
 
@@ -274,12 +255,15 @@ test('sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 ut
   // får leverera en enda byte.
   //
   // Vilken sond som mäter filtret är körd och inte gissad, i en kopia av
-  // trädet under scratchpad:
-  //   mutation: IMAGE_FILE_PATTERN.exec(name) + null-kontrollen ersatt av ett
-  //   uppslag av ändelsen utan någon kontroll alls ger EXIT=1, fail 1 och
-  //   ✖ sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404
-  //   utan kropp, med meddelandet "/bilder/Logga.png ... 200 !== 404".
-  // Det är alltså det versala namnet som fäller mutationen, precis som för
+  // trädet under scratchpad (ARKITEKTUR.md del 7, (H8)):
+  //   mutation: if (!IMAGE_FILE_PATTERN.test(name)) { -> if (false) { ger
+  //   EXIT=1, fail 1 och ✖ sökvägsfiltret för /bilder/: en sökväg ut ur
+  //   bildkatalogen ger 404 utan kropp, med meddelandet "/bilder/Logga.png
+  //   ... 200 !== 404".
+  //   mutation: /^[a-z0-9-]+\.png$/ -> /^[a-z0-9-]+\.png$/i ger EXIT=1,
+  //   fail 1 och samma kryssrad, med meddelandet "/bilder/Logga.png
+  //   ... 200 !== 404".
+  // Det är alltså versala namn på filer som finns som fäller mutationerna, precis som för
   // /core/: punktsegmenten normaliseras bort av new URL() innan
   // resolveStaticFile ser sökvägen, så traversal-sonderna ger 404 även utan
   // filtret. De står kvar som sonder ändå — de ska ge 404, och ett test som
@@ -300,8 +284,8 @@ test('sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 ut
     '/bilder/logga.txt',
     '/bilder/logga.js',
     '/bilder/finns-inte.png',
-    '/bilder/hero-ekonomi.JPG',
-    '/bilder/hero-ekonomi.jpeg',
+    '/bilder/hero.PNG',
+    '/bilder/HERO.png',
     '/bilder/',
     '/bilder'
   ]) {

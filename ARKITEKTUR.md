@@ -9039,7 +9039,7 @@ Sektionerna uppifrån och ned:
 | # | Sektion | Innehåll |
 |---|---|---|
 | 1 | Header, fast | Logga vänster, menyn `Funktioner`, `Priser`, `FAQ` i mitten, `Logga in` som kontur och `Registrera` som fylld till höger. På mobil blir menyn en hamburgare, men `Registrera` syns alltid. |
-| 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar och knapparna `Kom igång` och `Se hur det fungerar`. Ingen logga: den togs bort på användarens begäran (kommentaren ovanför `@media (min-width: 840px)` i hero-blocket i `landning.css`). Bakgrund: ett foto med en mörk slöja ovanpå sedan 2026-10-13, se "Del 6: foto i hero på landningssidan". Gradienten och rutnätet som stod här först är borttagna. |
+| 2 | Hero | Rubrik `Full koll på hemmet och ekonomin på ett ställe`, underrubrik på två meningar och knapparna `Kom igång` och `Se hur det fungerar`. Ingen logga: den togs bort på användarens begäran (kommentaren ovanför `@media (min-width: 840px)` i hero-blocket i `landning.css`). Bakgrund: en ljus bild i sina egna färger, utan slöja, med en mobil till höger, och mörk text, se "Del 7: ny hero-bild utan slöja". Sektionens nederkant är en våg i nästa sektions bakgrundsfärg, se "Vågen i hero" i del 7. Fotot med slöja (del 6, upphävd) och gradienten och rutnätet som stod här först är borttagna. |
 | 3 | Fördelar | Punkter med ikon: budget, räkningar, sparmål och översikten över året. Punkten om hushållet ersattes 2026-10-11, se "Landningssidan lovar inget som inte finns" under "Det demon inte visar". |
 | 4 | Varför Hem och Ekonomi | Tre kolumner med ikon, rubrik och kort text. |
 | 5 | Så fungerar det | Tre numrerade steg: registrera, lägg in din ekonomi, få överblick. |
@@ -12574,7 +12574,17 @@ poster):
 
 ---
 
-## Del 6: foto i hero på landningssidan [användarens beslut 2026-10-13]
+## Del 6: foto i hero på landningssidan [användarens beslut 2026-10-13] [UPPHÄVD av del 7]
+
+**Upphävd i sin helhet av "Del 7: ny hero-bild utan slöja" (användarens beslut
+2026-10-13, det andra beslutet samma dag).** Fotot `hero-ekonomi.jpg`, slöjan
+`--hero-sloja`, hovringstonen `--hover-pa-mork`, `background-position: 35% 50%`,
+`jpg` i servern och kravlistan (H1)–(H5) gäller inte längre. Avsnittet står kvar
+som historik, så att beslutsloggen och mätvärdena nedan går att läsa som de
+skrevs; varje mening i presens nedan beskriver läget före del 7 och inte koden i
+dag. De byggarinstruktioner som står här är utförda och upphävda och är inga
+order. Det som lever vidare (bilden som CSS-bakgrund utan alt-text, synlig text
+och (P20), demon och publiceringen) är omskrivet i del 7 och gäller därifrån.
 
 **Användarens beslut 2026-10-13**, markerade med [användaren] nedan:
 
@@ -12583,7 +12593,8 @@ poster):
 - [användaren] Bakgrundsfärgen och gradienten, alltså `--hero-fran` och
   `--hero-till`, tas bort.
 - [användaren] En mörk, halvgenomskinlig slöja ligger över fotot, så att den
-  ljusa texten och knapparna förblir läsbara.
+  ljusa texten och knapparna förblir läsbara. **[Upphävt av användarens beslut
+  2026-10-13 i del 7: slöjan tas bort helt.]**
 - [användaren] Fotot är `pexels-n-voitkevich-7173046.jpg` av N. Voitkevich, från
   Pexels. Originalet är 6240 x 4160 bildpunkter (måtten är lästa ur filen) och
   enligt användaren 4,8 MB. Motivet är taget ovanifrån: en orange miniräknare
@@ -13046,4 +13057,2362 @@ körningen visar, lämnas paketet tillbaka till arkitekten innan det redovisas
   2026-10-13)** — användaren såg förhandsbilder vid 1280 och 320 bildpunkters
   bredd och godkände `background-position: 35% 50%` och `--hero-sloja:
   #022d68cc` som de är. Steg 12 i byggarens instruktioner är därmed avslutat.
+  (påverkat av lärdom: nej) **[Godkännandet är upphävt av användarens beslut
+  2026-10-13 i del 7: fotot, utsnittet och slöjan ersätts. Det gäller inte den
+  nya bilden; del 7 kräver en egen granskning av användaren.]**
+
+## Del 7: ny hero-bild utan slöja [användarens beslut 2026-10-13]
+
+Del 7 ersätter del 6 i sin helhet. Där de två skiljer sig gäller del 7.
+
+**Användarens beslut 2026-10-13**, markerade med [användaren] nedan:
+
+- [användaren] Ny bild i hero:
+  `C:\Users\qaium\OneDrive\Desktop\Utgiftskollen – 1920×1080@1x.png`
+  (tecknet mellan `Utgiftskollen` och `1920` är U+2013 och tecknet mellan `1920`
+  och `1080` är U+00D7). Enligt användaren var den första, tillfälliga filen en
+  PNG på 1920 x 1080 med RGBA och 256 547 byte. Motivet är en enfärgad ljusblå
+  yta, ungefär `#a3c4f0` enligt användaren, och en lutad mobil med mjuk skugga
+  på höger halva. Den vänstra halvan är tom blå yta. Bilden ersatte
+  `hero-ekonomi.jpg`.
+- [användaren] Den blå slöjan tas bort helt. Bilden visas i sina egna färger.
+- [användaren] Texten i hero blir mörk: rubrik, ingress, undertext och knappar.
+  Den ska klara WCAG AA mot bakgrunden. På mobil får telefonen i bilden inte
+  hamna bakom texten.
+- [användaren] Den första bilden var tillfällig. Mobilen i den visade namnet
+  "Utgiftskollen", men appen heter "Hem och Ekonomi". Användaren skulle senare
+  exportera en ny version med samma mått och format, och bytet skulle bara
+  innebära att filen ersattes under samma filnamn, utan ändringar i kod eller
+  test. Testerna får därför bara bero på format, mått och byte-gräns, aldrig på
+  bildens innehåll eller sha. **Utfört 2026-10-13:** användaren ersatte filen
+  med den slutliga bilden, sha256 `DE69BCC5…BA9B` och 279 561 byte, vars mobil
+  inte visar något appnamn. Ingen fil i `src/` eller `tests/` ändrades av bytet
+  (posten "Mätningen av den slutliga hero.png kördes" i beslutsloggen).
+- [användaren] Användaren committar först när den slutliga bilden finns. Den
+  finns sedan 2026-10-13, och committen väntar nu bara på granskarens besked
+  och användarens manuella kontroll.
+- [användaren] Godkännandet av slöjan och utsnittet i del 6 är upphävt (märkt i
+  del 6:s beslutslogg).
+
+**Användarens svar 2026-10-13 på arkitektens frågor**, också markerade med
+[användaren]:
+
+- [användaren] Användaren har gjort bilden själv. README ska inte ha någon
+  attribution. Raden om Pexels-fotot stryks och ersätts inte (se "Licens och
+  attribution").
+- [användaren] Den slutliga exporten skulle få exakt samma bakgrundsfärg.
+  Stoppvillkoret ±8 per kanal gäller oförändrat. Mätningen av den slutliga
+  bilden 2026-10-13 gav samma vanligaste färg, `a3c6f2`.
+- [användaren] Knappen `Kom igång` i hero blir en mörk fylld knapp: mörkblå med
+  ljus text. Det gäller bara hero; guldknappen på resten av sidan
+  (priskorten) är oförändrad (se "Knapparna i hero").
+- [användaren] Hero förblir ljus i mörkt läge.
+- [användaren] `svg` och `jpg` tas bort ur servern (godtaget arkitektbeslut).
+- [användaren] Användaren granskar layouten i webbläsaren när den är byggd,
+  efter granskaren och före commit (se "Manuell kontroll").
+
+Allt annat i den här delen är arkitektens beslut, med skäl i beslutsloggen
+längst ned.
+
+### Filer [hero-bild]
+
+| Fil | Ändring |
+|---|---|
+| `src/web/bilder/hero.png` | **Ny.** Användarens fil, kopierad byte för byte. Binärfil. |
+| `src/web/bilder/hero-ekonomi.jpg` | **Tas bort.** |
+| `src/web/tema.css` | `--hero-sloja` och `--hover-pa-mork` tas bort ur båda blocken. Blocket "hero och mörka block" delas i "hero" (nya `--hero-`-tokener, se "Tema") och "mörka block" (`--morkt-block`, oförändrad). Kommentarerna ovanför `--text-pa-mork` och ovanför `--knapp-guld-yta` skrivs om. |
+| `src/web/landning.css` | Hero-kommentaren, `.hero`, `.hero-ingress` och `.hero-under` skrivs om. `.hero :focus-visible` och ett nytt `@media (min-width: 960px)` i hero-blocket tillkommer. `.knapp-kontur-ljus` döps om till `.knapp-kontur-hero` och får nya värden. `.knapp-hero-fylld` tillkommer. `.knapp-guld` är oförändrad. Genom "Vågen i hero": `.hero` och `.hero` i `@media (min-width: 960px)` får vågens deklarationer, kommentarerna ovanför dem skrivs om, och `.hero-vag` och `.hero-vag-yta` tillkommer. |
+| `src/web/landning.html` | HTML-kommentaren ovanför `<section class="hero">`, klassen `knapp-guld` på knappen `Kom igång` i hero och klassen `knapp-kontur-ljus` på knappen `Se hur det fungerar`. Genom "Vågen i hero": ett dekorativt `<svg class="hero-vag">` med en HTML-kommentar ovanför, sist i hero-sektionen. Ingen synlig text ändras. |
+| `src/server/server.js` | `/bilder/` serverar bara `png`. `IMAGE_TYPES` ersätts av `IMAGE_TYPE`. Kommentaren ovanför `DEMO_FILE_PATTERN` och kommentaren i `resolveStaticFile` skrivs om. |
+| `tests/server.test.js` | Punkt (H6)–(H9). `SVG_TYPE` och `JPEG_TYPE` tas bort. Genom "Stavningarna i led 3 och (H9)" (2026-10-14): (H9):s mönster får flaggan `i`, kravet mot `image-set(` tillkommer och kommentaren i testfallet skrivs om. |
+| `tests/hero.test.js` | **Skrivs om helt.** Punkt (H10)–(H12). Ingen server. Genom "Vågen i hero": (H12)(a) och (b) ändras, och (H13) tillkommer. Genom "Kaskadspärren [hero-kaskad]" (2026-10-14): kommentaren över (H10) skrivs om, `ruleList`, `declarations`, `assertSingleRule` och `HERO_RULES` ersätter `rules`, `mediaBodies`, `assertRule` och `HERO_SELECTORS`, (H12)(a)–(e) och (i) och (H13)(b) och (c) skrivs om, och (H12)(j) tillkommer. Genom "Stavningarna i led 3 och (H9)" (2026-10-14): (H12)(j) skrivs om till led 3 krav 1–5, och filtret i (H13)(c) läser selektorn eller kontexten. |
+| `README.md` | Raden om Pexels-fotot stryks och ersätts inte. Görs av dokumentatorn, inte av byggaren. |
+
+Inget beroende tillkommer.
+
+### Teknikval [hero-bild]
+
+| Val | Varför | Vad vi valde bort |
+|-----|--------|-------------------|
+| Bilden kopieras byte för byte, ingen omkodning | Inget beroende behövs. Filen är redan en komprimerad PNG från användarens exportverktyg. Ett kopieringssteg utan omkodning gjorde att bytet till den slutliga bilden 2026-10-13 bara blev att ersätta filen, utan något steg att köra om (beslut 4). | Omkodning med `System.Drawing`: den ger en ny fil vid varje körning och ett steg till vid varje byte. Konvertering till JPEG: ändrar format och kräver `jpg` i servern. Ett npm-paket för PNG-optimering: ett nytt beroende. |
+| Mätskriptet för bildens blå är ett Node-skript i scratchpad-katalogen, med `node:fs` och `node:zlib` | Node finns redan. `node:zlib` packar upp PNG-datan, och skriptet läser kanalvärdena precis som de står i filen. | `System.Drawing` i PowerShell: GDI+ kan tillämpa filens `gAMA`-stycke när filen läses, och då mäts något annat än det filen innehåller. Ett npm-paket som `pngjs`: ett nytt beroende. Ett skript i `src/` eller `scripts/`: projektet har ingen `scripts/`, och skriptet hör inte till appen. |
+
+### Bilden
+
+**Namn och plats:** `src/web/bilder/hero.png`. Namnet följer
+`IMAGE_FILE_PATTERN` (gemener, siffror och bindestreck). Det beskriver rollen och
+inte motivet, så det stämmer också för den slutliga bilden. Det innehåller inte
+`Utgiftskollen`.
+
+**Kopiering, ingen omkodning.** Filen kopierades byte för byte från användarens
+skrivbord, och `Get-FileHash` (SHA256) för källan och kopian var lika. Den
+tillfälliga bilden var 256 547 byte. Den slutliga bilden, som ersatte den
+2026-10-13, är 279 561 byte med sha256 `DE69BCC5…BA9B`, identisk med
+användarens fil på skrivbordet (sökvägen överst i del 7, jämförd med `cmp`
+av granskaren); det är den längd och den
+hash steg 2 i "Byggarens instruktioner [hero-våg]" kräver. Hashvärdet skrivs
+bara i redovisningen och i beslutsloggen, aldrig i ett test (beslut 4).
+
+**Format och mått, bindande:** PNG, exakt 1920 x 1080 bildpunkter, 8 bitar per
+kanal, färgtyp 2 (RGB) eller 6 (RGBA), högst 400 000 byte. (H10) prövar varje
+krav. Den slutliga bilden uppfyllde dem 2026-10-13 (`npm test` gav `fail 0`).
+Ett senare byte som får (H10) att falla lämnas tillbaka till arkitekten.
+Gränsen höjs inte av byggaren.
+
+**Bildens blå, `--hero-yta`, mäts ur filen.** Värdet `#a3c4f0` i användarens
+beskrivning är en uppskattning och används inte. Byggaren skriver ett Node-skript
+i scratchpad-katalogen, med bara `node:fs` och `node:zlib`, som gör följande:
+
+1. Kräver de åtta första byten `89 50 4E 47 0D 0A 1A 0A`. Går igenom varje
+   stycke (längd, typ, data, CRC) och skriver ut styckenas typer i filens
+   ordning.
+2. Läser `IHDR`: bredd, höjd, bitdjup, färgtyp och interlace.
+3. Slår ihop alla `IDAT`, packar upp med `zlib.inflateSync`, och tar bort
+   filtren rad för rad. Filtertyperna 0 till 4 (None, Sub, Up, Average, Paeth)
+   behandlas med 3 byte per bildpunkt för färgtyp 2 och 4 för färgtyp 6.
+4. Mätområdet är bildens **vänstra 40 procent**, kolumn 0 till 767 och rad 0
+   till 1079, plus bildens **kant**: rad 0, rad 1079, kolumn 0 och kolumn 1919.
+5. Skriver ut:
+   - den vanligaste RGB-färgen i det vänstra området, som sex gemena hexsiffror,
+     med antalet bildpunkter och andelen av området;
+   - den ljusaste och den mörkaste RGB-färgen i det vänstra området, räknat i
+     relativ luminans enligt formeln under "Hur kontrasten räknas" i del 6;
+   - den största avvikelsen i en enskild kanal från den vanligaste färgen,
+     separat för det vänstra området och för kanten, med bildpunktens läge;
+   - det lägsta alfavärdet i det vänstra området och på kanten (bara färgtyp 6);
+   - kontrasten för `--hero-text`, `--hero-text-accent`, `--hero-fokus`,
+     `--hero-knapp-yta` och `--hero-knapp-yta-hover` (med värdena i blocket
+     under "Tema") mot den ljusaste och den mörkaste färgen, med två decimaler.
+
+**Stoppvillkor.** I vart och ett av följande fall lämnas paketet tillbaka till
+arkitekten innan något mer byggs:
+
+- bitdjupet är inte 8, färgtypen är varken 2 eller 6, eller interlace är inte 0;
+- filen har ett `iCCP`-, `gAMA`- eller `cHRM`-stycke (ett `sRGB`-stycke är
+  tillåtet). Då är kanalvärdena i filen inte det webbläsaren visar;
+- någon kanal i det vänstra området, eller i en **skarvkant**, avviker mer än 8
+  från den vanligaste färgen. Talet 8 är `HERO_YTA_TOLERANS` i (H11);
+- det lägsta alfavärdet i det vänstra området eller på kanten är under 255;
+
+**Skarvkant, efter rollen (ändrat 2026-10-13 efter mätningen).** Villkoret om
+avvikelse på kanten finns för att bildens kant inte ska synas som en linje mot
+`--hero-yta`. Det gäller därför bara de kanter vars granne utanför bilden kan
+vara `--hero-yta`, och inte de kanter som ligger mot sektionens egen kant. Med
+`background-position: center bottom var(--vag-hojd)` och
+`background-size: 100% auto` (smal skärm) och `background-position: right center`,
+`background-size: 50% auto` och `background-origin: content-box` (bred skärm)
+är skarvkanterna (värdena ändrades 2026-10-13 av "Vågen i hero"):
+
+| Bildens kant | Smal skärm | Bred skärm | Skarvkant |
+|---|---|---|---|
+| Överkanten, rad 0 | mot `--hero-yta` ovanför bilden | mot `--hero-yta` när innehållsrutan är högre än bilden | ja |
+| Nederkanten, rad 1079 | mot `--hero-yta` i vågens remsa | mot `--hero-yta`, i innehållsrutan eller i vågens remsa | ja |
+| Vänsterkanten, kolumn 0 | mot sektionens vänsterkant | mot `--hero-yta` i sektionens vänstra halva | ja |
+| Högerkanten, kolumn 1919 | mot sektionens högerkant | mot sektionens högerkant | **nej** |
+
+Överkanten och nederkanten prövas i kolumn 0 till 1918. Hörnbildpunkterna i
+kolumn 1919 hör till högerkanten. En enda bildpunkt bildar ingen linje, och efter
+skalningen är den ett hörn mot sektionens högerkant. Tabellen gäller bara så
+länge värdena ovan står i `landning.css`. (H12)(a), (H12)(b) och (H13)(b) kräver
+dem, och ändras något av dem ska tabellen göras om innan villkoret används igen.
+Alfavillkoret gäller fortfarande hela kanten, högerkanten inräknad.
+- någon kontrast i listan ovan är under 4,5 för texterna eller under 3 för
+  fokusramen och de två knappytorna.
+
+Den vanligaste färgen blir värdet på `--hero-yta`. Mätningen kördes av byggaren
+2026-10-13. Arkitekten förde in skripten och utdatan ordagrant i beslutsloggen
+under posten "Mätningen av hero.png kördes". Mätningen gav `a3c6f2`, och
+`--hero-yta` är därför `#a3c6f2`. Samma två skript kördes oförändrade på den
+slutliga bilden 2026-10-13 och gav samma vanligaste färg; utdatan står i
+posten "Mätningen av den slutliga hero.png kördes".
+
+**Git.** Filen är binär. `core.autocrlf` är `true` och `.gitattributes` saknas.
+Användaren committar inte än, så kontrollen görs utan att något läggs i
+indexet: `git diff --no-index --numstat /dev/null src/web/bilder/hero.png` i
+Bash ska ge en rad vars två första fält är `-` och `-` (skilda åt av en
+tabb), alltså binär. Kommandot avslutas med
+exitkod 1 eftersom filerna skiljer sig. Det är väntat och inget fel.
+
+**`hero-ekonomi.jpg` tas bort** ur `src/web/bilder/`. Ingen sida hämtar den
+längre, och (H7) kräver att katalogen bara har `png`. Originalet på användarens
+skrivbord rörs inte.
+
+### Servern
+
+`/bilder/` serverar bara `png`. `jpg` tas bort, eftersom ingen fil längre har den
+ändelsen. `svg` tas bort av samma skäl: den har saknat fil sedan `symbol.svg` och
+`symbol-mork.svg` togs bort (se "Loggan"), och mutationen
+`IMAGE_TYPES[match[1]]` → `IMAGE_TYPES.png` gick inte att fälla med bara
+png-filer i katalogen. Med en enda typ finns ingen tabell och ingen sådan
+mutation. Ändringen i `src/server/server.js`:
+
+```js
+// Bilderna under src/web/bilder/. Samma form som /core/ och av samma skäl:
+// mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
+// (annat än den före ändelsen), snedstreck eller versaler, så "..",
+// "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
+// Mönstret släpper bara igenom png, så innehållstypen är en enda konstant.
+const IMAGE_PREFIX = '/bilder/';
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.png$/;
+const IMAGE_TYPE = 'image/png';
+```
+
+Grenen i `resolveStaticFile` blir:
+
+```js
+  if (pathname.startsWith(IMAGE_PREFIX)) {
+    const name = pathname.slice(IMAGE_PREFIX.length);
+    if (!IMAGE_FILE_PATTERN.test(name)) {
+      return null;
+    }
+    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPE };
+  }
+```
+
+Kommentaren som säger att `match[1]` är `'png'`, `'svg'` eller `'jpg'` tas bort,
+eftersom ingen `match` finns kvar. Kommentaren ovanför `DEMO_FILE_PATTERN` säger
+i dag "Ändelsen fångas av gruppen och avgör innehållstypen, precis som för
+bilderna". Efter ändringen fångar bildmönstret ingen grupp, så meningen skrivs om
+till:
+
+```js
+// Ändelsen fångas av gruppen och avgör innehållstypen: en fil kan därför
+// aldrig serveras med en typ som inte hör till dess namn.
+```
+
+Inget annat i servern ändras.
+
+### Layouten
+
+Grundprincipen är att **texten aldrig står på bilden**, i någon bredd. Det följer
+av hur bilden och texten placeras, inte av motivet. Ingen agent kan öppna en
+webbläsare, så principen bevisas med räkning ur reglerna nedan. Utseendet
+granskas av användaren (se "Manuell kontroll").
+
+**Smal skärm, under 960 bildpunkter: bilden under texten.** Bilden fyller hela
+sektionens bredd och ligger direkt ovanför vågens remsa längst ned (ändrat
+2026-10-13 av "Vågen i hero"). `padding-bottom: calc(56.25% + var(--vag-hojd))`
+på `.hero` reserverar exakt bildens höjd plus remsan: procent i `padding` räknas
+mot den omgivande blockets bredd, som är sektionens bredd, och
+1080 / 1920 = 0,5625. Bilden har `background-size: 100% auto`, alltså
+sektionens bredd gånger 0,5625 i höjd, och
+`background-position: center bottom var(--vag-hojd)`, så att dess nederkant
+ligger `--vag-hojd` ovanför sektionens nederkant. Bilden täcker alltså exakt
+utfyllnaden mellan `.hero-inre` och vågens remsa, och texten slutar där bilden
+börjar.
+Telefonen syns till höger i bilden, under texten. `main` har ingen regel i
+`landning.css` och `body` har `margin: 0`, så sektionen är lika bred som fönstret
+utan rullningslist.
+
+**Bred skärm, 960 bildpunkter och uppåt: bilden i högra halvan.**
+`background-size: 50% auto` gör bilden lika bred som halva sektionen, och
+`background-position: right center` lägger den mot högerkanten. Bilden täcker
+alltså aldrig sektionens vänstra halva. `.hero-text` får
+`max-width: min(46rem, 48%)`, och procenten räknas mot innehållsbredden i
+`.hero-inre`:
+
+- Fönster upp till 1120 bildpunkter: `.hero-inre` är lika bred som sektionen
+  (`W`), innehållsbredden är `W - 32`, och textens högerkant är högst
+  `16 + 0,48 × (W - 32)`, vilket är mindre än `W / 2` för varje `W` över 32.
+- Fönster över 1120: `.hero-inre` är 1120 bred, centrerad, med innehållsbredden
+  1088 (`box-sizing: border-box` gäller allt). Textens högerkant är högst
+  `(W - 1120) / 2 + 16 + 0,48 × 1088`, alltså `W / 2 - 21,76`.
+
+Texten ligger alltså alltid i den vänstra halvan och bilden alltid i den högra.
+
+`min-height: calc(28.125vw + var(--vag-hojd))` på `.hero`, tillsammans med
+`padding-bottom: var(--vag-hojd)` och `background-origin: content-box`, gör
+sektionens innehållsruta minst lika hög som bilden (ändrat 2026-10-13 av
+"Vågen i hero"; `box-sizing: border-box` gäller, så `min-height` räknar med
+utfyllnaden): bildens höjd är
+`0,5 × sektionens bredd × 0,5625 = 0,28125 × sektionens bredd`, och sektionens
+bredd är högst `100vw`. Bilden placeras och skalas mot innehållsrutan, som är
+lika bred som sektionen eftersom `.hero` inte har någon vågrät utfyllnad. Utan
+`min-height` skulle bilden beskäras upptill och nedtill på breda fönster, där
+texten tar mindre höjd än bilden, och telefonen kunna klippas.
+
+**Brytpunkten 960 och inte 840.** Vid 840 hade texten fått högst 388 bildpunkter
+bredd, med rubriken i 3rem. Vid 960 får den 445. `960` finns redan som brytpunkt
+i `landning.css` (fördelarna).
+
+**Skarvarna.** Där bilden inte täcker sektionen syns `background-color`, som är
+`--hero-yta`, bildens egen blå. Bildens kant mot den ytan är på smal skärm
+överkanten och nederkanten (mot vågens remsa) och på bred skärm vänsterkanten,
+överkanten och nederkanten.
+Högerkanten ligger i båda layouterna mot sektionens högerkant och möter aldrig
+`--hero-yta`. Mätningen kräver att skarvkanterna avviker högst 8 i varje kanal
+från `--hero-yta`, så att ingen skarv syns (tabellen "Skarvkant, efter rollen"
+under "Bilden").
+
+**Det mörka läget: hero behåller den ljusa bilden.** Bilden har inget mörkt
+motstycke, och en mörk slöja är det användaren tog bort. Hero är därför ett ljust
+fält också i det mörka läget, och hero-tokenerna byter inte värde där. (H11)
+kräver det.
+
+### Tema
+
+**Blocket i `:root` i `src/web/tema.css`.** Raderna från
+`/* ---- hero och mörka block */` till och med `--morkt-block: var(--bla-marin);`
+ersätts av följande. `--hero-yta` är den vanligaste färgen ur mätningen
+2026-10-13, `a3c6f2` (se "Mätningen av hero.png kördes" i beslutsloggen):
+
+```css
+  /* ---------------------------------------------- hero */
+  /* Hero har en ljus bild som bakgrund i båda lägena, och de här tokenerna
+     byter därför inte värde i det mörka läget. tests/hero.test.js (H11)
+     räknar kontrasten ur den här filen.
+     --hero-yta är bildens egen blå, uppmätt ur src/web/bilder/hero.png (se
+     ARKITEKTUR.md del 7). Den syns där bilden inte täcker sektionen och medan
+     bilden laddas. */
+  --hero-yta: #a3c6f2;
+  --hero-text: var(--bla-marin);
+  --hero-text-accent: var(--bla-primar);
+  /* Hovringen på konturknappen i hero: en ljus ton ovanpå bildens blå. */
+  --hero-hover: #ffffff66;
+  /* Fokusramen i hero. --lank byter värde i det mörka läget, det gör inte
+     den här. */
+  --hero-fokus: var(--bla-marin);
+  /* Den fyllda knappen i hero (Kom igång): mörkblå med vit text. Egna
+     tokener, eftersom --knapp-fylld-yta byter värde i det mörka läget. */
+  --hero-knapp-yta: var(--bla-marin);
+  --hero-knapp-yta-hover: var(--bla-primar);
+  --hero-knapp-text: #ffffff;
+
+  /* ---------------------------------------------- mörka block */
+  --morkt-block: var(--bla-marin);
+```
+
+**I `@media (prefers-color-scheme: dark)`** tas raden
+`--hover-pa-mork: #ffffff0f;` bort, och tomraden ovanför den följer med, så att
+blocket inte får två tomrader i rad. Ingen `--hero-`-token läggs till där.
+
+**Kommentaren ovanför `--text-pa-mork`** säger i dag "Text på en mörk yta: hero,
+footer och det mörka lägets bakgrund." Hero är inte längre en mörk yta. Den
+skrivs om till följande, utan uppräkning och utan antal:
+
+```css
+  /* Text på en yta som är mörk i båda lägena, som sidfoten. Hero har egna
+     tokener, se --hero-text. */
+```
+
+**Kommentaren ovanför `--knapp-guld-yta`** säger i dag "Guldknappen i hero och i
+priskorten: --bla-marin på --guld, 4,71:1." Hero har ingen guldknapp efter del 7.
+Den skrivs om, utan uppräkning av användare:
+
+```css
+  /* Guldknappen: --bla-marin på --guld, 4,71:1. */
+```
+
+**Användarna av varje token** efter ändringen. Byggaren körde sökningen i steg
+12 i "Byggarens instruktioner [hero-bild]" 2026-10-13. Arkitekten körde den igen
+2026-10-14 som `grep -rn "var(--hero-" src/web`, som gav 15 rader, alla i
+`src/web/landning.css` (rad 174, 175, 179, 180, 186–188, 192–194, 501, 507,
+513, 531 och 542), och tabellen nedan är skriven efter den körningen:
+
+| Token | Användare |
+|---|---|
+| `--hero-yta` | `.hero` (`background-color`) |
+| `--hero-text` | `.hero` (`color`), `.hero-under`, `.knapp-kontur-hero` (text och kant), `.knapp-kontur-hero:hover` (text) |
+| `--hero-text-accent` | `.hero-ingress` |
+| `--hero-hover` | `.knapp-kontur-hero:hover` |
+| `--hero-fokus` | `.hero :focus-visible` |
+| `--hero-knapp-yta` | `.knapp-hero-fylld` (yta och kant) |
+| `--hero-knapp-yta-hover` | `.knapp-hero-fylld:hover` (yta och kant) |
+| `--hero-knapp-text` | `.knapp-hero-fylld` och `.knapp-hero-fylld:hover` (text) |
+| `--knapp-guld-yta`, `--knapp-guld-text`, `--knapp-guld-yta-hover` | `.knapp-guld` i `landning.css`, som priskorten använder. Klassen försvinner ur hero men tokenerna och regeln står kvar |
+| `--text-pa-mork`, `--text-svag-pa-mork`, `--guld-ljus`, `--morkt-block` | Oförändrade användare utanför hero (sidfoten, appens sidomeny, demons banderoll). De förlorar sina användare i hero men har andra kvar. |
+
+**`--gron-djup` står kvar utan användare** i `src/web/` (lärdomen 2026-10-13 om
+`--gron-djup`). Skälet: den är en av loggans tio uppmätta toner i
+"Färgpaletten (bindande)", och paletten är en mätning av loggan och inte en lista
+över komponenttoner. Den tas inte i bruk i hero: som accenttext mot bildens blå
+ligger den för nära gränsen 4,5:1 för att tåla toleransen i (H11). Det är
+arkitektens handräkning och inget krav. (H11) prövar bara de tokener hero
+faktiskt använder.
+
+**Tonerna och varför.** `--bla-marin` och `--bla-primar` är två av loggans toner.
+Det mörka läget ändrar dem inte, och därför byter hero-texten inte färg med
+läget. `--bla-marin` bär rubriken, undertexten och konturknappen och är den
+mörkaste av de två. `--bla-primar` bär ingressen och ersätter guldet, som inte
+går att läsa mot ljusblått. Kvoterna mot bildens ljusaste och
+mörkaste punkt står i posten "Mätningen av hero.png kördes". Kvoterna ur (H11)
+står i posten "Kvoterna i hero kördes", dit arkitekten förde in dem ur
+byggarens redovisning.
+
+### Knapparna i hero
+
+**`Kom igång` blir en mörk fylld knapp (användarens beslut 2026-10-13)** med en
+ny klass, `.knapp-hero-fylld`, som bara används i hero. `.knapp-guld` och dess
+tokener ändras inte, och priskortens mittenknapp behåller guldet
+(`tests/priser.test.js` kräver `knapp-guld` där).
+
+| Del | Token | Värde | Krav i (H11) |
+|---|---|---|---|
+| Yta och kant | `--hero-knapp-yta` | `var(--bla-marin)` | minst 3:1 mot `Yljus` och `Ymork` (en knapps yta mot omgivningen, WCAG 1.4.11) |
+| Yta och kant vid hovring | `--hero-knapp-yta-hover` | `var(--bla-primar)` | minst 3:1 mot `Yljus` och `Ymork` |
+| Text | `--hero-knapp-text` | `#ffffff` | minst 4,5:1 mot `--hero-knapp-yta` och mot `--hero-knapp-yta-hover` |
+
+Tokenerna är egna i stället för `--knapp-fylld-*`, eftersom `--knapp-fylld-yta`
+blir `--bla-ljus` i det mörka läget och hero inte byter läge. Texten är `#ffffff`
+och inte `--bakgrund` eller `--text-pa-mork` av samma skäl: `--bakgrund` byter
+värde i det mörka läget, och `--text-pa-mork` hör till mörka block. En
+hexkod står i `tema.css`, som är den enda filen som får ha hexkoder.
+
+Konturknappen `Se hur det fungerar` är `.knapp-kontur-hero` (se "CSS"). Båda
+knapparna har `--hero-fokus` som fokusram. Ramen ligger 2 bildpunkter utanför
+knappen, alltså mot bildens blå, och kravet 3:1 för `--hero-fokus` gäller därför
+mot `Yljus` och `Ymork`.
+
+### CSS
+
+**Hero-blocket i `src/web/landning.css`** ersätts från rubrikkommentaren
+`2. hero` till och med regeln `.hero-knappar { … }`. Den befintliga kommentaren och
+`@media (min-width: 840px)` efter `.hero-knappar` står kvar oförändrade, och det
+nya `@media (min-width: 960px)` läggs **efter** det. Nytt innehåll (rubrikkommentaren
+och `.hero` ändrades 2026-10-13 av "Vågen i hero"; vågens egna regler står i det
+avsnittet):
+
+```css
+/* ============================================================= 2. hero
+   Bild som bakgrund i sina egna färger, utan slöja (användarens beslut
+   2026-10-13, ARKITEKTUR.md del 7). Bilden är dekorativ och står därför här
+   och inte som <img> med alt-text i landning.html.
+   Texten står aldrig på bilden, och vågen längst ned står aldrig på någon av
+   dem. Smal skärm: bilden ligger under texten i hela sektionens bredd, och
+   padding-bottom är bildens höjd i förhållande till bredden plus vågens
+   remsa, --vag-hojd, så texten slutar där bilden börjar och bilden där
+   remsan börjar. Bred skärm: bilden tar innehållsrutans högra halva och
+   texten högst knappt halva innehållsbredden; vågens remsa är sektionens
+   padding-bottom.
+   --hero-yta är bildens egen blå. Den fyller resten av sektionen, så att
+   bildens kant inte syns. Texten är mörk i båda lägena, och
+   tests/hero.test.js räknar kontrasten ur tema.css. */
+
+.hero {
+  position: relative;
+  --vag-hojd: max(1.5rem, 5vw);
+  background-color: var(--hero-yta);
+  background-image: url("bilder/hero.png");
+  background-repeat: no-repeat;
+  background-size: 100% auto;
+  background-position: center bottom var(--vag-hojd);
+  padding-bottom: calc(56.25% + var(--vag-hojd));
+  color: var(--hero-text);
+}
+
+/* --lank, som :focus-visible annars använder, byter värde i det mörka läget;
+   hero gör det inte. */
+.hero :focus-visible {
+  outline-color: var(--hero-fokus);
+}
+
+.hero-inre {
+  max-width: var(--sidbredd);
+  margin: 0 auto;
+  padding: 3rem 1rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.hero-ingress {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hero-text-accent);
+}
+
+.hero h1 {
+  font-size: 2.1rem;
+  max-width: 16em;
+}
+
+.hero-under {
+  max-width: 34rem;
+  font-size: 1.05rem;
+  color: var(--hero-text);
+}
+
+.hero-knappar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+```
+
+Efter det befintliga `@media (min-width: 840px) { … }` i hero-blocket (`.hero`
+och kommentaren ändrades 2026-10-13 av "Vågen i hero"):
+
+```css
+/* Från 960 bildpunkter ligger bilden i sektionens högra halva och texten i den
+   vänstra. Bilden placeras i innehållsrutan, och min-height gör den rutan
+   minst lika hög som bilden, så att telefonen inte klipps upptill eller
+   nedtill. padding-bottom är vågens remsa, under innehållsrutan, så att vågen
+   aldrig täcker telefonen. */
+@media (min-width: 960px) {
+  .hero {
+    --vag-hojd: clamp(3rem, 4vw, 6rem);
+    background-size: 50% auto;
+    background-position: right center;
+    background-origin: content-box;
+    padding-bottom: var(--vag-hojd);
+    min-height: calc(28.125vw + var(--vag-hojd));
+  }
+
+  .hero-text {
+    max-width: min(46rem, 48%);
+  }
+}
+```
+
+**Konturknappen** i blocket "0. grund och delade byggstenar". Kommentaren
+`/* Konturknapp mot den mörka slöjan i hero. */` och de två reglerna
+`.knapp-kontur-ljus` och `.knapp-kontur-ljus:hover` ersätts av:
+
+```css
+/* Konturknapp i hero, mörk mot bildens ljusa blå i båda lägena. */
+.knapp-kontur-hero {
+  background: transparent;
+  border-color: var(--hero-text);
+  color: var(--hero-text);
+}
+
+.knapp-kontur-hero:hover {
+  background: var(--hero-hover);
+  color: var(--hero-text);
+}
+```
+
+**Den fyllda knappen i hero.** Direkt efter `.knapp-kontur-hero:hover` (och
+alltså före kommentaren om guldknappen, som inte ändras) läggs:
+
+```css
+/* Fylld knapp i hero, mörkblå med vit text i båda lägena. Bara i hero;
+   resten av sidan använder .knapp-fylld och .knapp-guld. */
+.knapp-hero-fylld {
+  background: var(--hero-knapp-yta);
+  border-color: var(--hero-knapp-yta);
+  color: var(--hero-knapp-text);
+}
+
+.knapp-hero-fylld:hover {
+  background: var(--hero-knapp-yta-hover);
+  border-color: var(--hero-knapp-yta-hover);
+  color: var(--hero-knapp-text);
+}
+```
+
+**Ingen kommentar i `landning.css` får innehålla tecknen `url(`.** (H9) läser
+adresserna ur filen som text, och en kommentar med `url(` skulle räknas som en
+adress till.
+
+**Adressen är relativ.** `url("bilder/hero.png")` löses mot `/landning.css` och
+ger `/bilder/hero.png`, på samma sätt som i del 6.
+
+### HTML
+
+I `src/web/landning.html` ersätts HTML-kommentaren ovanför
+`<section class="hero">` av:
+
+```html
+      <!-- ======================================================== 2. Hero
+           Bild som bakgrund i sina egna färger, se .hero i landning.css.
+           Bilden är dekorativ och ligger därför som CSS-bakgrund utan alt-text. -->
+```
+
+och de två raderna
+
+```html
+              <a class="knapp knapp-guld" href="/app">Kom igång</a>
+              <a class="knapp knapp-kontur-ljus" href="#sa-fungerar-det">Se hur det fungerar</a>
+```
+
+blir
+
+```html
+              <a class="knapp knapp-hero-fylld" href="/app">Kom igång</a>
+              <a class="knapp knapp-kontur-hero" href="#sa-fungerar-det">Se hur det fungerar</a>
+```
+
+Utöver vågens `<svg>` och dess kommentar (se "Vågen i hero") ändras inget annat i
+filen. Priskortens `knapp-guld` (i `priser.js`) rörs inte.
+
+### Tillgänglighet, synlig text och demon
+
+- **Bilden är dekorativ**, som i del 6: CSS-bakgrund, ingen `<img>` och ingen
+  alt-text. Mobilen i den slutliga bilden visar inget appnamn, och ingenting i
+  bilden säger något som sidan inte redan säger. (Den tillfälliga bilden visade
+  namnet "Utgiftskollen"; den ersattes 2026-10-13.)
+- **Kontrastkravet** är 4,5:1 för varje text i hero, också rubriken och texten
+  i den fyllda knappen (mot knappens egen yta), och 3:1 för fokusramen och för
+  den fyllda knappens yta mot omgivningen. Det räknas mot bildens blå med toleransen ±8 per kanal åt båda
+  hållen, alltså mot både en ljusare och en mörkare yta än den uppmätta.
+  Mätningen av filen 2026-10-13 visade att bildens vänstra 40 procent och dess
+  skarvkanter låg inom samma tolerans (största avvikelse 7). Texten står på `--hero-yta` och aldrig på bilden (se
+  "Layouten"), så de två tillsammans täcker den ljusaste och den mörkaste punkten
+  texten kan stå mot.
+- **Fokusramen** är `--hero-fokus` i hero, i båda lägena. Den syns mot bildens
+  blå, också i det mörka läget, där `--lank` blir en ljusblå ton.
+- **Synlig text och (P20):** HTML-kommentaren försvinner i det första steget i
+  `visibleTexts`, och klassbytet rör ingen synlig text. Vågens `<svg>` tas bort i
+  samma första steg (se "Vågen i hero"). (P18), (P19) och (P20) ska passera
+  oförändrade, och tabellen "Landningssidans synliga text" ändras inte.
+- **Demon och publiceringen:** oförändrat från del 6. `hero.png` följer med när
+  `bilder/` kopieras, och den relativa adressen fungerar så länge
+  `landning.css` och `bilder/` ligger i samma katalog.
+
+### Licens och attribution
+
+Pexels-fotot används inte längre, och användaren har gjort den nya bilden själv
+(användarens beslut 2026-10-13). Ingen attribution behövs någonstans. Därför:
+
+- Attributionen i CSS-kommentaren försvinner med den gamla hero-kommentaren
+  (blocket ovan nämner ingen upphovsperson).
+- Raden i `README.md` om N. Voitkevich och Pexels, som stod under "Projektets
+  filer", **ströks och ersattes inte**, av dokumentatorn (lärdomen 2026-09-23
+  om README). Kontrollen är
+  `grep -n "Pexels\|Voitkevich\|hero-ekonomi" README.md`, som ska ge noll rader.
+  Arkitektens körning av samma sökning 2026-10-14 gav noll träffar.
+
+### Bytet till den slutliga bilden (utfört 2026-10-13)
+
+Bytet gjordes så här, och samma ordning gäller om bilden byts igen:
+
+1. Användaren ersatte `src/web/bilder/hero.png` med den slutliga exporten under
+   samma namn.
+2. `npm test` kördes. (H10) prövar format, mått och byte-gräns och passerade.
+3. Båda mätskripten ur beslutsloggen ("Mätningen av hero.png kördes"),
+   `matning.mjs` och `kant.mjs`, kördes på den nya filen. Skarvkanterna lästes
+   ur `kant.mjs`-raderna för överkanten, nederkanten och vänsterkanten.
+   `matning.mjs` slår ihop hela kanten, högerkanten inräknad, och dess rad
+   `STOPP: kanalavvikelse … på kanten` avgör därför inte ensam. I `kant.mjs` är
+   den vanligaste färgen inskriven som `M`, och den var `--hero-yta`. Utdatan
+   står i posten "Mätningen av den slutliga hero.png kördes".
+
+Ingen fil i `src/` eller `tests/` ändrades. En mätning med en annan vanligaste
+färg än `--hero-yta`, men inom toleransen 8, hade inte ändrat något. En
+avvikelse över 8, eller ett fallerande (H10), lämnar ett byte tillbaka till
+arkitekten, eftersom bilden då har en annan bakgrund eller ett annat format och
+det är ett nytt beslut.
+
+### Manuell kontroll
+
+Ingen agent kan öppna en webbläsare. Kontrollen görs av användaren (användarens
+beslut 2026-10-13) i den här ordningen i arbetsgången: **efter** att granskaren
+har gett sitt skriftliga besked om paketet och **före** commit. Den görs en gång,
+med den slutliga bilden, som ersatte den tillfälliga 2026-10-13 innan någon
+manuell kontroll hade gjorts. Den är också den enda kontrollen av det som
+(H12) och (H13) inte kan fånga (se "Kaskadspärren [hero-kaskad]", stycket
+"Det spärren inte fångar").
+
+Användaren granskar `/` vid 320, 768, 960, 1280, 1920 och 2560 bildpunkters
+bredd, i ljust och i mörkt läge, och kontrollerar:
+
+- att texten aldrig står på telefonen;
+- att ingen skarv syns mellan bilden och den blå ytan;
+- att `Kom igång` är mörkblå med ljus text och `Se hur det fungerar` har mörk
+  kant och text, i båda lägena;
+- att fokusramen syns när man tabbar till de två knapparna;
+- att hero slutar i en våg och inte i en rak linje, att vågen inte ligger över
+  text, knappar eller telefonen, och att ingen hårfin linje syns där vågen
+  möter nästa sektion eller där bilden möter vågens remsa, också vid 125 och
+  150 procents zoom (se "Vågen i hero");
+- att vågen är ljus i ljust läge och marinblå i mörkt läge, i samma ton som
+  sektionen under.
+
+Utfallet skrivs in i beslutsloggen som ett användarbeslut. Hittar användaren ett
+fel går paketet tillbaka till arkitekten, inte direkt till byggaren.
+
+### Vågen i hero [hero-våg]
+
+**Användarens önskan 2026-10-13** [användaren]: övergången där hero-sektionen
+tar slut, alltså där den ljusblå ytan möter nästa sektions bakgrund, ska vara en
+våg i stället för en rak linje. Vågen ska vara mjuk och låg, tydlig men lugn.
+
+Allt annat i det här avsnittet är arkitektens beslut, med skäl i beslutsloggen
+[hero-bild] under posterna som börjar med "Vågen". Undantaget är antalet vågor
+och riktningen: arkitekten lade fram dem som frågor, och användaren valde
+arkitektens förslag oförändrade 2026-10-13 (se "Frågor till användaren om
+vågen").
+
+#### Teknikval [hero-våg]
+
+| Val | Varför | Vad vi valde bort |
+|-----|--------|-------------------|
+| Ett inline-`<svg>` sist i `<section class="hero">` i `landning.html`, med en enda `<path>` vars färg kommer från en klass i `landning.css` | Inget beroende och ingen ny bildfil. Ingen `url()` tillkommer, så (H9) gäller oförändrad. Färgen läses med `var()` och byter därför med det mörka läget utan någon extra regel, på samma sätt som ikonerna i `landning.html` (klass, aldrig `fill`-attribut). `preserveAspectRatio="none"` gör att vågen följer sektionens bredd och den höjd CSS ger den, med äkta kurvor. Stödet är fullt i alla webbläsare sidan riktar sig till: inline-SVG i HTML, `fill` med `var()` och `preserveAspectRatio` har fungerat sedan anpassade egenskaper kom (Chrome 49, Firefox 31, Safari 9.1). Det som kräver nyast webbläsare i lösningen är `max()` och `clamp()` i `--vag-hojd` (Chrome 79, Firefox 75, Safari 13.1). `visibleTexts` tar redan bort varje `<svg>` i sitt första steg, så (P20) påverkas inte | **`::after` med en SVG som data-URI i `background-image`:** en andra `url()` i `landning.css`, så (H9):s krav på exakt en adress måste skrivas om och släppa igenom `data:`. En data-URI kan inte läsa `var()`, så fyllningen hade blivit en hexkod i `landning.css`, som filen förbjuder, och det mörka läget hade krävt en tredje adress. **`mask-image` med en data-URI på `::after`:** färgen hade kunnat komma från `background: var(--bakgrund)`, men masken är också en `url()`, och Chrome före 120 och Samsung Internet kräver dessutom `-webkit-mask-image`, alltså två adresser till. (H9) hade behövt släppa igenom `data:`-adresser, och då försvagas den. **`clip-path: path()` på `::after`:** ingen adress och färgen via `var()`, men koordinaterna i `path()` är bildpunkter och kan inte anges i procent, så vågen hade inte kunnat skalas med bredden. `clip-path: shape()`, som tar procent, är för ny för sidans webbläsare. `clip-path: polygon()` med procent skalar, men ger en kantig kurva av räta stycken och en lång lista med punkter att räkna fram för hand |
+
+Inget beroende tillkommer. `tema.css`, `server.js` och bildkatalogen ändras inte.
+
+#### Formen, bindande
+
+Vågen ritas i en koordinatyta på 1440 x 100 (`viewBox="0 0 1440 100"`). Den
+fyllda ytan ligger under kurvan och fyller ner till koordinatytans nederkant.
+Ovanför kurvan är `<svg>` genomskinlig, så hero-sektionens egen blå syns där.
+
+```
+M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z
+```
+
+- **En våg, ett krön och en dal.** Kurvan börjar vid y 42 i vänsterkanten, når
+  sitt krön vid x 360 (en fjärdedel av bredden, y 4) och sin dal vid x 1080 (tre
+  fjärdedelar, y 80), och slutar vid y 50 i högerkanten. Den fyllda ytan går
+  alltså högst upp till vänster, under texten, och lägst ned till höger, under
+  bilden (fråga F1 och F2).
+- **Mjuk.** Kurvan består av tre kubiska Bézierstycken. Vid krönet och dalen är
+  kontrollpunkterna på samma höjd som punkten på båda sidor (240 4, 360 4, 600 4
+  respektive 840 80, 1080 80, 1240 80), så att lutningen är vågrät och kurvan
+  saknar knyck. Varje stycke har sina kontrollpunkters y-värden i en och samma
+  riktning, så ingen del av kurvan går ovanför y 4 eller under y 80.
+- **Ingen rak kant upptill.** Krönet stannar vid y 4 och når aldrig
+  koordinatytans överkant, så ingenting fyllt skärs av rakt där.
+- **Höjden i bild:** den synliga skillnaden mellan krön och dal är 76 av 100,
+  alltså 0,76 gånger `--vag-hojd`.
+
+**Höjden per brytpunkt, bindande.** `--vag-hojd` är vågens höjd och den remsa
+längst ned i hero som vågen får. Den skalas med fönstrets bredd mellan en undre
+och en övre gräns:
+
+| Fönster | `--vag-hojd` |
+|---|---|
+| under 960 bildpunkter | `max(1.5rem, 5vw)` |
+| från 960 bildpunkter | `clamp(3rem, 4vw, 6rem)` |
+
+Med 1rem = 16 bildpunkter ger det, räknat ur reglerna och inte mätt i en
+webbläsare: 24 vid 320 och 375 bildpunkters bredd, 38,4 vid 768, nästan 48 vid
+959 och 48 vid 960, alltså inget synligt språng vid brytpunkten. Därefter 48 till
+1200 bildpunkter, 51,2 vid 1280, 76,8 vid 1920 och 96 från 2400 och uppåt. Det är
+mellan 3,75 och 7,5 procent av fönstrets bredd. Höjden följer användarens
+textstorlek, eftersom gränserna står i `rem`.
+
+`--vag-hojd` är en anpassad egenskap på `.hero` i `landning.css`, inte en token i
+`tema.css`: den är ett mått som byter värde vid en brytpunkt, och `tema.css` har
+inga brytpunkter. Talet används på tre ställen per brytpunkt (vågens höjd,
+utfyllnaden och bildens läge), och därför har det en enda namngiven ägare.
+Namnet börjar inte med `--hero-`, eftersom (H12)(f) kräver att varje
+`var(--hero-…)` i `landning.css` är deklarerad i `tema.css`.
+
+#### Var vågen ligger: aldrig på text, knappar eller telefonen
+
+Vågen ligger i en egen remsa, `--vag-hojd` hög, längst ned i `.hero`. Remsan
+reserveras av `.hero` själv, så att vågen aldrig behöver ligga ovanpå något.
+Det följer av reglerna och inte av bildens motiv, och det gäller därför också om
+bilden byts.
+
+- **Smal skärm, under 960.** `.hero` har
+  `padding-bottom: calc(56.25% + var(--vag-hojd))` och
+  `background-position: center bottom var(--vag-hojd)`. Uppifrån och ned:
+  `.hero-inre` med texten och knapparna, sedan bilden (exakt 56,25 procent av
+  bredden, se "Layouten"), sedan remsan. Vågen är `position: absolute` med
+  `bottom: -1px` och höjden `--vag-hojd`, så den börjar en bildpunkt under
+  bildens nederkant. Telefonen, som på smal skärm når nästan ned till bildens
+  nederkant (se förhandsbilden vid 375 bildpunkter), täcks aldrig.
+- **Bred skärm, från 960.** `.hero` har `padding-bottom: var(--vag-hojd)`,
+  `background-origin: content-box` och
+  `min-height: calc(28.125vw + var(--vag-hojd))`. Bilden placeras
+  (`right center`) och skalas (`50% auto`) mot innehållsrutan, som slutar där
+  remsan börjar. Innehållsrutan är minst 28,125vw hög och bilden högst så hög
+  (se "Layouten"), så bilden ryms alltid ovanför remsan. Texten och knapparna
+  ligger i `.hero-inre`, alltså också i innehållsrutan.
+- **Fokusramarna** ligger 2 bildpunkter utanför knapparna, och knapparna har
+  `.hero-inre`:s nedre utfyllnad, 3,5rem eller 5rem, mellan sig och remsan.
+
+**Förhandsbilderna 2026-10-13, en skiss och ingen mätning i en webbläsare.**
+Byggarens `forhandsbild-vag.ps1` räknade lägena ur samma regler som ovan och
+ritade dem med GDI+. Vid 375 bildpunkter låg bildens nederkant vid 691,99 och
+vågens överkant vid 691,99 i skissen. Skissen och reglerna skiljer sig där med
+en bildpunkt: steg 10 i "Byggarens instruktioner [hero-våg]" ritar vågen från
+`vagTopp = headerH + sektionH - vag`, alltså som om vågen hade `bottom: 0`,
+medan `.hero-vag` har `bottom: -1px`. Enligt reglerna ligger vågens överkant
+därför vid 692,99, en bildpunkt under bildens nederkant vid 691,99, och den
+bildpunktsraden visar `--hero-yta`. Vågens fyllda yta börjar ändå först vid
+kurvans krön, `y 4` av 100 i koordinatytan, så skillnaden syns inte som en
+kant. Ingen överlappning finns i någondera. Vid 960, 1280 och 1920 bildpunkter
+låg bilden ovanför vågen. Skissen visar inte hur en webbläsare avrundar; det
+prövas i den manuella kontrollen.
+
+#### Färgerna, bindande
+
+**Vågens fyllning är nästa sektions bakgrund.** Sektionen efter hero är
+`<section class="fordelar">`, och `.fordelar` har `background: var(--bakgrund);`.
+Vågen fylls därför med `fill: var(--bakgrund);`, samma token och ingen ny.
+`--bakgrund` är `#f7f5ef` i ljust läge och `var(--bla-marin)`, alltså `#022d68`, i
+mörkt läge. Byter `.fordelar` bakgrund ska vågen byta till samma token. (H13)(d)
+kräver att de två är samma token.
+
+**I mörkt läge** är hero fortfarande ljusblå (användarens beslut 2026-10-13), och
+nästa sektion är marinblå. Vågen hör till nästa sektion och är därför också
+marinblå: den ljusa hero-ytan slutar i en mörk våg som går över i den mörka
+sidan utan skarv. *Att ge vågen en egen ton i mörkt läge förkastades:* en ton
+mellan ljusblått och marinblått hade synts som ett tredje band, och vågen hade
+då skilt sig från sektionen den tillhör. Vågen bär ingen text, och WCAG:s krav på
+3:1 för grafik gäller inte dekoration. (H13) skriver ändå ut kvoten mellan vågen
+och `--hero-yta` i båda lägena med `t.diagnostic`, utan krav, så att kontrasten
+står i körningen och inte i en handräkning. Utfallen står i posten "Kontrasten i
+vågen kördes" i beslutsloggen.
+
+#### Ingen skarv och ingen hårfin linje
+
+- **Mellan vågen och nästa sektion:** samma token, och vågen går en bildpunkt in i
+  nästa sektion (`bottom: -1px`). Den bildpunktsrad där `.hero` slutar, också
+  när den hamnar mellan två skärmpunkter vid zoom, täcks då helt av vågens
+  fyllning, och vågens egen kantutjämning längst ned hamnar ovanpå en yta i samma
+  färg. Vågen är positionerad och ritas därför efter, alltså ovanpå, nästa
+  sektions bakgrund. `.hero` får inte ha `overflow`, som skulle klippa bort den
+  bildpunkten. (H13)(b) kräver det.
+- **Mellan vågen och hero:** vågens kurva är själva övergången. Vid krönet når
+  kurvan inte `<svg>`:s överkant (se "Formen").
+- **Mellan bilden och remsan:** bildens nederkant möter `--hero-yta`, och den är
+  en skarvkant som högst får avvika 8 per kanal (tabellen "Skarvkant, efter
+  rollen" under "Bilden").
+- **Ytterkanterna:** vågen är `width: 100%` av `.hero`, som är lika bred som
+  fönstret, och kurvan börjar och slutar i koordinatytans vänster- och
+  högerkant.
+
+#### Tillgänglighet, utskrift och rörelse
+
+- **Dekorativ.** `<svg>` har `aria-hidden="true"` och `focusable="false"`, som
+  ikonerna, och varken `<title>`, `<desc>` eller `<text>`. Den kan inte få fokus,
+  så tabbordningen ändras inte, och den ligger efter `.hero-inre` i dokumentet,
+  så läsordningen ändras inte heller. `pointer-events: none` gör att den aldrig
+  tar emot ett klick i den bildpunkt den går in i nästa sektion.
+- **Synlig text och (P20).** `visibleTexts` tar bort `<svg>…</svg>` i sitt första
+  steg, så tabellen "Landningssidans synliga text" ändras inte, och (P18), (P19)
+  och (P20) ska passera oförändrade. Att `visibleTexts` bortser från allt inuti
+  `<svg>` är samtidigt det enda sätt vågen kunde ge synlig text som (P20) inte
+  ser, nämligen ett `<text>`-element. Därför kräver (H13)(a) vågens markering
+  ordagrant.
+- **Rörelse.** Vågen är statisk: ingen `animation`, ingen `transition` och inget
+  `<animate>`. Ingen regel för `prefers-reduced-motion` behövs. (H13)(a) och (c)
+  kräver markeringen och reglerna ordagrant, så rörelse kan inte läggas till utan
+  att (H13) faller.
+- **Utskrift.** Ingen regel för `@media print` tillkommer; `landning.css` har
+  ingen i dag. Webbläsare skriver normalt inte ut bakgrunder, så hero blir vit på
+  papper, medan vågen, som är en SVG-fyllning, skrivs ut i `--bakgrund`. I ljust
+  läge är det en nästan vit form på vitt papper.
+
+#### CSS, bindande ordagrant
+
+`.hero` och `.hero` i `@media (min-width: 960px)` står under "CSS" ovan, med
+vågens deklarationer. Följande regler läggs direkt efter `.hero-knappar { … }`
+och före kommentaren ovanför `@media (min-width: 840px)` i hero-blocket i
+`src/web/landning.css`. Ingen kommentar får innehålla `url(`.
+
+```css
+/* Vågen längst ned i hero (användarens önskan 2026-10-13, ARKITEKTUR.md del 7,
+   "Vågen i hero"). Ett inline-svg sist i hero-sektionen i landning.html,
+   dekorativt och utan text. Fyllningen är nästa sektions bakgrund, så vågen
+   byter färg med läget även om hero inte gör det. Den ligger i en egen remsa,
+   --vag-hojd hög, som .hero reserverar med padding-bottom, och täcker därför
+   aldrig bilden eller texten. bottom: -1px låter den gå en bildpunkt in i
+   nästa sektion, så att ingen hårfin linje av hero-blått syns i skarven. */
+.hero-vag {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  display: block;
+  width: 100%;
+  height: var(--vag-hojd);
+  pointer-events: none;
+}
+
+.hero-vag-yta {
+  fill: var(--bakgrund);
+}
+```
+
+#### HTML, bindande ordagrant
+
+I `src/web/landning.html` läggs följande in efter den `</div>` som stänger
+`<div class="hero-inre">` och före `</section>`, alltså sist i hero-sektionen,
+indraget åtta mellanslag som `.hero-inre`:
+
+```html
+        <!-- Vågen mot nästa sektion. Dekorativ: aria-hidden och ingen text.
+             Formen och färgen står i ARKITEKTUR.md del 7, "Vågen i hero". -->
+        <svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" />
+        </svg>
+```
+
+Ingen synlig text ändras, och HTML-kommentaren ovanför `<section class="hero">`
+ändras inte.
+
+#### Frågor till användaren om vågen
+
+**Besvarade av användaren 2026-10-13** [användaren], efter att ha sett
+förhandsbilderna: användaren valde vågen som den är, alltså arkitektens förslag
+i båda frågorna oförändrade. Formen under "Formen, bindande" gäller därmed som
+användarens beslut. En senare ändring av formen ändrar bara `d` i `<path>` här,
+i `landning.html` och i (H13):s konstant, i den ordningen.
+
+- **F1. En våg eller två?** Arkitektens förslag var **en**, alltså ett krön och
+  en dal över hela bredden. Två vågor ger kortare och brantare böjar på smal
+  skärm, där remsan bara är 24 bildpunkter hög, och ser oroligare ut.
+  **Användarens svar: en.**
+- **F2. Åt vilket håll?** Arkitektens förslag var **krönet till vänster, under
+  texten, och dalen till höger, under bilden.** Hero-blått går då längst ned på
+  den sida där telefonen står, och bilden får mer luft. Spegelvänd hade kurvan
+  blivit
+  `M0 50 C80 64 200 80 360 80 C600 80 840 4 1080 4 C1200 4 1320 18 1440 42 V100 H0 Z`.
+  **Användarens svar: krönet till vänster.**
+
+Höjden avgörs i den manuella kontrollen: ser vågen för hög eller för låg ut
+ändras gränserna i `--vag-hojd`, här först.
+
+#### Byggarens instruktioner [hero-våg]
+
+I den här ordningen. Byggaren skriver inte i `ARKITEKTUR.md`.
+
+1. Kör `git status --porcelain -uall` och klistra in utdatan. Kopiera
+   `src/web/landning.css`, `src/web/landning.html`, `tests/hero.test.js` och
+   `src/web/bilder/hero.png` till `scratchpad\hv\fore\` och skriv ned deras
+   `sha256sum` innan något annat körs (lärdomen 2026-09-10 om
+   `git checkout --`).
+2. **Bilden.** Redovisa `Get-FileHash` (SHA256) och `(Get-Item …).Length` för
+   `src/web/bilder/hero.png`. Hashen ska börja med `DE69BCC5` och sluta med
+   `BA9B`, och längden ska vara 279 561 byte. Kör `node matning.mjs` och
+   `node kant.mjs` i `scratchpad\hb\` mot filen och klistra in båda utdatorna.
+   Stoppvillkoren under "Bilden" gäller, med skarvkanterna lästa ur `kant.mjs`.
+   Skiljer sig något, eller slår ett stoppvillkor till, lämnas paketet tillbaka
+   innan något mer görs.
+3. **`landning.css`.** Skriv om rubrikkommentaren i hero-blocket, `.hero`,
+   kommentaren ovanför `@media (min-width: 960px)` och `.hero` i det blocket
+   ordagrant enligt "CSS". Lägg in vågens kommentar och regler enligt "CSS,
+   bindande ordagrant" ovan.
+4. **`landning.html`.** Lägg in kommentaren och `<svg>` enligt "HTML, bindande
+   ordagrant" ovan.
+5. **`tests/hero.test.js`.** Ändra (H12)(a) och (b) enligt kravlistan och skriv
+   (H13) direkt efter (H12), med konstanterna `VAG_SVG` och `HERO_SELECTORS` och
+   de befintliga hjälpfunktionerna i filen. Kör `node --test tests/hero.test.js`
+   och klistra in raderna `ℹ fail` och `EXIT=`.
+6. **Mutationer.** Kör varje mutation i (H13) och de mutationer i (H12) som står
+   kvar, en i taget, i en kopia av trädet under `scratchpad\hv\mut\<punkt>-<nr>\`,
+   aldrig i `src/`. Klistra in kryssraden och `EXIT=` för var och en. Kör före det
+   `grep -c -F -e "<uttrycket före pilen>" <filen>` för varje mutation och klistra
+   in utfallet. Varje värde ska vara minst `1` (lärdomen 2026-09-14 om (S1)). För
+   mutationer som lägger till något gäller kontrollen den regel eller rad
+   tillägget ställs bredvid.
+7. **Mutationslistan ur filen.** Kör
+   `diff -u scratchpad/hv/fore/landning.css src/web/landning.css` och samma för
+   `landning.html`. Räkna upp varje tillagd deklaration och varje attribut i
+   `<svg>` och `<path>` och visa vilken mutation som prövar den. Finns en rad som
+   ingen mutation prövar: pröva den och redovisa. Överlever en mutation lämnas
+   paketet tillbaka (lärdomen 2026-09-12 om `renderUpcoming`).
+8. Kör `npm test` tre gånger i rad och klistra in `ℹ tests`, `ℹ pass`, `ℹ fail`
+   och `EXIT=` från var och en. Klistra in (H13):s rader från `t.diagnostic`
+   ordagrant. (Utfört: arkitekten förde in dem i posten "Kontrasten i vågen
+   kördes" i beslutsloggen.)
+9. **Sökningar**, utfallet klistras in ordagrant:
+   - `grep -c "url(" src/web/landning.css` ska ge `1`.
+   - `grep -rn "hero-vag" src tests` ska bara ge träffar i
+     `src/web/landning.css`, `src/web/landning.html` och `tests/hero.test.js`.
+   - `grep -rn -e "--vag-hojd" src tests` ska bara ge träffar i
+     `src/web/landning.css` och `tests/hero.test.js`.
+   - `grep -n "fill=\|<animate" src/web/landning.html` ska ge noll rader.
+   - `grep -rnI $'\xc2\xa0\|\xe2\x88\x92' src/web/landning.css src/web/landning.html tests/hero.test.js | cat -v`
+     ska ge noll rader. `grep -rnI $'\xe2\x80\x93' src/web/landning.css src/web/landning.html tests/hero.test.js | cat -v`
+     bedöms träff för träff enligt steg 12 i "Byggarens instruktioner
+     [hero-bild]". Ingen ny träff får stå i en rad som steg 3–5 lade till.
+10. **Förhandsbilden.** Kopiera `scratchpad\hb\forhandsbild.ps1` till
+    `scratchpad\hb\forhandsbild-vag.ps1` och bygg ut kopian. Den gamla filen
+    ändras inte.
+    - Bredderna 375, 960, 1280 och 1920 bildpunkter, i ljust och mörkt läge.
+      Filerna heter `hero-vag-<bredd>-ljus.png` och `hero-vag-<bredd>-mork.png`
+      och sparas i `scratchpad\hb\`.
+    - `vag` = `max(24, 0,05 × bredd)` under 960 och
+      `min(96, max(48, 0,04 × bredd))` från 960.
+    - Smal skärm: `sektionH = innehallHojd + bildH + vag` och
+      `bildY = sektionH - vag - bildH`. Bred skärm:
+      `innehall = max(innehallHojd, 0,28125 × bredd)`,
+      `sektionH = innehall + vag` och `bildY = (innehall - bildH) / 2`.
+    - Vågen ritas som en `GraphicsPath` med `AddBezier` för de tre styckena i
+      `d`, där varje punkt `(x, y)` blir `(x × bredd / 1440, vagTopp + y × vag / 100)`
+      med `vagTopp = headerH + sektionH - vag`. Därefter linjer till nedre högra
+      och nedre vänstra hörnet, `CloseFigure` och `FillPath` med `SmoothingMode`
+      `AntiAlias`.
+    - Färger, ur `tema.css`: hero `#a3c6f2` i båda lägena; vågen och en 80
+      bildpunkter hög remsa för nästa sektion under hero i `--bakgrund`, alltså
+      `#f7f5ef` i ljust och `#022d68` i mörkt läge; headern i `--yta`, alltså
+      `#ffffff` respektive `#0a3c7e`, med texten i `#022d68` respektive
+      `#f7f5ef`. I nästa sektions remsa skrivs rubriken `Fyra saker appen gör` i
+      `--text`, `#101820` respektive `#f7f5ef`.
+    - Bilden ritas med `ImageAttributes` och `SetWrapMode(TileFlipXY)`, så att
+      GDI+ inte ritar en ljus kantlinje runt den. Den syntes i de förra
+      förhandsbilderna och finns inte i en webbläsare.
+    - Etiketten under bilden: `Skiss, ej webbläsarrendering. Fönsterbredd <bredd>
+      px, ljust läge.` respektive `mörkt läge.`
+    - Skriptet skriver ut en rad per fil med `vag`, `sektionH` och bildens läge
+      och storlek. Klistra in raderna.
+    Förhandsbilden är en skiss och inget bevis. Den visas för användaren
+    tillsammans med frågorna F1 och F2.
+11. Ta upp i redovisningen, som öppna uppgifter för andra än byggaren, i den här
+    ordningen:
+    1. granskaren granskar hela del 7, vågen inräknad;
+    2. dokumentatorn kör `grep -n "hero\|Hero\|våg" README.md` och avgör om
+       README beskriver hero så att vågen behöver nämnas;
+    3. användaren gör den manuella kontrollen, efter granskarens besked och före
+       commit;
+    4. användaren committar.
+
+**Steg 1–11 utfördes av byggaren 2026-10-13.** Mätningen i steg 2 står i posten
+"Mätningen av den slutliga hero.png kördes" och kontrasterna ur steg 8 i posten
+"Kontrasten i vågen kördes", båda i beslutsloggen. `npm test` gav `tests 1159`,
+`fail 0` och `EXIT=0` i tre körningar i rad. Varje mutation som då stod i (H12)
+och (H13) fälldes, liksom byggarens egna ur diffen i steg 7, (E-1) till (E-11),
+som står i (H13):s mutationskolumn. Förhandsbilderna ur steg 10 står under "Var
+vågen ligger". Användaren svarade på F1 och F2 2026-10-13. Granskaren lämnade
+därefter tillbaka paketet, eftersom fyra mutationer (G-1, G-2, G-3 och G-5)
+överlevde (H12) och (H13). Rättningen står i "Kaskadspärren [hero-kaskad]", och
+byggarens order för den i "Byggarens instruktioner [hero-kaskad]". Kvar för
+andra än byggaren är punkterna 1–4 i steg 11.
+
+Hittar byggaren en skillnad mellan det här avsnittet och vad koden, mätningen
+eller körningen visar, lämnas paketet tillbaka till arkitekten innan det
+redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
+
+### Kaskadspärren [hero-kaskad]
+
+**Varför (arkitektens beslut 2026-10-14, efter granskningen).** (H12) och (H13)
+krävde med `body.includes(…)` och `bodies.some(…)` att en deklaration stod i en
+regel, men inte att den gällde, och `HERO_SELECTORS` jämfördes som en mängd.
+Fyra mutationer överlevde därför med `fail 0`: (G-5) `background-size: cover;`
+sist i det översta `.hero`, (G-2) `.hero-text { max-width: 46rem; }` efter
+hero-blockets `@media (min-width: 960px)`, (G-1) `.hero { padding-bottom: 56.25%; }`
+efter `.hero-vag-yta` och (G-3) `padding-bottom: 0;` sist i `.hero` i
+`@media (min-width: 960px)` (lärdomen 2026-10-13 om att (H12) och (H13) inte
+kräver att deklarationen vinner kaskaden). Spärren nedan ersätter de kontrollerna.
+Den är skriven så att en deklaration bara kan uppfylla ett krav om ingen annan
+regel med en hero-selektor, och ingen senare deklaration i samma regel, kan
+skriva över den.
+
+**Spärrens tre led.** Alla tre läser den kommentarfria texten, alltså efter
+`stripComments` för CSS och efter `/<!--[\s\S]*?-->/g` för HTML.
+
+1. **Exakt en regel per selektor och kontext, och varje egenskap exakt en gång.**
+   Varje regel som (H12) eller (H13) prövar slås upp med `assertSingleRule`. Den
+   kräver att det finns exakt en regel med selektorn i den kontexten, att ingen
+   egenskap deklareras två gånger i regelns kropp, och att varje krävd
+   deklaration står som en egen deklaration i kroppen. Det fäller G-5 och G-3
+   (samma egenskap två gånger) och G-1 (en andra `.hero` utan at-regel).
+2. **Den fullständiga, ordnade listan över hero-regler.** Varje regel i
+   `landning.css` vars selektor **eller kontext** innehåller `hero` ska, i
+   filens ordning, vara exakt raderna i `HERO_RULES` nedan, med kontext,
+   selektor och kropp. Listan jämförs som en lista, inte som en mängd: antalet
+   regler per selektor, deras kontext, deras ordning och deras kroppar ingår.
+   Det fäller G-2 och varje ny regel med en hero-selektor, vilken at-regel den
+   än står i, varje dubblerad selektor, varje kortform som `background` och
+   varje `!important` i en hero-regel. Kontexten ingår sedan 2026-10-14, så att
+   en regel som `@scope (.hero) { :scope { … } }`, vars selektor saknar `hero`,
+   också hamnar i listan. Ingen rad i `HERO_RULES` har en kontext med `hero`, så
+   tabellen är oförändrad.
+3. **Inga vägar runt listan i de filer som laddas.** Ledet gäller rollen "allt
+   som kan lägga till, väga upp eller dölja en stil i de tre filerna", och varje
+   kontroll är okänslig för skiftläge och tål blanktecken där CSS och HTML
+   tillåter dem (se "Stavningarna i led 3 och (H9)" nedan). Det består av fem
+   krav, som alla läser den kommentarfria texten:
+   1. **Stilmallarna.** Varje `<link …>` i `landning.html` tas ut med
+      `/<link\b[^>]*>/gi`. Attributen i taggen tas ut med
+      `/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g`, med
+      namnet i gemener och värdet ur den grupp som träffade. `rel` delas på
+      blanktecken och görs till gemener. Varje `<link` ska ha ett `rel` vars
+      enda ord är `icon` eller `stylesheet`; ett annat `rel`, till exempel
+      `preload`, kräver en ny rad här innan det läggs in. Listan över `href`
+      för de `<link` vars `rel` är `stylesheet`, i filens ordning, ska vara
+      exakt `['/tema.css', '/landning.css']`. Det är premissen för hela
+      spärren, och den prövas därmed av ett test.
+   2. **`landning.css`.** Den kommentarfria texten ger noll träffar på
+      `/!\s*important/i` och på `/@import\b/i`.
+   3. **`tema.css`.** Den kommentarfria texten ger noll träffar på
+      `/@import\b/i`, och ingen regel i `ruleList` av den har en selektor eller
+      en kontext som innehåller `hero`.
+   4. **Inga escape-sekvenser i CSS.** Den kommentarfria texten i
+      `landning.css` och i `tema.css` innehåller inte tecknet `\`. Med en
+      escape kan `.\68 ero`, `@\69 mport`, `!\69 mportant` och `u\72l(` stavas
+      förbi varje mönster ovan, och de två filerna har ingen escape som behövs.
+   5. **`landning.html`.** Den kommentarfria texten ger noll träffar på
+      `/<style\b/i` och på `/[\s"'\/]style\s*=/i`. Teckenklassen före `style`
+      tar med citattecknet och snedstrecket, eftersom HTML läser
+      `<div class="x"style="…">` och `<div/style="…">` som ett `style`-attribut.
+
+**Stavningarna i led 3 och (H9) (arkitektens beslut 2026-10-14, efter den
+andra granskningen).** Led 3 jämförde med `includes()` och små bokstäver utan
+blanktecken, och (H9) med ett `url(`-mönster utan flaggan `i`. HTML-attribut,
+elementnamn, at-regelnamn, `!important` och CSS-funktionsnamn är okänsliga för
+skiftläge, och `!` och `important` får skiljas av blanktecken. Sex mutationer
+gav därför `fail 0` och `EXIT=0` (lärdomen 2026-10-14 om led 3 och (H9)); de
+står som (K-18), (K-19), (K-21), (K-24), (K-25) och (K-26) i tabellen nedan.
+Mönstren i led 3 och i (H9) är bindande ordagrant. (H9) tar ut adresserna med
+`/url\(\s*(["']?)([^"')]+)\1\s*\)/gi` och kräver dessutom noll träffar på
+`/image-set\s*\(/i` i samma råa text, eftersom `image-set()` hämtar en bild ur
+en sträng utan `url(`. (H9) läser den råa texten, med kommentarerna kvar, som
+förut; det är därför ingen kommentar i `landning.css` får innehålla `url(`, nu
+i något skiftläge.
+
+**`@scope` täcks.** Granskarens iakttagelse
+`@scope (.hero) { :scope { padding-bottom: 0; } }` gav `EXIT=0`, eftersom led 2
+bara läste selektorn. Att läsa kontexten också kostar en villkorsdel och ändrar
+ingen rad i `HERO_RULES`, så fallet täcks i stället för att skrivas in under
+"Det spärren inte fångar". Samma sak gäller `tema.css` i led 3.
+
+**Hjälpfunktionerna i `tests/hero.test.js`, bindande signaturer.**
+`stripComments` och `collapse` står kvar oförändrade. `rules`, `mediaBodies`,
+`assertRule` och `HERO_SELECTORS` tas bort, eftersom de inte har några
+användare kvar.
+
+```js
+// Varje regel { … } i css (redan utan kommentarer), i filens ordning.
+// context är '' för en regel utanför varje at-regel och annars huvudena på de
+// omslutande at-reglerna, ihopslagna med collapse och åtskilda av ett
+// mellanslag, till exempel '@media (min-width: 960px)'. selector och body är
+// ihopslagna med collapse.
+// En at-sats som slutar med ';' före sin '{' (till exempel @import "x.css";)
+// hoppas över. En '{' inuti en regels kropp, en '}' utan motsvarande '{', och
+// en text som tar slut med en öppen regel eller at-regel kastar Error med
+// texten 'ruleList: obalanserade klamrar' följd av radnumret.
+function ruleList(css) // => { context: string, selector: string, body: string }[]
+
+// Kroppen delad på ';'. Tomma delar tas bort. name är texten före det första
+// ':' i delen, trimmad och med gemener. text är delen trimmad och följd av
+// ';', så att den kan jämföras med en krävd deklaration som
+// 'background-size: 100% auto;'.
+function declarations(body) // => { name: string, text: string }[]
+
+// Kräver i den här ordningen, med file i varje meddelande:
+//   1. exakt en regel i list med just context och selector, annars
+//      `${file}: ${n} regler ${selector} i ${context || 'ingen at-regel'}, inte 1`;
+//   2. att inget name förekommer mer än en gång i regelns declarations, annars
+//      `${file}: ${selector} i ${context || 'ingen at-regel'} deklarerar ${name} ${n} gånger`;
+//   3. att varje sträng i required är text för någon av regelns declarations,
+//      annars `${file}: ${selector} i ${context || 'ingen at-regel'} saknar ${deklaration}`.
+// Returnerar regeln.
+function assertSingleRule(list, context, selector, required, file) // => { context, selector, body }
+```
+
+**`HERO_RULES`, bindande ordagrant.** En konstant i `tests/hero.test.js`: en
+lista med tre strängar per regel, `[context, selector, body]`, i den ordning
+reglerna står i `src/web/landning.css`. Kropparna är reglerna ur "CSS",
+"Knapparna i hero" och "CSS, bindande ordagrant" ovan, och för `.hero-inre`,
+`.hero-text` och `.hero h1` i `@media (min-width: 840px)` de oförändrade
+reglerna i filen, ihopslagna med `collapse`. Kontexten `''` betyder ingen
+at-regel.
+
+| Nr | `context` | `selector` | `body` |
+|---|---|---|---|
+| 1 | `''` | `.knapp-kontur-hero` | `background: transparent; border-color: var(--hero-text); color: var(--hero-text);` |
+| 2 | `''` | `.knapp-kontur-hero:hover` | `background: var(--hero-hover); color: var(--hero-text);` |
+| 3 | `''` | `.knapp-hero-fylld` | `background: var(--hero-knapp-yta); border-color: var(--hero-knapp-yta); color: var(--hero-knapp-text);` |
+| 4 | `''` | `.knapp-hero-fylld:hover` | `background: var(--hero-knapp-yta-hover); border-color: var(--hero-knapp-yta-hover); color: var(--hero-knapp-text);` |
+| 5 | `''` | `.hero` | `position: relative; --vag-hojd: max(1.5rem, 5vw); background-color: var(--hero-yta); background-image: url("bilder/hero.png"); background-repeat: no-repeat; background-size: 100% auto; background-position: center bottom var(--vag-hojd); padding-bottom: calc(56.25% + var(--vag-hojd)); color: var(--hero-text);` |
+| 6 | `''` | `.hero :focus-visible` | `outline-color: var(--hero-fokus);` |
+| 7 | `''` | `.hero-inre` | `max-width: var(--sidbredd); margin: 0 auto; padding: 3rem 1rem 3.5rem; display: flex; flex-direction: column; gap: 2rem;` |
+| 8 | `''` | `.hero-ingress` | `margin: 0 0 0.75rem; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hero-text-accent);` |
+| 9 | `''` | `.hero h1` | `font-size: 2.1rem; max-width: 16em;` |
+| 10 | `''` | `.hero-under` | `max-width: 34rem; font-size: 1.05rem; color: var(--hero-text);` |
+| 11 | `''` | `.hero-knappar` | `display: flex; flex-wrap: wrap; gap: 0.75rem;` |
+| 12 | `''` | `.hero-vag` | `position: absolute; left: 0; bottom: -1px; display: block; width: 100%; height: var(--vag-hojd); pointer-events: none;` |
+| 13 | `''` | `.hero-vag-yta` | `fill: var(--bakgrund);` |
+| 14 | `'@media (min-width: 840px)'` | `.hero-inre` | `padding: 4.5rem 1rem 5rem;` |
+| 15 | `'@media (min-width: 840px)'` | `.hero-text` | `max-width: 46rem;` |
+| 16 | `'@media (min-width: 840px)'` | `.hero h1` | `font-size: 3rem;` |
+| 17 | `'@media (min-width: 960px)'` | `.hero` | `--vag-hojd: clamp(3rem, 4vw, 6rem); background-size: 50% auto; background-position: right center; background-origin: content-box; padding-bottom: var(--vag-hojd); min-height: calc(28.125vw + var(--vag-hojd));` |
+| 18 | `'@media (min-width: 960px)'` | `.hero-text` | `max-width: min(46rem, 48%);` |
+
+Jämförelsen görs i två steg, så att ett fel går att läsa (lärdomen 2026-09-07 om
+`assert.deepEqual` mot långa listor): först `actual.length === HERO_RULES.length`
+med båda längderna i meddelandet, därefter det första index där en rad skiljer
+sig, med index, den faktiska raden och den väntade raden i meddelandet, och sist
+`assert.deepEqual(actual, HERO_RULES)`.
+
+**Mutationerna som prövar spärren**, var och en för sig i en kopia av trädet,
+med `EXIT=1` och kryssraden för den punkt som anges. Ankaret står inom
+parentes och ska ge exakt `1` med `grep -c -F -e "<ankaret>" <filen>`
+(lärdomen 2026-10-13 om mutation E-10). Ett tillägg görs på en egen rad direkt
+efter ankarraden, om inget annat står. Sista kolumnen namnger den punkt vars
+`assert` fäller testfallet **först**: ett testfall stannar vid sitt första
+fallerande `assert`, så en senare punkt i samma testfall som mutationen också
+bryter syns inte i kryssraden och står därför inte i kolumnen (se posten
+"Fyra rader i kaskadtabellen pekade ut en punkt som aldrig nås" i
+beslutsloggen).
+
+| Mutation | Fil och ankare | Ändring | Ska fällas av |
+|---|---|---|---|
+| (K-1) = G-5 | `landning.css`, raden efter (`padding-bottom: calc(56.25% + var(--vag-hojd));`) | raden `  background-size: cover;` tillagd efter `  color: var(--hero-text);` | (H12)(a) och (H13)(b) |
+| (K-2) = G-2 | `landning.css`, (`max-width: min(46rem, 48%);`) | regeln `.hero-text { max-width: 46rem; }` tillagd efter den `}` som stänger det `@media (min-width: 960px)` ankaret står i | (H13)(c) |
+| (K-3) = G-1 | `landning.css`, (`.hero-vag-yta {`) | regeln `.hero { padding-bottom: 56.25%; }` tillagd efter den `}` som stänger `.hero-vag-yta` | (H12)(a) och (H13)(b) |
+| (K-4) = G-3 | `landning.css`, (`min-height: calc(28.125vw + var(--vag-hojd));`) | raden `    padding-bottom: 0;` tillagd | (H12)(b) och (H13)(b) |
+| (K-5) en ny regel i ett annat @media-block | `landning.css`, sist i filen | `@media (min-width: 1200px) { .hero-text { max-width: 46rem; } }` | (H13)(c) |
+| (K-6) en ny regel i ett annat block med samma huvud | `landning.css`, (`grid-template-columns: repeat(4, 1fr);`) | raden `  .hero { padding-bottom: 0; }` tillagd efter den `}` som stänger `.fordel-lista` i det `@media (min-width: 960px)` ankaret står i | (H12)(b) och (H13)(b) |
+| (K-7) `!important` i en hero-regel | `landning.css`, (`max-width: 46rem;`) | `max-width: 46rem;` → `max-width: 46rem !important;` | (H12)(j) och (H13)(c) |
+| (K-8) `!important` utanför hero | `landning.css`, sist i filen | `section { overflow: hidden !important; }` | (H12)(j) |
+| (K-9) dubblerad selektor | `landning.css`, sist i filen | `.hero.hero { padding-bottom: 0; }` | (H13)(c) |
+| (K-10) selektorlista | `landning.css`, sist i filen | `.fordelar, .hero { padding-bottom: 0; }` | (H13)(c) |
+| (K-11) typselektor | `landning.css`, sist i filen | `section.hero { padding-bottom: 0; }` | (H13)(c) |
+| (K-12) kortform | `landning.css`, raden efter (`padding-bottom: calc(56.25% + var(--vag-hojd));`) | raden `  background: var(--hero-yta);` tillagd efter `  color: var(--hero-text);` | (H13)(c) |
+| (K-13) ordning | `landning.css`, (`padding-bottom: calc(56.25% + var(--vag-hojd));`) | hela regeln `.hero { … }` som ankaret står i flyttad till sist i filen | (H13)(c) |
+| (K-14) en hero-regel i `tema.css` | `tema.css`, sist i filen | `.hero { overflow: hidden; }` | (H12)(j) |
+| (K-15) inline-stil | `landning.html`, (`<div class="hero-text">`) | → `<div class="hero-text" style="max-width: 46rem">` | (H12)(j) |
+| (K-16) `<style>`-element | `landning.html`, (`</head>`) | raden `    <style>.hero { padding-bottom: 0; }</style>` tillagd före ankarraden | (H12)(j) |
+| (K-17) `@import` | `landning.css`, först i filen | raden `@import "extra.css";` | (H12)(j) |
+| (K-18) = granskarens (1), versalt attribut | `landning.html`, (`<div class="hero-text">`) | → `<div class="hero-text" STYLE="max-width: 46rem">` | (H12)(j), led 3 krav 5 |
+| (K-19) = granskarens (2), blanktecken före `=` | `landning.html`, (`<div class="hero-text">`) | → `<div class="hero-text" style ="max-width: 46rem">` | (H12)(j), led 3 krav 5 |
+| (K-20) attribut utan blanktecken före | `landning.html`, (`<div class="hero-text">`) | → `<div class="hero-text"style="max-width: 46rem">` | (H12)(j), led 3 krav 5 |
+| (K-21) = granskarens (3), en tredje stilmall | `landning.html`, (`<link rel="stylesheet" href="/landning.css" />`) | raden `    <link rel="stylesheet" href="data:text/css,.hero%7Bpadding-bottom:0%7D" />` tillagd | (H12)(j), led 3 krav 1 |
+| (K-22) stilmall i versaler och utan citattecken | `landning.html`, (`<link rel="stylesheet" href="/landning.css" />`) | raden `    <LINK REL=STYLESHEET HREF=/extra.css>` tillagd | (H12)(j), led 3 krav 1 |
+| (K-23) stilmall via `preload` | `landning.html`, (`<link rel="stylesheet" href="/landning.css" />`) | raden `    <link rel="preload" as="style" href="/extra.css" onload="this.rel='stylesheet'" />` tillagd | (H12)(j), led 3 krav 1 |
+| (K-24) = granskarens (4), versal at-regel | `landning.css`, först i filen | raden `@IMPORT "extra.css";` | (H12)(j), led 3 krav 2 |
+| (K-25) = granskarens (5), blanktecken i `!important` | `landning.css`, sist i filen | `section { overflow: hidden ! important; }` | (H12)(j), led 3 krav 2 |
+| (K-26) = granskarens (6), versal `url(` | `landning.css`, sist i filen | `.fordel-x { background-image: URL(bilder/finns-inte.png); }` | (H9) |
+| (K-27) `image-set()` utan `url(` | `landning.css`, sist i filen | `.fordel-x { background-image: image-set("bilder/finns-inte.png" 1x); }` | (H9) |
+| (K-28) escape i en selektor | `landning.css`, sist i filen | `.\68 ero { padding-bottom: 0; }` | (H12)(j), led 3 krav 4 |
+| (K-29) `@import` i `tema.css` | `tema.css`, först i filen | raden `@import "extra.css";` | (H12)(j), led 3 krav 3 |
+| (K-30) escape i `tema.css` | `tema.css`, först i filen | raden `@\69 mport "extra.css";` | (H12)(j), led 3 krav 4 |
+| (K-31) `@scope` i `landning.css` | `landning.css`, sist i filen | `@scope (.hero) { :scope { padding-bottom: 0; } }` | (H13)(c), led 2 |
+| (K-32) `@scope` i `tema.css` | `tema.css`, sist i filen | `@scope (.hero) { :scope { padding-bottom: 0; } }` | (H12)(j), led 3 krav 3 |
+| (K-33) = byggarens B-1, flera ord i `rel` | `landning.html`, (`<link rel="icon" href="/bilder/logga-liten.png"`) | `rel="icon"` → `rel="icon stylesheet"` på ankarraden | (H12)(j), led 3 krav 1 |
+| (K-34) = byggarens B-2, versalt `!important` | `landning.css`, sist i filen | `section { overflow: hidden !IMPORTANT; }` | (H12)(j), led 3 krav 2 |
+| (K-35) = byggarens B-3, versal at-regel i `tema.css` | `tema.css`, först i filen | raden `@IMPORT "extra.css";` | (H12)(j), led 3 krav 3 |
+| (K-36) = byggarens B-4, versalt `<style>`-element | `landning.html`, (`</head>`) | raden `    <STYLE></STYLE>` tillagd före ankarraden | (H12)(j), led 3 krav 5 |
+| (K-37) = byggarens B-5, snedstreck före attributet | `landning.html`, (`<div class="hero-text">`) | → `<div/style="max-width: 46rem" class="hero-text">` | (H12)(j), led 3 krav 5 |
+| (K-38) = byggarens B-6, enkelt citattecken före attributet | `landning.html`, (`<div class="hero-text">`) | → `<div class="hero-text" title='x'style="max-width: 46rem">` | (H12)(j), led 3 krav 5 |
+| (K-39) = byggarens B-7, versal `image-set(` | `landning.css`, sist i filen | `.fordel-x { background-image: IMAGE-SET("bilder/finns-inte.png" 1x); }` | (H9) |
+
+**Det spärren inte fångar.** Spärren läser text och har ingen selektormotor.
+Följande går därför förbi den, och det är den manuella kontrollen som täcker det
+(se "Manuell kontroll"):
+
+- En regel vars selektor inte innehåller `hero` men ändå träffar hero-sektionen
+  eller något i den. För en egenskap som ingen rad i `HERO_RULES` sätter gäller
+  en sådan regel oavsett specificitet, till exempel `section { overflow: hidden; }`,
+  som klipper vågens bildpunkt mot nästa sektion. För en egenskap som en rad
+  sätter vinner den med högre specificitet, till exempel
+  `main > section:first-of-type { padding-bottom: 0; }`, eller med lika
+  specificitet och senare plats i filen.
+- Stilar som inte står i `landning.css`, `tema.css` eller `landning.html`:
+  skript som sätter `style` eller byter klasser under körning (sidan laddar
+  `/demo/demo-fetch.js` och `/priser.js`), webbläsartillägg och användarens
+  egna stilmallar.
+- Hur en webbläsare faktiskt ritar reglerna: avrundning till bildpunkter, zoom,
+  hur hög texten blir efter radbrytning, och var telefonen i bilden hamnar.
+  "Layouten" bevisar placeringen med räkning ur reglerna, inte med en
+  rendering.
+- Bildens innehåll, som testerna enligt användarens beslut aldrig prövar.
+- En kommentarmarkör inuti en sträng. Kommentarborttagningen före led 1–3
+  (`stripComments` med `/\/\*[\s\S]*?\*\//g` för CSS och `/<!--[\s\S]*?-->/g`
+  för `landning.html`) känner inte till strängar, så den tar bort allt från en
+  markör i en sträng till en markör i en senare sträng. En webbläsare läser
+  markörerna i strängen som vanliga tecken, så det som står mellan dem gäller.
+  Granskaren körde två sådana mutationer 2026-10-14, var för sig i en kopia
+  under scratchpad med
+  `node --test tests/hero.test.js tests/server.test.js tests/demo.test.js tests/priser.test.js`,
+  och båda gav `ℹ fail 0` och `EXIT=0`:
+  (N1) de tre raderna `.fordel-x::after { content: "/*"; }`,
+  `.hero { padding-bottom: 0; }` och `.fordel-y::after { content: "*/"; }`
+  sist i `src/web/landning.css`. Den mellersta regeln nådde aldrig led 1–3,
+  men webbläsaren använder den, och den skriver över `padding-bottom` i rad 5
+  i `HERO_RULES`.
+  (N2) `<div class="hero-text">` i `src/web/landning.html` ändrat till
+  `<div class="hero-text" title="<!--" style="max-width: 46rem" data-x="-->">`.
+  `style`-attributet nådde aldrig led 3 krav 5, men webbläsaren använder det
+  och skriver över `max-width` för texten.
+  Gränsen står kvar enligt användarens beslut 2026-10-14 (se beslutsloggen
+  [hero-bild]). Skälet är vad spärren skyddar mot: att någon av misstag skriver
+  över hero-stilen i projektets egna filer. Ingen skriver en kommentarmarkör
+  inuti en sträng av misstag, och de två mutationerna är konstruerade för att
+  gå förbi spärren. Den manuella kontrollen täcker gränsen, eftersom den prövar
+  hur sidan ser ut och inte vad spärren läser.
+- Granskarens iakttagelse 2026-10-14, som inte är ett fel: regeln
+  `[class="HERO" i] { padding-bottom: 0; }` gav `EXIT=0` vid granskarens
+  körning. Filtret som väljer ut hero-reglerna läser `includes('hero')` utan
+  `toLowerCase()`, och selektorn innehåller inte `hero` med gemener. Fallet hör
+  därför till den första punkten i den här listan, en regel vars selektor inte
+  innehåller `hero`, och täcks av den manuella kontrollen.
+
+Två av fallen ovan körs som mutationer med **väntat `EXIT=0`**, så att stycket
+är en körning och inte ett resonemang (lärdomen 2026-09-07 om kommentaren i
+`server.js`): (KG-1) `section { overflow: hidden; }` sist i `landning.css`, och
+(KG-2) `main > section:first-of-type { padding-bottom: 0; }` sist i
+`landning.css`. Ger någon av dem `EXIT=1` stämmer stycket inte, och paketet
+lämnas tillbaka till arkitekten.
+
+#### Byggarens instruktioner [hero-kaskad]
+
+I den här ordningen. Byggaren skriver inte i `ARKITEKTUR.md`.
+
+1. Kör `git status --porcelain -uall` och klistra in utdatan. Kopiera
+   `tests/hero.test.js` till `scratchpad\hk\fore\` och skriv ned dess
+   `sha256sum` innan något annat körs (lärdomen 2026-09-10 om
+   `git checkout --`). Ingen fil i `src/` ändras i det här paketet.
+2. **Kommentaren över (H10)** i `tests/hero.test.js` (i HEAD rad 22–24, som
+   börjar med `// Bara format, mått och byte-gräns: bilden är tillfällig`)
+   ersätts av:
+   `// Bara format, mått och byte-gräns: bilden ska kunna bytas utan att testet`
+   `// ändras (användarens beslut, ARKITEKTUR.md del 7), så inget krav gäller`
+   `// innehållet, färgerna eller en hash.`
+   Kontrollen efteråt är `grep -n "tillfällig" tests/hero.test.js`, som ska ge
+   noll rader.
+3. **Hjälpfunktionerna.** Skriv `ruleList`, `declarations` och
+   `assertSingleRule` med signaturerna ovan, och ta bort `rules`, `mediaBodies`,
+   `assertRule` och `HERO_SELECTORS`. Lägg `HERO_RULES` där `HERO_SELECTORS`
+   stod, med raderna ur tabellen ovan ordagrant.
+4. **(H12) och (H13)** skrivs om enligt kravlistan. Testnamnen ändras inte.
+5. Kör `node --test tests/hero.test.js` och klistra in raderna `ℹ fail` och
+   `EXIT=`. Ska ge `fail 0` och `EXIT=0`.
+6. **Mutationerna.** Kör först `grep -c -F -e "<ankaret>" <filen>` för varje rad
+   i tabellen ovan som har ett ankare och klistra in utfallen; varje värde ska
+   vara `1`, och skriptet som utför mutationen ska vägra köra om det inte är det.
+   Kör därefter (K-1) till (K-17), (KG-1) och (KG-2) och varje befintlig mutation
+   i (H12) och (H13), en i taget, i en kopia under `scratchpad\hk\mut\<namn>\`,
+   aldrig i `src/`, med
+   `node --test tests/hero.test.js tests/server.test.js tests/demo.test.js tests/priser.test.js`,
+   samma filer som granskarens körning. Klistra in `EXIT=` och kryssraderna för
+   var och en, och jämför kryssraden med den punkt tabellen anger. (KG-1) och
+   (KG-2) ska ge `EXIT=0`; faller något test i dem, redovisas kryssraden och
+   paketet lämnas tillbaka. Mutationen (E-10) körs med ankaret ur (H13):s
+   mutationskolumn.
+7. **Mutationslistan ur filen.** Kör
+   `diff -u scratchpad/hk/fore/hero.test.js tests/hero.test.js`. För varje
+   tillagd `assert` som ingen mutation ovan fäller: lägg till en mutation som
+   bara den kan fälla, kör den och redovisa den (lärdomen 2026-09-12 om
+   `renderUpcoming`).
+8. Kör `npm test` tre gånger i rad och klistra in `ℹ tests`, `ℹ pass`, `ℹ fail`
+   och `EXIT=` från var och en.
+9. Kör `grep -c "!important" src/web/landning.css` och
+   `grep -n "<style\|style=" src/web/landning.html` och klistra in utfallen. Det
+   första ska ge `0` och det andra noll rader, annars stämmer (H12)(j) inte med
+   filen och paketet lämnas tillbaka.
+10. Hittar byggaren en skillnad mellan det här avsnittet och vad filerna eller
+    körningen visar, till exempel en rad i `HERO_RULES` som inte stämmer med
+    `landning.css`, lämnas paketet tillbaka till arkitekten innan det
+    redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
+11. Ta upp i redovisningen, som öppna uppgifter för andra än byggaren:
+    granskaren granskar rättningen; användaren gör den manuella kontrollen
+    efter granskarens besked och före commit; användaren committar.
+
+**Utfört 2026-10-14:** byggaren byggde spärren enligt stegen ovan. Granskaren
+lämnade tillbaka paketet samma dag, eftersom sex mutationer med en annan
+stavning än spärrens gav `fail 0` och `EXIT=0` mot led 3 och (H9). Rättningen
+står i led 3, i "Stavningarna i led 3 och (H9)" och i (K-18) till (K-32), och
+byggarens order för den i "Byggarens instruktioner [hero-stavning]".
+
+#### Byggarens instruktioner [hero-stavning]
+
+I den här ordningen. Byggaren skriver inte i `ARKITEKTUR.md`. Ingen fil i
+`src/` ändras.
+
+1. Kör `git status --porcelain -uall` och klistra in utdatan. Kopiera
+   `tests/hero.test.js` och `tests/server.test.js` till `scratchpad\hs\fore\`
+   och skriv ned båda filernas `sha256sum` innan något annat körs (lärdomen
+   2026-09-10 om `git checkout --`).
+2. **Förkontroll mot filerna.** Kör och klistra in:
+   `grep -c -F '\' src/web/landning.css src/web/tema.css` (ska ge `0` för båda
+   filerna, annars stämmer led 3 krav 4 inte och paketet lämnas tillbaka);
+   `grep -n -i "<link" src/web/landning.html` (ska visa en `rel="icon"` och de
+   två stilmallarna `/tema.css` och `/landning.css`, i den ordningen, och inget
+   annat); `grep -n -i "image-set\|url(" src/web/landning.css` (ska visa en
+   enda rad, den med `url("bilder/hero.png")`).
+3. **`tests/hero.test.js`, (H12)(j).** Skriv om blocket under kommentaren
+   `// (j) Kaskadspärrens led 3` till krav 1–5 under "Spärrens tre led", i den
+   ordningen, med mönstren ordagrant. Varje krav får ett eget
+   `assert`-meddelande som namnger filen och kravet. Listan över stilmallarnas
+   `href` jämförs med `assert.deepEqual` mot `['/tema.css', '/landning.css']`,
+   med den faktiska listan i meddelandet. Filtret för `tema.css` läser
+   `rule.selector.includes('hero') || rule.context.includes('hero')`.
+4. **`tests/hero.test.js`, (H13)(c).** Filtret som bygger listan som jämförs
+   med `HERO_RULES` läser selektorn eller kontexten, på samma sätt som i steg 3.
+   `HERO_RULES` ändras inte. Kommentaren över `HERO_RULES` som säger "vars
+   selektor innehåller hero" skrivs om till "vars selektor eller kontext
+   innehåller hero".
+5. **`tests/server.test.js`, (H9).** Mönstret får flaggan `i`, kravet på noll
+   träffar på `/image-set\s*\(/i` läggs till efter kravet på exakt en adress,
+   och kommentaren skrivs om enligt (H9):s rad i kravlistan.
+6. Kör `node --test tests/hero.test.js tests/server.test.js` och klistra in
+   raderna `ℹ fail` och `EXIT=`. Ska ge `fail 0` och `EXIT=0`.
+7. **Mutationerna.** Kör först `grep -c -F -e "<ankaret>" <filen>` för varje
+   rad (K-18) till (K-32) som har ett ankare och klistra in utfallen; varje
+   värde ska vara `1`, och skriptet som utför mutationen ska vägra köra om det
+   inte är det. Kör därefter (K-1) till (K-32), (KG-1) och (KG-2), en i taget,
+   i en kopia under `scratchpad\hs\mut\<namn>\`, aldrig i `src/`, med
+   `node --test tests/hero.test.js tests/server.test.js tests/demo.test.js tests/priser.test.js`.
+   Klistra in `EXIT=` och kryssraderna för var och en, och jämför kryssraden
+   med den punkt tabellen anger. En mutation som fälls bara av en annan punkt
+   än den tabellen anger, till exempel av (P20) i stället för (H12)(j), räknas
+   som överlevd, och paketet lämnas tillbaka. (KG-1) och (KG-2) ska ge
+   `EXIT=0`.
+8. **Mutationslistan ur filerna.** Kör
+   `diff -u scratchpad/hs/fore/hero.test.js tests/hero.test.js` och samma för
+   `server.test.js`. För varje tillagd `assert` eller villkorsdel som ingen
+   mutation ovan fäller: lägg till en mutation som bara den kan fälla, kör den
+   och redovisa den (lärdomen 2026-09-12 om `renderUpcoming`).
+9. Kör `npm test` tre gånger i rad och klistra in `ℹ tests`, `ℹ pass`,
+   `ℹ fail` och `EXIT=` från var och en.
+10. Hittar byggaren en skillnad mellan det här avsnittet och vad filerna eller
+    körningen visar, lämnas paketet tillbaka till arkitekten innan det
+    redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
+11. Ta upp i redovisningen, som öppna uppgifter för andra än byggaren:
+    granskaren granskar rättningen; användaren gör den manuella kontrollen
+    efter granskarens besked och före commit; användaren committar.
+
+**Utfört 2026-10-14:** byggaren byggde stegen ovan. (K-1) till (K-32) gav
+`EXIT=1` var för sig, (KG-1) och (KG-2) gav `EXIT=0`, och `npm test` gav
+`ℹ tests 1159`, `ℹ pass 1159`, `ℹ fail 0` och `EXIT=0` tre gånger i rad.
+Byggaren lämnade ändå tillbaka paketet enligt steg 10, eftersom
+kryssraderna för (K-1), (K-3), (K-4) och (K-6) visade en annan punkt i (H13)
+än tabellen angav. Steg 8 gav mutationerna B-1 till B-7, som var och en gav
+`EXIT=1`. Tabellraderna rättades och B-1 till B-7 fördes in som (K-33) till
+(K-39); utfallen står i posten "Fyra rader i kaskadtabellen pekade ut en punkt
+som aldrig nås" i beslutsloggen. Inga filer i `src/` eller `tests/` ändrades
+av rättningen.
+
+### Kravlista [hero-bild]
+
+(H1)–(H5) i del 6 är upphävda. Ingen testfil får hänvisa till dem efter del 7.
+Testnamnen för (H6), (H7) och (H9)–(H13) börjar med punktens nummer. (H8) är ett
+befintligt testfall vars namn behålls.
+
+| # | Fil | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|---|
+| (H6) | `tests/server.test.js` | `/bilder/` serverar png med `image/png` | Testfallet `bilderna under /bilder/ ger 200 med sin egen Content-Type` byter namn till `(H6) bilderna under /bilder/ ger 200 med image/png`. Det kräver `assertFileServed` med `PNG_TYPE` för `/bilder/logga.png`, `/bilder/logga-liten.png` och `/bilder/hero.png`. Raden för `hero-ekonomi.jpg` och kommentaren om `IMAGE_TYPES` i testfallet tas bort. Kommentaren ersätts av: `// Servern har en enda bildtyp, IMAGE_TYPE, sedan ARKITEKTUR.md del 7.` Konstanterna `SVG_TYPE` och `JPEG_TYPE` överst i filen tas bort, eftersom de saknar användare | (1) `const IMAGE_TYPE = 'image/png';` → `const IMAGE_TYPE = 'image/jpeg';` |
+| (H7) | `tests/server.test.js` | katalogen har bara png, och varje bild levereras | Testfallet `varje bild i src/web/bilder levereras under /bilder/ med sitt eget innehåll` byter namn till `(H7) src/web/bilder har bara png, och varje bild levereras under /bilder/ med sitt eget innehåll`. Det läser **hela** katalogen med `fs.readdir`, utan filter, och kräver att listan över namn som inte slutar på `.png` är tom, med de namnen i meddelandet. Det kräver `names.includes('hero.png')` och därefter `assertFileServed` med `PNG_TYPE` för varje namn. `typeByExtension` tas bort. Kommentaren i testfallet skrivs om enligt steg 9 i byggarens instruktioner | (1) en fil `hero-ekonomi.jpg` kvar i `src/web/bilder/` i kopian (fäller kravet på bara png); (2) `hero.png` omdöpt till `hero-bild.png` i kopian (fäller `names.includes`) |
+| (H8) | `tests/server.test.js` | sökvägsfiltret avvisar versaler i ett namn vars fil finns | I testfallet `sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp` ersätts sonderna `/bilder/hero-ekonomi.JPG` och `/bilder/hero-ekonomi.jpeg` av `/bilder/hero.PNG` och `/bilder/HERO.png`. Filen `hero.png` finns, och NTFS hittar den under de versala namnen, så `404` kan bara komma från mönstret (lärdomen 2026-10-13 om `.jpeg`-sonden). Ingen sond för en annan ändelse läggs till: ingen sådan fil finns, så en sond skulle ge `404` oavsett mönstret. Att katalogen bara har png bevakas av (H7) | (1) `/^[a-z0-9-]+\.png$/` → `/^[a-z0-9-]+\.png$/i` (fälls av bland annat `/bilder/hero.PNG`); (2) `if (!IMAGE_FILE_PATTERN.test(name)) {` → `if (false) {` |
+| (H9) | `tests/server.test.js` | adressen i `landning.css` ger bilden med `image/png` | Testfallet `landning.css pekar ut hero-fotot, och adressen ger image/jpeg` ersätts av `(H9) landning.css pekar ut hero-bilden, och adressen ger image/png`. Det tar ut varje adress ur den råa texten i `src/web/landning.css` med `/url\(\s*(["']?)([^"')]+)\1\s*\)/gi` och värdet ur grupp 2, så att dubbla citattecken, enkla citattecken, inga citattecken och varje skiftläge av `url` räknas lika. Det kräver exakt en adress, med värdet `bilder/hero.png`, och noll träffar på `/image-set\s*\(/i` i samma text (se "Stavningarna i led 3 och (H9)" under "Kaskadspärren [hero-kaskad]"). Kommentaren i testfallet som säger att mönstret ser "alla tre stavningarna" skrivs om till: `// Mönstret ser dubbla, enkla och inga citattecken och varje skiftläge av url(,` `// och image-set() är förbjudet, eftersom det hämtar en bild utan url(.` `new URL(värdet, 'http://127.0.0.1/landning.css').pathname` ska vara `/bilder/hero.png`, och därefter krävs `assertFileServed` för den sökvägen med `PNG_TYPE` | var och en för sig: (1) `url("bilder/hero.png")` → `url("bilder/finns-inte.png")`; (2) raden `background-image: url("bilder/logga.png");` tillagd i `.hero-inre`; (3) samma rad med `url('bilder/logga.png')`; (4) samma rad med `url(bilder/logga.png)`. Dessutom (K-26), (K-27) och (K-39) i tabellen under "Kaskadspärren [hero-kaskad]" |
+| (H10) | `tests/hero.test.js` | bilden är en PNG på 1920 x 1080 och högst 400 000 byte | Sökvägen byggs ur `import.meta.url`, och filen läses som `Buffer`. Krav i den här ordningen: `buffer.length <= 400000`, med längden i meddelandet; de åtta första byten är `0x89 0x50 0x4e 0x47 0x0d 0x0a 0x1a 0x0a`; `buffer.readUInt32BE(8) === 13` och `buffer.toString('latin1', 12, 16) === 'IHDR'`; bredden `buffer.readUInt32BE(16) === 1920` och höjden `buffer.readUInt32BE(20) === 1080`; bitdjupet `buffer[24] === 8`; färgtypen `buffer[25]` är `2` eller `6`; de tolv sista byten är ett tomt `IEND`-stycke: `buffer.readUInt32BE(buffer.length - 12) === 0` och `buffer.toString('latin1', buffer.length - 8, buffer.length - 4) === 'IEND'`. Inget krav på innehåll, färger eller hash | var och en för sig, i kopian: (1) `hero.png` ersatt av en PNG på 1920 x 1080 med brus i varje bildpunkt, sparad med `System.Drawing` (fäller längdkravet); (2) `hero.png` ersatt av samma bild nedskalad till 1280 x 720 (fäller måttkravet, inte längdkravet); (3) `hero.png` ersatt av `hero-ekonomi.jpg` ur HEAD, omdöpt (fäller signaturen); (4) de tolv sista byten borttagna (fäller `IEND`); (5) byte 25 satt till `3` (fäller färgtypen) |
+| (H11) | `tests/hero.test.js` | den mörka texten når 4,5:1, och fokusramen och den fyllda knappens yta 3:1, mot bildens blå, i båda lägena | Läser `src/web/tema.css` med samma tolkning som del 6:s (H4) (det första `:root { … }` för det ljusa läget, `:root { … }` inuti `@media (prefers-color-scheme: dark)` ovanpå för det mörka, `var(--x)` upplöst tills värdet är en hexkod med 6 eller 8 siffror), men `readThemes` returnerar dessutom det mörka lägets egna deklarationer för sig. Konstanterna `MIN_CONTRAST = 4.5`, `MIN_NON_TEXT_CONTRAST = 3` och `HERO_YTA_TOLERANS = 8`. Krav: (a) namnen på de tokener i det ljusa `:root` som börjar med `--hero-` är, sorterade, exakt `['--hero-fokus', '--hero-hover', '--hero-knapp-text', '--hero-knapp-yta', '--hero-knapp-yta-hover', '--hero-text', '--hero-text-accent', '--hero-yta']`; inget namn som börjar med `--hero-` deklareras i det mörka lägets egna `:root`; och varje `--hero-`-token löses upp till samma hexkod i båda lägena. (b) `--hero-yta` har 6 siffror. Ytorna är `Y` = `--hero-yta`, `Yljus` = varje kanal plus `HERO_YTA_TOLERANS`, högst 255, och `Ymork` = varje kanal minus `HERO_YTA_TOLERANS`, minst 0. (c) `--hero-text` och `--hero-text-accent` är ogenomskinliga, har lägre luminans än varje yta och minst 4,5:1 mot `Y`, `Yljus` och `Ymork`. (d) `--hero-hover` har 8 siffror; ytorna `--hero-hover` över `Yljus` och över `Ymork` (formeln `c = a * s + (1 - a) * b`); `--hero-text` har lägre luminans än båda och minst 4,5:1 mot båda. (e) `--hero-fokus` har minst 3:1 mot `Yljus` och `Ymork`. (f) `--hero-knapp-yta`, `--hero-knapp-yta-hover` och `--hero-knapp-text` är ogenomskinliga; `--hero-knapp-text` har högre luminans än båda knappytorna och minst 4,5:1 mot var och en. (g) `--hero-knapp-yta` och `--hero-knapp-yta-hover` har var för sig lägre luminans än `Yljus` och `Ymork` och minst 3:1 mot båda. Guldknappen prövas inte här: den finns inte i hero efter del 7. Varje kvot skrivs ut med `t.diagnostic` med två decimaler, och meddelandet vid fel namnger läge, token och yta. Testet skriver ingen färg själv | var och en för sig: (1) `--hero-text-accent: var(--bla-primar);` → `--hero-text-accent: var(--gron-primar);` (ska fällas av (c); ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (2) `--hero-yta: #a3c6f2;` → `--hero-yta: #7fa0cc;` (ska fällas av (c)); (3) raden `--hero-text: #f7f5ef;` tillagd i det mörka lägets `:root` (fäller (a)); (4) `--hero-fokus: var(--bla-marin);` → `--hero-fokus: var(--lank);` (fäller (a), eftersom `--lank` byter värde i det mörka läget); (5) `--hero-hover: #ffffff66;` → `--hero-hover: #00000099;` (fäller (d)); (6) raden `--hero-sloja: #022d68cc;` tillagd i det ljusa `:root` (fäller (a)); (7) `--hero-knapp-yta: var(--bla-marin);` → `--hero-knapp-yta: var(--guld);` (fäller (f)); (8) `--hero-knapp-yta-hover: var(--bla-primar);` → `--hero-knapp-yta-hover: var(--bla-ljus);` (ska fällas av (g), eftersom vit text på `--bla-ljus` klarar (f) men ytan är för ljus mot bildens blå; ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (9) `--hero-knapp-text: #ffffff;` → `--hero-knapp-text: var(--bla-primar);` (fäller (f)); (10) raden `--hero-knapp-yta: var(--knapp-fylld-yta);` tillagd i det mörka lägets `:root` (fäller (a)) |
+| (H12) | `tests/hero.test.js` | `landning.css` har bilden utan slöja, och texten kan inte hamna på bilden | Läser `src/web/landning.css`, `src/web/tema.css` och `src/web/landning.html`. Kommentarerna tas bort ur båda CSS-filerna med `/\/\*[\s\S]*?\*\//g` **innan** något deklarationskrav prövas, så att en kommentar aldrig kan uppfylla ett krav. Blanktecken slås ihop till ett mellanslag. Reglerna tas ut med `ruleList` och prövas med `assertSingleRule` (se "Kaskadspärren [hero-kaskad]"), som kräver exakt en regel med selektorn i kontexten, ingen egenskap två gånger i kroppen och varje krävd deklaration som en egen deklaration. Kontexten `''` är ingen at-regel. (a) `.hero` i kontexten `''` har `background-color: var(--hero-yta);`, `background-image: url("bilder/hero.png");`, `background-repeat: no-repeat;`, `background-size: 100% auto;` och `color: var(--hero-text);`, och dess kropp innehåller inte ordet `gradient`, oavsett skiftläge. (b) `.hero` i kontexten `'@media (min-width: 960px)'` har `background-size: 50% auto;` och `background-position: right center;`, och `.hero-text` i samma kontext har `max-width: min(46rem, 48%);`. Utfyllnaden, bildens läge på smal skärm, `background-origin` och `min-height` prövas sedan 2026-10-13 av (H13)(b), eftersom deras värden ändrades av vågen. (c) `.hero-ingress` i `''` har `color: var(--hero-text-accent);` och `.hero-under` i `''` har `color: var(--hero-text);`. (d) `.hero :focus-visible` i `''` har `outline-color: var(--hero-fokus);`. (e) `.knapp-kontur-hero` i `''` har `border-color: var(--hero-text);` och `color: var(--hero-text);`, och `.knapp-kontur-hero:hover` i `''` har `background: var(--hero-hover);`. (f) Varje `var(--hero-…)` i `landning.css` är deklarerat i `tema.css`, och varje `--hero-`-token som deklareras i `tema.css` används i `landning.css`. (g) I filernas **råa** text, alltså med kommentarerna kvar, förekommer inget av `--hero-sloja`, `--hover-pa-mork`, `--hero-fran`, `--hero-till`, `--rutnat`, `knapp-kontur-ljus` och `hero-ekonomi`, i någon av de tre filerna. (h) I `landning.html` tas hero-sektionen ut, från `<section class="hero">` till det första `</section>` efter den. Den innehåller `class="knapp knapp-hero-fylld"` och `class="knapp knapp-kontur-hero"` och innehåller inte `knapp-guld`. (i) `.knapp-hero-fylld` i `''` har `background: var(--hero-knapp-yta);`, `border-color: var(--hero-knapp-yta);` och `color: var(--hero-knapp-text);`, och `.knapp-hero-fylld:hover` i `''` har `background: var(--hero-knapp-yta-hover);`, `border-color: var(--hero-knapp-yta-hover);` och `color: var(--hero-knapp-text);`. (j) Led 3 i kaskadspärren, krav 1–5 under "Spärrens tre led", med mönstren där ordagrant och mot den kommentarfria texten (HTML-kommentarerna borttagna med `/<!--[\s\S]*?-->/g`): stilmallarnas `href` är exakt `['/tema.css', '/landning.css']` och varje `<link` har `rel` `icon` eller `stylesheet`; `landning.css` ger noll träffar på `/!\s*important/i` och `/@import\b/i`; `tema.css` ger noll träffar på `/@import\b/i` och har ingen regel vars selektor eller kontext innehåller `hero`; ingen av de två CSS-filerna innehåller `\`; och `landning.html` ger noll träffar på `/<style\b/i` och `/[\s"'\/]style\s*=/i`. Varje krav har ett eget meddelande som namnger filen och kravet. **Gränsen:** se "Det spärren inte fångar" under "Kaskadspärren [hero-kaskad]" | var och en för sig: (1) `background-image: url("bilder/hero.png");` → `background-image: linear-gradient(#022d68cc, #022d68cc), url("bilder/hero.png");` (fäller (a)); (2) i `@media (min-width: 960px)`: `background-size: 50% auto;` → `background-size: cover;` (fäller (b)); (3) `max-width: min(46rem, 48%);` → `max-width: 46rem;` (fäller (b)); (4) struken 2026-10-13: uttrycket finns inte längre efter vågen, och utfyllnaden prövas av (H13) mutation (17); (5) regeln `.hero :focus-visible { … }` borttagen (fäller (d)); (6) raden `--hero-oanvand: #ffffff;` tillagd i det ljusa `:root` i `tema.css` (fäller (f)); (7) deklarationen `background-size: 100% auto;` i det översta `.hero` ersatt av kommentaren `/* background-size: 100% auto; */` (fäller (a) och visar att kommentarer inte räknas); (8) `/* --hero-sloja */` tillagd i en kommentar i `tema.css` (fäller (g)); (9) i `.knapp-hero-fylld`: `background: var(--hero-knapp-yta);` → `background: var(--knapp-guld-yta);` (fäller (i)); (10) i `landning.html`: `class="knapp knapp-hero-fylld"` → `class="knapp knapp-guld"` (fäller (h)). Dessutom de mutationer i tabellen under "Kaskadspärren [hero-kaskad]" vars sista kolumn nämner (H12): (K-1), (K-3), (K-4), (K-6), (K-7), (K-8), (K-14), (K-15), (K-16), (K-17), (K-18) till (K-25), (K-28) till (K-30) och (K-32) till (K-38) |
+| (H13) | `tests/hero.test.js` | vågen i hero finns, har nästa sektions bakgrund i båda lägena och rör varken bilden, texten, (H9) eller (P20) | Testnamnet är `(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena och täcker varken bilden eller texten`. Läser `src/web/landning.html`, `src/web/landning.css` och `src/web/tema.css`. HTML-kommentarerna tas bort med `/<!--[\s\S]*?-->/g` och CSS-kommentarerna med `stripComments` **innan** något krav prövas, så att en bortkommenterad våg eller regel aldrig räknas. Konstanten `VAG_SVG` är vågens markering ur "HTML, bindande ordagrant" under "Vågen i hero", med blanktecknen ihopslagna som av `collapse`: `<svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"> <path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" /> </svg>`. (a) Hero-sektionen, uttagen ur den kommentarfria texten från `<section class="hero">` till det första `</section>` efter den och ihopslagen med `collapse`, slutar med `VAG_SVG`, och den kommentarfria texten innehåller strängen `hero-vag` exakt två gånger (klasserna `hero-vag` och `hero-vag-yta`). (b) Med `assertSingleRule` på `ruleList` av den kommentarfria `landning.css` (exakt en regel per kontext, ingen egenskap två gånger): `.hero` i kontexten `''` har `position: relative;`, `--vag-hojd: max(1.5rem, 5vw);`, `padding-bottom: calc(56.25% + var(--vag-hojd));` och `background-position: center bottom var(--vag-hojd);`, och `.hero` i kontexten `'@media (min-width: 960px)'` har `--vag-hojd: clamp(3rem, 4vw, 6rem);`, `background-origin: content-box;`, `padding-bottom: var(--vag-hojd);` och `min-height: calc(28.125vw + var(--vag-hojd));`. Ingen av de två har en deklaration vars namn börjar med `overflow`. `/--vag-hojd\s*:/g` ger exakt två träffar i den kommentarfria `landning.css`, och den råa texten i `tema.css` innehåller inte `--vag-hojd`. (c) Bland `ruleList(landning)` finns exakt en regel med selektorn `.hero-vag`, med kroppen exakt `position: absolute; left: 0; bottom: -1px; display: block; width: 100%; height: var(--vag-hojd); pointer-events: none;`, och exakt en med selektorn `.hero-vag-yta`, med kroppen exakt `fill: var(--bakgrund);`. Led 2 i kaskadspärren: listan `[context, selector, body]` för varje regel i `ruleList(landning)` vars selektor eller kontext innehåller `hero`, i filens ordning och **utan sortering**, är exakt `HERO_RULES` (tabellen under "Kaskadspärren [hero-kaskad]"), jämförd i de tre steg som står där. Varje olik selektor i `ruleList(landning)` som innehåller ordet `svg` eller ordet `path`, som helt ord, är exakt `img, svg`. (d) Nästa sektion är klassen i den första `<section class="…">` efter hero-sektionens `</section>` i den kommentarfria texten. Bland reglerna med den klassen som selektor finns exakt en deklaration av `background` eller `background-color`, på formen `var(--x)`, och `--x` är samma token som i `.hero-vag-yta`:s `fill`. Med `readThemes` och `resolveToken` är tokenen i båda lägena en hexkod med 6 siffror som skiljer sig från `--hero-yta`. Kvoten mellan tokenen och `--hero-yta` skrivs ut med `t.diagnostic` per läge, med två decimaler, utan krav. (H9) och (P20) körs oförändrade; (a) och (c) gör att vågen varken kan få en adress eller en text som (P20) inte ser. **Gränsen:** en regel vars selektor varken innehåller `hero`, `svg` eller `path`, till exempel `section > :last-child { display: none; }`, kan dölja vågen utan att (H13) faller. Hela gränsen, med (KG-1) och (KG-2) körda, står i "Det spärren inte fångar" under "Kaskadspärren [hero-kaskad]". Den manuella kontrollen täcker den | var och en för sig, (1)–(7) i `landning.html`, (10) i `tema.css` och övriga i `landning.css`: (1) blocket från `<svg class="hero-vag"` till och med `</svg>` borttaget (vågen borttagen, fäller (a)); (2) samma block inneslutet i `<!--` och `-->` (fäller (a)); (3) blocket flyttat till efter hero-sektionens `</section>` (fäller (a)); (4) i vågens `<svg>`: `preserveAspectRatio="none" aria-hidden="true" ` → `preserveAspectRatio="none" ` (ankaret avgränsar mutationen till vågen, eftersom `aria-hidden="true" ` förekommer nio gånger i `landning.html`; fäller (a)); (5) `<title>Våg</title>` inlagt före `<path` (text som (P20) inte ser, fäller (a)); (6) `d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z"` → `d="M0 50 H1440 V100 H0 Z"` (rak linje, fäller (a)); (7) `preserveAspectRatio="none"` → `preserveAspectRatio="xMidYMid meet"` (skalas inte med bredden, fäller (a)); (8) `fill: var(--bakgrund);` → `fill: var(--yta);` (fel färg, fäller (c)); (9) i `.fordelar`: `background: var(--bakgrund);` → `background: var(--yta-mjuk);` (nästa sektion byter färg men vågen följer inte med, fäller (d)); (10) i det mörka lägets `:root`: `--bakgrund: var(--bla-marin);` → `--bakgrund: #a3c6f2;` (vågen osynlig mot hero i mörkt läge, fäller (d)); (11) i `.hero-vag`: `display: block;` → `display: none;` (fäller (c)); (12) regeln `.hero-vag { display: none; }` tillagd i `@media (min-width: 960px)` (fäller (c)); (13) regeln `.hero svg { display: none; }` tillagd efter `.hero-vag-yta` (fäller (c)); (14) regeln `main svg { display: none; }` tillagd efter `.hero-vag-yta` (fäller (c)); (15) i `.hero-vag`: raden `animation: vag 6s infinite;` tillagd (fäller (c)); (16) i `.hero-vag`: raden `background-image: url("data:image/svg+xml,%3Csvg%3E%3C/svg%3E");` tillagd (fäller (c) och dessutom (H9)); (17) `padding-bottom: calc(56.25% + var(--vag-hojd));` → `padding-bottom: 56.25%;` (vågen täcker bildens nederkant på smal skärm, fäller (b)); (18) `background-position: center bottom var(--vag-hojd);` → `background-position: center bottom;` (fäller (b)); (19) `min-height: calc(28.125vw + var(--vag-hojd));` → `min-height: 28.125vw;` (fäller (b)); (20) raden `background-origin: content-box;` borttagen (fäller (b)); (21) `--vag-hojd: max(1.5rem, 5vw);` → `--vag-hojd: 0;` (rak linje, fäller (b)); (22) i det översta `.hero`: raden `overflow: hidden;` tillagd (klipper bildpunkten mot nästa sektion, fäller (b)); (23) raden `position: relative;` borttagen ur `.hero` (fäller (b)); (24) i `.hero-vag`: `height: var(--vag-hojd);` → `height: 0;` (rak linje, fäller (c)). Byggarens egna mutationer ur diffen (steg 7 i "Byggarens instruktioner [hero-våg]"), körda 2026-10-13, var och en med `EXIT=1` och kryssraden för (H13): (E-1) i `@media (min-width: 960px)`: `--vag-hojd: clamp(3rem, 4vw, 6rem);` → `--vag-hojd: 3rem;`; (E-2) i `@media (min-width: 960px)`: `padding-bottom: var(--vag-hojd);` → `padding-bottom: 0;`; (E-3) i `.hero-vag`: `position: absolute;` → `position: relative;`; (E-4) i `.hero-vag`: raden `left: 0;` borttagen; (E-5) i `.hero-vag`: `bottom: -1px;` → `bottom: 0;`; (E-6) i `.hero-vag`: `width: 100%;` → `width: 50%;`; (E-7) i `.hero-vag`: raden `pointer-events: none;` borttagen; (E-8) i `landning.html`: `class="hero-vag"` → `class="vag"`; (E-9) i `landning.html`: `viewBox="0 0 1440 100"` → `viewBox="0 0 1440 200"`; (E-10) i `landning.html`: `preserveAspectRatio="none" aria-hidden="true" focusable="false">` → `preserveAspectRatio="none" aria-hidden="true">`, alltså `focusable="false"` borttaget ur vågens `<svg>` och ingen annanstans (`grep -c 'focusable="false"' src/web/landning.html` gav `9` 2026-10-14, medan `grep -c -F 'preserveAspectRatio="none" aria-hidden="true" focusable="false">' src/web/landning.html` gav `1`; byggarens första körning ankrade i stället på vågens `<path class="hero-vag-yta"` på raden efter, med samma utfall); (E-11) i `landning.html`: `class="hero-vag-yta"` → `class="vag-yta"`. Dessutom de mutationer i tabellen under "Kaskadspärren [hero-kaskad]" vars sista kolumn nämner (H13): (K-1) till (K-7), (K-9) till (K-13) och (K-31) |
+
+Varje mutation körs en i taget i en kopia av trädet under scratchpad-katalogen,
+aldrig i `src/`, och kryssraden klistras in. Mutationerna i (H7), (H10) och (H11)
+som byter binärfiler eller tokenvärden görs också i kopian. Listan är ett minimum
+(lärdomen 2026-09-12 om `renderUpcoming`): byggaren räknar dessutom upp varje
+`if` i de ändrade raderna i `src/server/server.js` och prövar den.
+
+Innan paketet lämnas vidare körs `grep -c -F -e "<uttrycket före pilen>" <filen>`
+för varje mutation i tabellen, och varje värde ska vara exakt `1` (lärdomen
+2026-09-14 om (S1) och lärdomen 2026-10-13 om mutation E-10). Ger uttrycket mer
+än `1` står ankaret, med den omgivande text som gör det unikt, utskrivet i
+tabellen, som för (H13) mutation (4) och (E-10). En mutation som namnger sin
+regel eller sitt block ("i `.fordelar`", "i `.hero-vag`", "i det mörka lägets
+`:root`", "i `@media (min-width: 960px)`") prövas inom den regeln: skriptet
+räknar uttrycket bara i den regelns kropp, ska få exakt `1` där, och vägrar
+köra annars. För mutationer som lägger till en rad gäller kontrollen den rad
+eller regel tillägget ställs bredvid.
+
+### Byggarens instruktioner [hero-bild]
+
+I den här ordningen:
+
+1. Kopiera `src/web/tema.css`, `src/web/landning.css`, `src/web/landning.html`,
+   `src/server/server.js`, `tests/server.test.js`, `tests/hero.test.js` och
+   `src/web/bilder/hero-ekonomi.jpg` till scratchpad-katalogen och skriv ned
+   deras `sha256sum` innan något annat körs (lärdomen 2026-09-10 om
+   `git checkout --`).
+2. Kopiera användarens fil till `src/web/bilder/hero.png` med
+   `Copy-Item -LiteralPath` i PowerShell (sökvägen har U+2013 och U+00D7, se
+   "Användarens beslut"). Redovisa `Get-FileHash` för källan och kopian och
+   `(Get-Item …).Length` för kopian. Hasharna skulle vara lika och längden
+   256 547, som var den tillfälliga bildens längd. Den slutliga bildens längd,
+   279 561, står i steg 2 i "Byggarens instruktioner [hero-våg]".
+3. Skriv och kör mätskriptet enligt "Bilden" i scratchpad-katalogen. Pröva
+   stoppvillkoren och redovisa skriptet och utdatan. Byggaren skriver inte i
+   `ARKITEKTUR.md`; arkitekten för in dem i beslutsloggen.
+
+**Steg 1–3 utfördes av byggaren 2026-10-13.** I steg 2 var kopians sha256
+`3FB4D3DB…5A93`, identisk med originalet, och längden 256 547 byte. Steg 3
+stannade på ett stoppvillkor för högerkanten. Arkitekten ändrade villkoret till
+att gälla skarvkanterna (se "Skarvkant, efter rollen" under "Bilden") och
+godtog mätningen. Skripten och utdatan står i posten "Mätningen av hero.png
+kördes" i beslutsloggen. `hero.png` ligger kvar på plats och ska inte kopieras
+om. **Bygget fortsätter från steg 4.**
+
+4. Ändra `src/web/tema.css` enligt "Tema", med `--hero-yta: #a3c6f2;`:
+   hero-blocket med de åtta `--hero-`-tokenerna, det mörka
+   lägets borttagna rad och de två omskrivna kommentarerna (ovanför
+   `--text-pa-mork` och ovanför `--knapp-guld-yta`).
+5. Ändra `src/web/landning.css` enligt "CSS": hero-blocket, det nya
+   `@media (min-width: 960px)`, `.knapp-kontur-hero` och `.knapp-hero-fylld`
+   enligt "Knapparna i hero". `.knapp-guld` rörs inte.
+6. Ändra `src/web/landning.html` enligt "HTML": kommentaren och klasserna på
+   båda knapparna i hero.
+7. Ändra `src/server/server.js` enligt "Servern".
+8. Ta bort `src/web/bilder/hero-ekonomi.jpg`.
+9. Skriv (H6)–(H9) i `tests/server.test.js` och skriv om `tests/hero.test.js`
+   helt med (H10)–(H12). Kommentaren överst i `tests/hero.test.js` skrivs utan
+   antal och utan punktnummer för den andra filen: `// Hero-bilden på
+   landningssidan (ARKITEKTUR.md del 7, kravlista [hero-bild]). Ingen server:
+   filen läser filer från disk. Punkterna som kräver en server står i
+   tests/server.test.js.` Kommentaren i (H7) skrivs **efter** sökningen
+   `grep -rn "logga\.png\|logga-liten\.png\|logga-beskuren\.png\|hero\.png" src/web --include=*.html --include=*.js --include=*.css`,
+   räknar bara upp det sökningen visar och har inget antal (lärdomen
+   2026-10-13 om kommentaren om bildkatalogen). Utfallet av sökningen klistras
+   in i redovisningen.
+10. Kör varje mutation i kravlistan i en kopia och klistra in kryssraderna. Kör
+    `grep -c` för varje uttryck före pilen enligt stycket under tabellen och
+    klistra in utfallet.
+11. Kör `npm test` tre gånger i rad och klistra in raderna `ℹ tests`, `ℹ pass`,
+    `ℹ fail` och `EXIT=` från var och en (sviten har testfall med fler än 50
+    processtarter, lärdomen 2026-09-15). Klistra in varje rad från (H11):s
+    `t.diagnostic` ordagrant i redovisningen. Byggaren skriver inte i
+    `ARKITEKTUR.md`: arkitekten för in kvoterna i en ny post "Kvoterna i hero
+    kördes" i beslutsloggen, i dåtid och med datum, när byggaren har
+    rapporterat och före granskningen.
+12. Kör sökningarna och redovisa utfallet ordagrant:
+    - `grep -rnI "hero-ekonomi\|hero-sloja\|hover-pa-mork\|knapp-kontur-ljus\|hero-fran\|hero-till\|rutnat\|image/jpeg\|image/svg\|IMAGE_TYPES\|Voitkevich\|Pexels" src tests | grep -v "^tests/hero.test.js:"`
+      ska ge noll rader. `tests/hero.test.js` är undantagen, eftersom (H12)(g)
+      förbjuder namnen och därför måste innehålla dem (lärdomen 2026-10-13 om
+      steg 10). Flaggan `-I` hoppar över binärfiler. Utan den gav sökningen
+      2026-10-13 raden `Binary file src/web/bilder/logga.png matches`, eftersom
+      byten `image/svg` råkar stå i loggans bilddata (raden fanns redan i HEAD).
+      Förbudet gäller text i källfiler, inte byte i bilder.
+    - `grep -rn "var(--hero-" src/web` ska bara ge träffar i
+      `src/web/landning.css`, och varje token i tabellen under "Tema" ska ha
+      minst en träff.
+    - `grep -rn "var(--gron-djup)" src` ska ge noll rader, vilket stämmer med
+      raden om `--gron-djup` under "Tema".
+    - `grep -c "url(" src/web/landning.css` ska ge `1`.
+    - `grep -rn "knapp-hero-fylld" src/web` ska ge träffar bara i
+      `src/web/landning.css` och `src/web/landning.html`, och i
+      `landning.html` bara på raden med `Kom igång`.
+    - `grep -n "Guldknappen i hero" src/web/tema.css src/web/landning.css`
+      ska ge noll rader.
+    - Osynliga och förväxlingsbara tecken prövas i två sökningar efter rollen
+      (lärdomen 2026-09-14 om U+2013):
+      - `grep -rnI $'\xc2\xa0\|\xe2\x88\x92' src/web/tema.css src/web/landning.css src/web/landning.html src/server/server.js tests/server.test.js tests/hero.test.js | cat -v`
+        ska ge noll rader. U+00A0 och U+2212 får aldrig stå råa i de här
+        filerna, inte heller i en kommentar.
+      - `grep -rnI $'\xe2\x80\x93' src/web/tema.css src/web/landning.css src/web/landning.html src/server/server.js tests/server.test.js tests/hero.test.js | cat -v`
+        bedöms träff för träff. En träff är godkänd bara om tecknet står i en
+        kommentar eller i synlig löptext och är typografi: ett tankstreck i ett
+        intervall ("punkt 1–4") eller mellan satsdelar. En träff i en
+        strängliteral som en funktion producerar, eller i ett CSS-värde, är ett
+        fel och ska bytas mot `–`. Varje träff redovisas med radnumret och
+        bedömningen. Körd 2026-10-13 gav sökningen en enda träff,
+        `tests/server.test.js:435`, i kommentaren `"Teststrategi", punkt 1–4`.
+        Den fanns redan i HEAD, är ett tankstreck i ett intervall i en kommentar
+        och är därmed godkänd. Filen ändras inte.
+13. Kontrollera att `hero.png` är binär för git enligt "Bilden" och klistra in
+    raden.
+14. Ta upp i redovisningen, som öppna uppgifter för andra än byggaren, i den
+    ordning de ska göras:
+    1. granskaren granskar paketet;
+    2. dokumentatorn stryker raden om Pexels-fotot i `README.md` utan att
+       ersätta den (se "Licens och attribution");
+    3. användaren gör den manuella kontrollen, efter granskarens besked och
+       före commit (se "Manuell kontroll");
+    4. användaren committar (den slutliga bilden finns sedan 2026-10-13).
+
+**Steg 4–13 utfördes av byggaren 2026-10-13.** `npm test` gav `tests 1158`,
+`fail 0` och `EXIT=0` i tre körningar i rad. Varje mutation i (H6)–(H12) fälldes
+av sin egen punkt. Kvoterna står i posten "Kvoterna i hero kördes" i
+beslutsloggen.
+
+**Utfört 2026-10-13: kommentaren i (H8):s testfall.** Kommentaren i testfallet
+`sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp`
+i `tests/server.test.js` citerade en mutation på
+`IMAGE_FILE_PATTERN.exec(name) + null-kontrollen`, som inte längre fanns.
+Byggaren skrev om den efter sin egen körning av (H8):s mutationer (1) och (2) i
+en kopia. Den nya kommentaren börjar med
+`// Vilken sond som mäter filtret är körd och inte gissad, i en kopia av` och
+anger för båda mutationerna `EXIT=1`, `fail 1` och meddelandet
+`"/bilder/Logga.png ... 200 !== 404"`. Meningen efteråt lyder `Det är alltså
+versala namn på filer som finns som fäller mutationerna`. Arkitekten läste
+kommentaren i filen 2026-10-14 med
+`grep -n "Vilken sond som mäter filtret\|versala namn på filer" tests/server.test.js`,
+som gav rad 255 och 264.
+
+Hittar byggaren en skillnad mellan det här avsnittet och vad koden, mätningen
+eller körningen visar, lämnas paketet tillbaka till arkitekten innan det
+redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
+
+#### Beslutslogg [hero-bild]
+
+- **Ny bild, ingen slöja, mörk text (användarens beslut 2026-10-13)** — beslutet
+  är användarens och genomförs som det står. Del 6 är märkt som upphävd i sin
+  helhet, och de två användarbesluten där som gäller slöjan och godkännandet av
+  utsnittet är märkta var för sig. Raden för hero i sektionstabellen under
+  "Landningssidan" i del 3 är omskriven, så att filen har ett svar på frågan om
+  bakgrunden. (påverkat av lärdom: **ja**, `2026-09-02 — dokumentation: "tom
+  lista ger 0 för samtliga fyra funktioner" motsägs av koden` — ett påstående
+  som ändras söks upp i hela filen)
+- **Filnamnet `hero.png`** — namnet beskriver rollen, så att den slutliga bilden
+  kunde ersätta den tillfälliga utan att något namn ändrades, vilket den gjorde
+  2026-10-13. (påverkat av lärdom: nej)
+- **Kopiering byte för byte, ingen omkodning** — se "Teknikval". (påverkat av
+  lärdom: nej)
+- **Testerna prövar format, mått och byte-gräns, aldrig innehållet** —
+  användarens beslut 4. Kravet att texten klarar kontrasten mot bildens blå
+  prövas av (H11) mot `--hero-yta` med en tolerans, och mätningen visar att
+  bilden ligger inom toleransen. Mätningen görs om vid bytet, men den är en
+  körning och ingen kod. *Att avkoda PNG-filen i ett test förkastades:* testet
+  hade då berott på bildens innehåll, vilket användaren uteslöt. (påverkat av
+  lärdom: **ja**, `2026-09-14 — dokumentation: fem antal skrevs in i
+  ARKITEKTUR.md utan kommandot` — värdet på `--hero-yta` kommer ur en körning,
+  inte ur användarens uppskattning)
+- **Texten står aldrig på bilden, och det följer av layouten** — på smal skärm
+  under bilden, på bred skärm i den andra halvan. *Att låta texten ligga ovanpå
+  bildens tomma vänstra halva med `background-size: cover` förkastades:* vid
+  `cover` beror bildens skala och läge på sektionens höjd, som beror på textens
+  radbrytning, och det går inte att visa utan en webbläsare att telefonen aldrig
+  hamnar bakom texten. *Att byta bilden mot bara den blå färgen på smal skärm
+  förkastades:* telefonen är det enda i bilden som visar vad appen är, och den
+  får plats under texten. (påverkat av lärdom: **ja**, `2026-09-07 —
+  gränssnitt: withoutField-grenen i app.js kan inget serversvar nå` — det ingen
+  agent kan pröva bevisas med räkning och skrivs ut som en manuell kontroll)
+- **`min-height: 28.125vw` på bred skärm** — se "Layouten". (påverkat av lärdom:
+  nej)
+- **Hero behåller den ljusa bilden i det mörka läget, och hero-tokenerna byter
+  inte värde** — (H11)(a) kräver det. *Att mörka ned hero i det mörka läget
+  förkastades:* det kräver en slöja eller ett filter, och slöjan är det
+  användaren tog bort. (påverkat av lärdom: nej)
+- **Egna `--hero-`-tokener, inga hexkoder i `landning.css`** — `tema.css` är
+  den enda filen med hexkoder. Tokenerna står uppräknade i (H11)(a).
+  `--hero-text`, `--hero-text-accent`, `--hero-fokus`, `--hero-knapp-yta` och
+  `--hero-knapp-yta-hover` pekar på loggans toner, som det mörka läget inte
+  ändrar.
+  (påverkat av lärdom: **ja**, `2026-09-02 — datamodell: cost.js har en egen,
+  svagare kopia av "är detta ett objekt"` — en färg som redan har en ägare får
+  ingen kopia)
+- **`--hero-sloja` och `--hover-pa-mork` tas bort, `--gron-djup` står kvar med
+  skäl** — de två första förlorar sina enda användare. Sökningen efter vilka
+  tokener som förlorar sin sista användare gjordes ett led ner:
+  `--text-pa-mork`, `--text-svag-pa-mork`, `--guld-ljus` och `--morkt-block` har
+  användare utanför hero kvar (sidfoten, `style.css`, `demo/banner.css`, sökt med
+  Grep i `src/web`). (påverkat av lärdom: **ja**, `2026-10-13 — tema:
+  --gron-djup blev en token utan användare när --hero-till togs bort`)
+- **`.knapp-kontur-ljus` döps om till `.knapp-kontur-hero`** — knappen är inte
+  längre ljus, och namnet hade blivit osant. Inga tester läser klassnamnet (sökt
+  med Grep i `tests`). (påverkat av lärdom: **ja**, `2026-09-07 —
+  dokumentation: en byggarinstruktion i beslutsloggen pekar på writeQueue, som
+  inte längre finns` — namnbytet söks i hela trädet i steg 12)
+- **Fokusramen i hero är en egen token** — `--lank` byter till en ljusblå ton i
+  det mörka läget, och användaren rapporterade att ramen var nästan osynlig mot
+  det gamla hero. (H11)(e) kräver 3:1, och mutation (4) i (H11) visar att ett
+  byte till `--lank` fälls. (påverkat av lärdom: nej)
+- **Servern serverar bara png; `jpg` och `svg` tas bort** — ingen fil har de
+  ändelserna, och en gren i en tabell utan fil kan inte testas. Med en enda typ
+  försvinner tabellen och därmed mutationen som inte gick att fälla. (påverkat av
+  lärdom: **ja**, `2026-09-04 — test: två konstruktioner i storage.js körs
+  aldrig och överlever mutation` och `2026-09-07 — arkitektur: saveEntries blev
+  en export utan anropare i src/ när updateEntries togs i bruk`)
+- **Sonderna i (H8) gäller namn vars fil finns** — `/bilder/hero.PNG` och
+  `/bilder/HERO.png` kan bara ge `404` genom mönstret. Ingen sond för en annan
+  ändelse, eftersom den skulle passera av fel skäl; (H7) bevakar i stället att
+  katalogen bara har png. (påverkat av lärdom: **ja**, `2026-10-13 — test:
+  sonden /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas, inte för att
+  mönstret avvisar ändelsen`)
+- **(H9) ser alla tre stavningarna av `url(...)`** — mönstret och mutationerna
+  (2)–(4) täcker dubbla, enkla och inga citattecken. Ingen kommentar i
+  `landning.css` får innehålla `url(`. (påverkat av lärdom: **ja**, `2026-10-13
+  — test: (H3):s krav på exakt en url() i landning.css ser bara dubbelfnuttade
+  adresser`)
+- **Sökningen i steg 12 utesluter `tests/hero.test.js` uttryckligen** —
+  (påverkat av lärdom: **ja**, `2026-10-13 — dokumentation: steg 10 kräver noll
+  träffar på ett mönster som (H5) måste innehålla`)
+- **Kommentarer utan antal, och kommentaren om bildkatalogen skrivs efter en
+  sökning** — steg 9 och kommentarerna i `tema.css` och `landning.css` ovan.
+  (påverkat av lärdom: **ja**, `2026-10-13 — test: kommentaren om
+  bildkatalogen säger att alla png-loggor hämtas av sidorna`)
+- **(H12) tar bort kommentarerna före deklarationskraven men prövar förbjudna
+  namn i den råa texten** — en kommentar ska inte kunna uppfylla ett krav
+  (mutation (7)), men en kommentar som nämner en borttagen token är också fel
+  (mutation (8)). (påverkat av lärdom: **ja**, `2026-10-13 — test: sonden
+  /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas` — en sond som kan
+  passera av fel skäl skrivs om)
+- **Attributionen till Pexels försvinner, och README:s rad stryks utan
+  ersättning av dokumentatorn (användarens beslut 2026-10-13: användaren har
+  gjort bilden själv)** — se "Licens och attribution". Ersätter arkitektens
+  tidigare förslag i samma del om en ny README-rad om den tillfälliga bilden.
+  (påverkat av lärdom: **ja**, `2026-09-23 — dokumentation: paket 8:s nya
+  beloppstext gjorde README.md:s beskrivning av samma fel falsk i samma
+  ändring`)
+- **`Kom igång` blir en mörk fylld knapp med en egen klass,
+  `.knapp-hero-fylld` (användarens beslut 2026-10-13)** — mörkblå
+  (`--bla-marin`) med vit text, hovring `--bla-primar`, bara i hero. *Att
+  återanvända `.knapp-fylld` förkastades:* dess tokener byter värde i det mörka
+  läget, och hero gör det inte. *Att ändra `.knapp-guld` förkastades:* den bär
+  priskortens mittenknapp, och `tests/priser.test.js` kräver den där. (H11)(f)
+  kräver 4,5:1 för texten mot båda ytorna och (H11)(g) 3:1 för ytorna mot
+  bildens blå; (H12)(h) och (i) kräver klassen i hero och dess deklarationer.
+  (påverkat av lärdom: **ja**, `2026-09-22 — gränssnitt: radens egen klass i
+  kortet Kommande dragningar överlever mutation` — en klass som en selektor beror
+  på prövas som ett kontrakt mellan HTML och CSS)
+- **Bakgrundsfärgen är densamma i den slutliga exporten, och hero förblir ljust i
+  mörkt läge (användarens beslut 2026-10-13)** — stoppvillkoret ±8 och tokenerna
+  som inte byter läge gäller oförändrade. (påverkat av lärdom: nej)
+- **`svg` och `jpg` tas bort ur servern (godtaget av användaren 2026-10-13)** —
+  se "Servern". (påverkat av lärdom: nej)
+- **Den manuella kontrollen görs av användaren efter granskarens besked och före
+  commit (användarens beslut 2026-10-13)** — se "Manuell kontroll". (påverkat av
+  lärdom: **ja**, `2026-09-07 — process: paket 5 och 6 byggdes i arbetsträdet
+  medan paket 4 låg hos granskaren` — varje steg startar först efter föregående
+  stegs skriftliga besked)
+- **Stoppvillkoret för kanten gäller skarvkanterna, inte hela kanten (arkitektens
+  beslut 2026-10-13, efter mätningen)** — mätningen stannade på högerkanten,
+  kolumn 1919, som i alla 1080 rader var `b9d3f5`, med avvikelsen 22. Villkoret
+  finns för att bildens kant inte ska synas mot `--hero-yta`. Högerkanten ligger
+  i båda layouterna mot sektionens högerkant och möter aldrig `--hero-yta`.
+  Villkoret skrevs därför om efter rollen: det gäller kanter vars granne utanför
+  bilden kan vara `--hero-yta` (tabellen "Skarvkant, efter rollen" under
+  "Bilden"). Med den regeln klarade mätningen villkoret: vänsterkanten hade
+  största avvikelsen 7, och över- och nederkanten avvek mer än 8 bara i
+  bildpunkten i kolumn 1919. *Att be användaren ta bort den ljusa kolumnen i den
+  slutliga exporten förkastades som krav:* den syns inte mot `--hero-yta` och
+  blir högst en bildpunkt bred i varje fönster upp till 3840 bildpunkters bredd
+  (arkitektens räkning ur `background-size`, inte mätt i en webbläsare). *Att beskära bilden i projektet förkastades:* ingen omkodning görs i
+  projektet (beslut 4 och "Teknikval"). *Att höja toleransen till 22
+  förkastades:* den gäller också det vänstra området och (H11), och skulle
+  försvaga kontrastkravet för att lösa en fråga som bara gäller en kant.
+  (påverkat av lärdom: **ja**, `2026-09-07 — dokumentation: ARKITEKTUR.md
+  förbjuder den millisekundkonstant LARDOMAR.md kräver` — ett villkor skrivs
+  efter den roll det gäller, inte efter allt det råkar träffa)
+- **Mätningen av hero.png kördes (2026-10-13)** — byggaren körde två skript i
+  scratchpad-katalogen (`hb\matning.mjs` och `hb\kant.mjs`) mot
+  `src/web/bilder/hero.png`, vars sha256 var `3FB4D3DB…5A93`, identisk med
+  originalet på användarens skrivbord. Arkitekten förde in skripten och utdatan
+  ordagrant här, eftersom byggaren inte skriver i `ARKITEKTUR.md`. Hashvärdet
+  återges förkortat så som byggaren redovisade det.
+
+  `matning.mjs`, kört som `node matning.mjs <sökväg till png>`:
+
+  ```js
+  // Mätning av src/web/bilder/hero.png (ARKITEKTUR.md del 7, "Bilden").
+  // Bara node:fs och node:zlib. Kör: node matning.mjs <sökväg till png>
+  import fs from 'node:fs';
+  import zlib from 'node:zlib';
+
+  const file = process.argv[2];
+  const buf = fs.readFileSync(file);
+  console.log(`fil: ${file}`);
+  console.log(`längd: ${buf.length} byte`);
+
+  // 1. Signatur och stycken
+  const SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  for (let i = 0; i < 8; i += 1) {
+    if (buf[i] !== SIG[i]) throw new Error(`signaturen avviker vid byte ${i}`);
+  }
+  console.log('signatur: 89 50 4e 47 0d 0a 1a 0a, ok');
+  const chunks = [];
+  let pos = 8;
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('latin1', pos + 4, pos + 8);
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    chunks.push({ type, len, data });
+    pos += 12 + len;
+  }
+  console.log(`stycken i ordning: ${chunks.map((c) => `${c.type}(${c.len})`).join(' ')}`);
+
+  // 2. IHDR
+  const ihdr = chunks[0];
+  if (ihdr.type !== 'IHDR') throw new Error('första stycket är inte IHDR');
+  const width = ihdr.data.readUInt32BE(0);
+  const height = ihdr.data.readUInt32BE(4);
+  const bitDepth = ihdr.data[8];
+  const colorType = ihdr.data[9];
+  const interlace = ihdr.data[12];
+  console.log(`IHDR: bredd ${width}, höjd ${height}, bitdjup ${bitDepth}, färgtyp ${colorType}, interlace ${interlace}`);
+
+  const stopp = [];
+  if (bitDepth !== 8) stopp.push(`bitdjup ${bitDepth}`);
+  if (colorType !== 2 && colorType !== 6) stopp.push(`färgtyp ${colorType}`);
+  if (interlace !== 0) stopp.push(`interlace ${interlace}`);
+  for (const t of ['iCCP', 'gAMA', 'cHRM']) {
+    if (chunks.some((c) => c.type === t)) stopp.push(`stycket ${t} finns`);
+  }
+  if (stopp.length > 0) {
+    console.log(`STOPP: ${stopp.join(', ')}`);
+    process.exit(2);
+  }
+
+  // 3. IDAT, uppackning och filter
+  const raw = zlib.inflateSync(Buffer.concat(chunks.filter((c) => c.type === 'IDAT').map((c) => c.data)));
+  const bpp = colorType === 6 ? 4 : 3;
+  const stride = width * bpp;
+  if (raw.length !== height * (stride + 1)) throw new Error(`fel längd på uppackad data: ${raw.length}`);
+  const px = Buffer.alloc(height * stride);
+  const filterCount = [0, 0, 0, 0, 0];
+  for (let y = 0; y < height; y += 1) {
+    const f = raw[y * (stride + 1)];
+    filterCount[f] += 1;
+    const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    const out = y * stride;
+    const prev = y === 0 ? null : out - stride;
+    for (let x = 0; x < stride; x += 1) {
+      const a = x >= bpp ? px[out + x - bpp] : 0;
+      const b = prev === null ? 0 : px[prev + x];
+      const c = prev !== null && x >= bpp ? px[prev + x - bpp] : 0;
+      let v;
+      if (f === 0) v = src[x];
+      else if (f === 1) v = src[x] + a;
+      else if (f === 2) v = src[x] + b;
+      else if (f === 3) v = src[x] + Math.floor((a + b) / 2);
+      else if (f === 4) {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        v = src[x] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+      } else throw new Error(`okänd filtertyp ${f} på rad ${y}`);
+      px[out + x] = v & 0xff;
+    }
+  }
+  console.log(`filtertyper per rad (0..4): ${filterCount.join(' ')}`);
+
+  const at = (x, y) => {
+    const i = y * stride + x * bpp;
+    return { r: px[i], g: px[i + 1], b: px[i + 2], a: bpp === 4 ? px[i + 3] : 255 };
+  };
+  const hex = (c) => [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('');
+
+  function lum(c) {
+    const ch = (v) => {
+      const s = v / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+  }
+  const ratio = (p, q) => {
+    const [l1, l2] = [lum(p), lum(q)].sort((m, n) => n - m);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+
+  // 4. Mätområden
+  const LEFT_W = Math.round(width * 0.4); // 768 för 1920
+  console.log(`vänstra området: kolumn 0-${LEFT_W - 1}, rad 0-${height - 1}`);
+  const counts = new Map();
+  let lightest = null;
+  let darkest = null;
+  let minAlphaLeft = 255;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < LEFT_W; x += 1) {
+      const c = at(x, y);
+      const k = hex(c);
+      counts.set(k, (counts.get(k) || 0) + 1);
+      if (c.a < minAlphaLeft) minAlphaLeft = c.a;
+      const l = lum(c);
+      if (lightest === null || l > lightest.l) lightest = { ...c, l, x, y };
+      if (darkest === null || l < darkest.l) darkest = { ...c, l, x, y };
+    }
+  }
+  const total = LEFT_W * height;
+  const [modeHex, modeCount] = [...counts.entries()].sort((p, q) => q[1] - p[1])[0];
+  const mode = { r: parseInt(modeHex.slice(0, 2), 16), g: parseInt(modeHex.slice(2, 4), 16), b: parseInt(modeHex.slice(4, 6), 16) };
+  console.log(`antal olika färger i vänstra området: ${counts.size}`);
+  console.log(`vanligaste färgen (vänstra området): ${modeHex}, ${modeCount} av ${total} bildpunkter, ${(100 * modeCount / total).toFixed(2)} %`);
+  console.log(`ljusaste (vänstra området): ${hex(lightest)} vid (${lightest.x}, ${lightest.y}), L = ${lightest.l.toFixed(5)}`);
+  console.log(`mörkaste (vänstra området): ${hex(darkest)} vid (${darkest.x}, ${darkest.y}), L = ${darkest.l.toFixed(5)}`);
+
+  function maxDev(points) {
+    let best = { d: -1 };
+    for (const [x, y] of points) {
+      const c = at(x, y);
+      const d = Math.max(Math.abs(c.r - mode.r), Math.abs(c.g - mode.g), Math.abs(c.b - mode.b));
+      if (d > best.d) best = { d, x, y, hex: hex(c) };
+    }
+    return best;
+  }
+  function* leftPoints() {
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < LEFT_W; x += 1) yield [x, y];
+  }
+  function* edgePoints() {
+    for (let x = 0; x < width; x += 1) { yield [x, 0]; yield [x, height - 1]; }
+    for (let y = 1; y < height - 1; y += 1) { yield [0, y]; yield [width - 1, y]; }
+  }
+  const devLeft = maxDev(leftPoints());
+  const devEdge = maxDev(edgePoints());
+  console.log(`största kanalavvikelse, vänstra området: ${devLeft.d} vid (${devLeft.x}, ${devLeft.y}), färg ${devLeft.hex}`);
+  console.log(`största kanalavvikelse, kanten: ${devEdge.d} vid (${devEdge.x}, ${devEdge.y}), färg ${devEdge.hex}`);
+
+  let minAlphaEdge = 255;
+  for (const [x, y] of edgePoints()) minAlphaEdge = Math.min(minAlphaEdge, at(x, y).a);
+  if (colorType === 6) {
+    console.log(`lägsta alfa, vänstra området: ${minAlphaLeft}`);
+    console.log(`lägsta alfa, kanten: ${minAlphaEdge}`);
+  } else {
+    console.log('lägsta alfa: färgtyp 2, ingen alfakanal');
+  }
+
+  // 5. Kontrast med värdena i blocket under "Tema" (del 7)
+  const TOKENS = [
+    ['--hero-text', '022d68', 4.5],
+    ['--hero-text-accent', '014085', 4.5],
+    ['--hero-fokus', '022d68', 3],
+    ['--hero-knapp-yta', '022d68', 3],
+    ['--hero-knapp-yta-hover', '014085', 3]
+  ];
+  const parse = (h) => ({ r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) });
+  for (const [name, h, krav] of TOKENS) {
+    const c = parse(h);
+    const mot = [ratio(c, lightest), ratio(c, darkest)];
+    const ok = mot.every((q) => q >= krav);
+    if (!ok) stopp.push(`${name} under ${krav}`);
+    console.log(`${name} (#${h}): ${mot[0].toFixed(2)}:1 mot ljusaste, ${mot[1].toFixed(2)}:1 mot mörkaste, krav ${krav} ${ok ? 'ok' : 'UNDER'}`);
+  }
+
+  if (devLeft.d > 8) stopp.push(`kanalavvikelse ${devLeft.d} i vänstra området`);
+  if (devEdge.d > 8) stopp.push(`kanalavvikelse ${devEdge.d} på kanten`);
+  if (colorType === 6 && (minAlphaLeft < 255 || minAlphaEdge < 255)) stopp.push('alfa under 255');
+  console.log(stopp.length === 0 ? 'stoppvillkor: inget slog till' : `STOPP: ${stopp.join(', ')}`);
+  process.exit(stopp.length === 0 ? 0 : 2);
+  ```
+
+  Utdatan var:
+
+  ```
+  fil: C:/Users/qaium/source/repos/hemochekonomi/src/web/bilder/hero.png
+  längd: 256547 byte
+  signatur: 89 50 4e 47 0d 0a 1a 0a, ok
+  stycken i ordning: IHDR(13) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(1776) IDAT(6) IEND(0)
+  IHDR: bredd 1920, höjd 1080, bitdjup 8, färgtyp 6, interlace 0
+  filtertyper per rad (0..4): 0 0 1080 0 0
+  vänstra området: kolumn 0-767, rad 0-1079
+  antal olika färger i vänstra området: 2
+  vanligaste färgen (vänstra området): a3c6f2, 828672 av 829440 bildpunkter, 99.91 %
+  ljusaste (vänstra området): aacaf3 vid (0, 1079), L = 0.57258
+  mörkaste (vänstra området): a3c6f2 vid (0, 0), L = 0.54586
+  största kanalavvikelse, vänstra området: 7 vid (0, 1079), färg aacaf3
+  största kanalavvikelse, kanten: 22 vid (1919, 0), färg b9d3f5
+  lägsta alfa, vänstra området: 255
+  lägsta alfa, kanten: 255
+  --hero-text (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 4.5 ok
+  --hero-text-accent (#014085): 6.01:1 mot ljusaste, 5.75:1 mot mörkaste, krav 4.5 ok
+  --hero-fokus (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 3 ok
+  --hero-knapp-yta (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 3 ok
+  --hero-knapp-yta-hover (#014085): 6.01:1 mot ljusaste, 5.75:1 mot mörkaste, krav 3 ok
+  STOPP: kanalavvikelse 22 på kanten
+  ```
+
+  Filen har inget `iCCP`-, `gAMA`-, `cHRM`- eller `sRGB`-stycke. Den sista
+  raden är skälet till att byggaren stannade; den slår ihop alla fyra kanterna.
+  Diagnosen per kant gjordes med `kant.mjs`, kört som `node kant.mjs <sökväg
+  till png>`:
+
+  ```js
+  // Diagnos av kanten i hero.png: var avviker bildpunkterna mer än 8 från a3c6f2?
+  import fs from 'node:fs';
+  import zlib from 'node:zlib';
+  const buf = fs.readFileSync(process.argv[2]);
+  const chunks = [];
+  let pos = 8;
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    chunks.push({ type: buf.toString('latin1', pos + 4, pos + 8), data: buf.subarray(pos + 8, pos + 8 + len) });
+    pos += 12 + len;
+  }
+  const W = 1920, H = 1080, bpp = 4, stride = W * bpp;
+  const raw = zlib.inflateSync(Buffer.concat(chunks.filter((c) => c.type === 'IDAT').map((c) => c.data)));
+  const px = Buffer.alloc(H * stride);
+  for (let y = 0; y < H; y += 1) {
+    const f = raw[y * (stride + 1)];
+    if (f !== 2) throw new Error('väntade bara filter 2');
+    for (let x = 0; x < stride; x += 1) {
+      const b = y === 0 ? 0 : px[(y - 1) * stride + x];
+      px[y * stride + x] = (raw[y * (stride + 1) + 1 + x] + b) & 0xff;
+    }
+  }
+  const at = (x, y) => { const i = y * stride + x * bpp; return [px[i], px[i + 1], px[i + 2], px[i + 3]]; };
+  const M = [0xa3, 0xc6, 0xf2];
+  const dev = (c) => Math.max(...[0, 1, 2].map((k) => Math.abs(c[k] - M[k])));
+  const hex = (c) => c.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join('');
+  function runs(name, pts) {
+    const over = pts.filter(([x, y]) => dev(at(x, y)) > 8);
+    let maxd = 0; for (const [x, y] of pts) maxd = Math.max(maxd, dev(at(x, y)));
+    console.log(`${name}: ${pts.length} punkter, ${over.length} avviker mer än 8, största avvikelse ${maxd}`);
+    if (over.length) {
+      const first = over[0], last = over[over.length - 1];
+      console.log(`  första över 8: (${first}) ${hex(at(...first))}, sista: (${last}) ${hex(at(...last))}`);
+    }
+  }
+  const top = [], bottom = [], left = [], right = [];
+  for (let x = 0; x < W; x += 1) { top.push([x, 0]); bottom.push([x, H - 1]); }
+  for (let y = 0; y < H; y += 1) { left.push([0, y]); right.push([W - 1, y]); }
+  runs('överkanten (rad 0)', top);
+  runs('nederkanten (rad 1079)', bottom);
+  runs('vänsterkanten (kolumn 0)', left);
+  runs('högerkanten (kolumn 1919)', right);
+  // Färgen i hörnen och längs diagonalen, för att se om bilden har en gradient
+  for (const [x, y] of [[0, 0], [959, 0], [1919, 0], [0, 539], [1919, 539], [0, 1079], [959, 1079], [1919, 1079], [767, 540], [1200, 100]]) {
+    console.log(`(${x}, ${y}): ${hex(at(x, y))} avvikelse ${dev(at(x, y))}`);
+  }
+  // Kolumnprofil längs rad 0: den första x där avvikelsen blir > 0, > 4, > 8
+  for (const t of [0, 4, 8]) {
+    let fx = -1; for (let x = 0; x < W; x += 1) if (dev(at(x, 0)) > t) { fx = x; break; }
+    console.log(`rad 0: första kolumn med avvikelse > ${t}: ${fx}`);
+  }
+  for (const t of [0, 4, 8]) {
+    let fy = -1; for (let y = 0; y < H; y += 1) if (dev(at(1919, y)) > t) { fy = y; break; }
+    console.log(`kolumn 1919: första rad med avvikelse > ${t}: ${fy}`);
+  }
+  ```
+
+  Utdatan var:
+
+  ```
+  överkanten (rad 0): 1920 punkter, 1 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,0) b9d3f5, sista: (1919,0) b9d3f5
+  nederkanten (rad 1079): 1920 punkter, 1 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,1079) b9d3f5, sista: (1919,1079) b9d3f5
+  vänsterkanten (kolumn 0): 1080 punkter, 0 avviker mer än 8, största avvikelse 7
+  högerkanten (kolumn 1919): 1080 punkter, 1080 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,0) b9d3f5, sista: (1919,1079) b9d3f5
+  (0, 0): a3c6f2 avvikelse 0
+  (959, 0): a3c6f2 avvikelse 0
+  (1919, 0): b9d3f5 avvikelse 22
+  (0, 539): a3c6f2 avvikelse 0
+  (1919, 539): b9d3f5 avvikelse 22
+  (0, 1079): aacaf3 avvikelse 7
+  (959, 1079): aacaf3 avvikelse 7
+  (1919, 1079): b9d3f5 avvikelse 22
+  (767, 540): a3c6f2 avvikelse 0
+  (1200, 100): a3c6f2 avvikelse 0
+  rad 0: första kolumn med avvikelse > 0: 1919
+  rad 0: första kolumn med avvikelse > 4: 1919
+  rad 0: första kolumn med avvikelse > 8: 1919
+  kolumn 1919: första rad med avvikelse > 0: 0
+  kolumn 1919: första rad med avvikelse > 4: 0
+  kolumn 1919: första rad med avvikelse > 8: 0
+  ```
+
+  Bedömning efter regeln om skarvkanter: i överkanten och nederkanten avvek bara
+  bildpunkten i kolumn 1919 mer än 8, och den hör till högerkanten. I
+  överkanten var första kolumn med någon avvikelse alls 1919. Vänsterkanten hade
+  största avvikelsen 7. Alfa var 255 i hela det vänstra området och på hela
+  kanten. Alla fem kontrastkraven klarades. Den vanligaste färgen var `a3c6f2`,
+  och `--hero-yta` sattes till `#a3c6f2`; användarens uppskattning `#a3c4f0`
+  användes inte. `kant.mjs` har bara filtertyp 2 inbyggd (som `filtertyper per
+  rad (0..4): 0 0 1080 0 0` visade för den här filen) och kastar
+  `väntade bara filter 2` för en fil med andra filter. Den slutliga bilden hade
+  också bara filtertyp 2 (`filtertyper per rad (0..4): 0 0 1080 0 0` i posten
+  "Mätningen av den slutliga hero.png kördes"), så skriptet kunde köras
+  oförändrat. Ett sådant kast är ingen mätning, och vid ett senare byte byggs
+  skriptet ut med filtren ur `matning.mjs` innan det används. (påverkat av lärdom:
+  **ja**, `2026-08-18 — miljö: testkommandot i ARKITEKTUR.md skrevs ned utan att
+  köras` — talen här kommer ur körningen, inte ur en uppskattning)
+- **Kvoterna i hero kördes (2026-10-13)** — byggaren körde (H11) i steg 11, i tre
+  körningar av `npm test` som alla gav `tests 1158`, `fail 0` och `EXIT=0`.
+  Arkitekten förde in kvoterna här ur byggarens redovisning av raderna från
+  `t.diagnostic`. Raderna var identiska i ljust och mörkt läge, eftersom ingen
+  `--hero-`-token byter värde i det mörka läget. `Y` var `--hero-yta`
+  (`#a3c6f2`), och `Yljus` och `Ymork` var `Y` plus respektive minus 8 per kanal.
+  Utskriften hade två decimaler.
+
+  | Token | Mot | Kvot | Krav |
+  |---|---|---|---|
+  | `--hero-text` | `Y` / `Yljus` / `Ymork` | 7,55 / 8,20 / 6,94 | 4,5 |
+  | `--hero-text-accent` | `Y` / `Yljus` / `Ymork` | 5,75 / 6,24 / 5,28 | 4,5 |
+  | `--hero-text` | `--hero-hover` över `Yljus` / över `Ymork` | 10,03 / 9,15 | 4,5 |
+  | `--hero-fokus` | `Yljus` / `Ymork` | 8,20 / 6,94 | 3 |
+  | `--hero-knapp-text` | `--hero-knapp-yta` / `--hero-knapp-yta-hover` | 13,31 / 10,13 | 4,5 |
+  | `--hero-knapp-yta` | `Yljus` / `Ymork` | 8,20 / 6,94 | 3 |
+  | `--hero-knapp-yta-hover` | `Yljus` / `Ymork` | 6,24 / 5,28 | 3 |
+
+  Det lägsta värdet mot ett textkrav var 5,28:1, för `--hero-text-accent` mot
+  `Ymork`. Mutation (8) i (H11), `--hero-knapp-yta-hover: var(--bla-primar);` →
+  `--hero-knapp-yta-hover: var(--bla-ljus);`, gav 2,96:1 mot `Ymork`, alltså
+  under 3, och fälldes av (H11)(g) som kravlistan förutsade. Marginalen till
+  gränsen var 0,04. Den mutationen är därför känslig för `--hero-yta`: blir den
+  blå ljusare ökar kontrasten mellan `--bla-ljus` och ytan, och mutationen kan
+  överleva. Den slutliga bilden gav samma `--hero-yta`, `#a3c6f2`, och (H11)
+  läser bara `tema.css`, så kvoten 2,96:1 gäller oförändrad. Ändras
+  `--hero-yta` i ett senare byte ska mutationen bytas mot en ljusare knappyta
+  som ligger under 3:1 innan paketet räknas som skyddat. (påverkat av lärdom: **ja**,
+  `2026-09-14 — dokumentation: fem antal skrevs in i ARKITEKTUR.md utan
+  kommandot` — talen kommer ur körningens egen utskrift och står med sina ytor)
+- **Mätningen av den slutliga hero.png kördes (2026-10-13)** — användaren
+  ersatte den tillfälliga bilden med den slutliga under samma namn,
+  `src/web/bilder/hero.png`, och byggaren körde om `matning.mjs` och `kant.mjs`
+  mot den i steg 2 i "Byggarens instruktioner [hero-våg]". Filens sha256 började
+  med `DE69BCC5` och slutade med `BA9B`, och längden var 279 561 byte.
+  Hashvärdet återges förkortat så som det redovisades. Granskaren körde samma
+  två skript igen under granskningen och sparade utdatan; arkitekten förde in
+  den här ordagrant, med kommandots utgångskod på sista raden som granskaren
+  skrev den.
+
+  `node matning.mjs <sökväg till hero.png>`:
+
+  ```
+  fil: C:/Users/qaium/source/repos/hemochekonomi/src/web/bilder/hero.png
+  längd: 279561 byte
+  signatur: 89 50 4e 47 0d 0a 1a 0a, ok
+  stycken i ordning: IHDR(13) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(4096) IDAT(142) IDAT(6) IEND(0)
+  IHDR: bredd 1920, höjd 1080, bitdjup 8, färgtyp 6, interlace 0
+  filtertyper per rad (0..4): 0 0 1080 0 0
+  vänstra området: kolumn 0-767, rad 0-1079
+  antal olika färger i vänstra området: 2
+  vanligaste färgen (vänstra området): a3c6f2, 828672 av 829440 bildpunkter, 99.91 %
+  ljusaste (vänstra området): aacaf3 vid (0, 1079), L = 0.57258
+  mörkaste (vänstra området): a3c6f2 vid (0, 0), L = 0.54586
+  största kanalavvikelse, vänstra området: 7 vid (0, 1079), färg aacaf3
+  största kanalavvikelse, kanten: 22 vid (1919, 0), färg b9d3f5
+  lägsta alfa, vänstra området: 255
+  lägsta alfa, kanten: 255
+  --hero-text (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 4.5 ok
+  --hero-text-accent (#014085): 6.01:1 mot ljusaste, 5.75:1 mot mörkaste, krav 4.5 ok
+  --hero-fokus (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 3 ok
+  --hero-knapp-yta (#022d68): 7.89:1 mot ljusaste, 7.55:1 mot mörkaste, krav 3 ok
+  --hero-knapp-yta-hover (#014085): 6.01:1 mot ljusaste, 5.75:1 mot mörkaste, krav 3 ok
+  STOPP: kanalavvikelse 22 på kanten
+  EXIT=2
+  ```
+
+  `node kant.mjs <sökväg till hero.png>`:
+
+  ```
+  överkanten (rad 0): 1920 punkter, 1 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,0) b9d3f5, sista: (1919,0) b9d3f5
+  nederkanten (rad 1079): 1920 punkter, 1 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,1079) b9d3f5, sista: (1919,1079) b9d3f5
+  vänsterkanten (kolumn 0): 1080 punkter, 0 avviker mer än 8, största avvikelse 7
+  högerkanten (kolumn 1919): 1080 punkter, 1080 avviker mer än 8, största avvikelse 22
+    första över 8: (1919,0) b9d3f5, sista: (1919,1079) b9d3f5
+  (0, 0): a3c6f2 avvikelse 0
+  (959, 0): a3c6f2 avvikelse 0
+  (1919, 0): b9d3f5 avvikelse 22
+  (0, 539): a3c6f2 avvikelse 0
+  (1919, 539): b9d3f5 avvikelse 22
+  (0, 1079): aacaf3 avvikelse 7
+  (959, 1079): aacaf3 avvikelse 7
+  (1919, 1079): b9d3f5 avvikelse 22
+  (767, 540): a3c6f2 avvikelse 0
+  (1200, 100): a3c6f2 avvikelse 0
+  rad 0: första kolumn med avvikelse > 0: 1919
+  rad 0: första kolumn med avvikelse > 4: 1919
+  rad 0: första kolumn med avvikelse > 8: 1919
+  kolumn 1919: första rad med avvikelse > 0: 0
+  kolumn 1919: första rad med avvikelse > 4: 0
+  kolumn 1919: första rad med avvikelse > 8: 0
+  EXIT=0
+  ```
+
+  Stoppvillkoren lästa ur raderna ovan: bitdjup 8, färgtyp 6 och interlace 0
+  (`IHDR`-raden); inget `iCCP`, `gAMA` eller `cHRM` (`stycken i ordning`);
+  största avvikelsen i det vänstra området 7, alltså inte över 8; skarvkanterna
+  enligt `kant.mjs` — vänsterkanten `0 avviker mer än 8`, och i överkanten och
+  nederkanten avviker bara `(1919,0)` respektive `(1919,1079)`, som hör till
+  högerkanten och ingen skarvkant (tabellen "Skarvkant, efter rollen"); alfa
+  255 i hela det vänstra området och på kanten; alla fem kontraster `ok`.
+  `matning.mjs`-raden `STOPP: kanalavvikelse 22 på kanten` och dess `EXIT=2`
+  kommer av att skriptet slår ihop alla fyra kanterna, högerkanten inräknad, och
+  avgör därför inte ensam ("Bytet till den slutliga bilden", punkt 3). Inget
+  stoppvillkor slog till, och `--hero-yta` stod kvar som `#a3c6f2`. Alla rader
+  utom `längd` och `stycken i ordning` var desamma som för den tillfälliga
+  bilden. Ingen fil i `src/` eller `tests/` ändrades av bytet.
+  (påverkat av lärdom: **ja**, `2026-08-18 — miljö: testkommandot i
+  ARKITEKTUR.md skrevs ned utan att köras` — uppgiften om bilden kördes om innan
+  den skrevs in som mätvärde)
+- **Vågen ritas som ett inline-`<svg>` i `landning.html` (användarens önskan
+  2026-10-13, arkitektens teknikval)** — se "Teknikval [hero-våg]". Avgörande var
+  att vågen ska skalas med bredden, följa det mörka läget och inte ge någon ny
+  `url()`. Bara inline-SVG klarar alla tre utan att (H9) försvagas. (påverkat
+  av lärdom: **ja**, `2026-10-13 — test: (H3):s krav på exakt en url() i
+  landning.css ser bara dubbelfnuttade adresser` — (H9) får inte släppas upp för
+  att rymma en ny sorts adress)
+- **Vågen ligger i en egen remsa som `.hero` reserverar** — på smal skärm genom
+  `padding-bottom` och bildens läge, på bred skärm genom `padding-bottom`,
+  `background-origin: content-box` och `min-height`. *Att låta vågen ligga över
+  bildens nederkant förkastades:* telefonen och dess skugga når nästan ned till
+  bildens nederkant (förhandsbilden vid 375 bildpunkter), och ett byte av bilden
+  fick inte kräva någon ny räkning; bytet 2026-10-13 krävde ingen. Vad vågen täcker följer därför av
+  reglerna och inte av motivet, på samma sätt som för texten. (påverkat av
+  lärdom: **ja**, `2026-09-07 — gränssnitt: withoutField-grenen i app.js kan
+  inget serversvar nå` — det ingen agent kan pröva i en webbläsare bevisas med
+  räkning ur reglerna och lämnas till den manuella kontrollen)
+- **Vågens färg är `--bakgrund`, samma token som nästa sektion, och ingen ny
+  `--hero-`-token** — vågen hör till nästa sektion och ska byta med läget, medan
+  `--hero-`-tokenerna enligt (H11)(a) inte får byta värde. I mörkt läge blir
+  vågen därför marinblå mot ljusblått. (H13)(d) kräver att vågen och nästa
+  sektion har samma token, så att de inte kan glida isär. (påverkat av lärdom:
+  **ja**, `2026-09-02 — datamodell: cost.js har en egen, svagare kopia av "är
+  detta ett objekt"` — en färg som redan har en ägare får ingen kopia)
+- **`--vag-hojd` är en anpassad egenskap på `.hero` i `landning.css`** — måttet
+  används på tre ställen per brytpunkt och får därför en namngiven ägare. Den
+  ligger inte i `tema.css`, som inte har brytpunkter, och heter inte `--hero-…`,
+  eftersom (H12)(f) kräver att sådana namn finns i `tema.css`. (påverkat av
+  lärdom: **ja**, `2026-09-02 — arkitektur: den utvidgade ägarregeln för tal
+  bryts av kod som redan fanns` — samma tal i samma roll har en ägare)
+- **`bottom: -1px` och inget `overflow` på `.hero`** — mot den hårfina linjen
+  mellan hero och nästa sektion vid zoom. Se "Ingen skarv och ingen hårfin linje".
   (påverkat av lärdom: nej)
+- **(H13) kräver markeringen och vågens regler ordagrant, och hero-selektorerna
+  som en uttömmande lista** — en spärr som läser text prövas med varje sätt att
+  dölja vågen som går att skriva: borttagen, bortkommenterad, flyttad,
+  `display: none` i en annan regel eller i en mediefråga, en ny selektor som
+  `.hero svg` eller `main svg`, rörelse och en adress. Gränsen, en selektor utan
+  `hero`, `svg` och `path`, står utskriven i (H13). Listan var en mängd av
+  selektorer och lät fyra mutationer överleva; den ersattes 2026-10-14 av den
+  ordnade listan `HERO_RULES` (posten "Kaskadspärren" nedan). (påverkat av lärdom:
+  **ja**, `2026-09-07 — test: textspärren mot saveEntries i api.js går förbi med
+  ett alias` och `2026-09-22 — gränssnitt: radens egen klass i kortet Kommande
+  dragningar överlever mutation` — klassen är ett kontrakt mellan HTML och CSS)
+- **Ingen egen kontroll av (P20) i (H13)** — `visibleTexts` tar bort varje
+  `<svg>`, så en assertion om att vågen inte ändrar sidans text skulle passera
+  för varje mutation och kan inte fällas. Det (P20) inte ser, text inuti
+  `<svg>`, fälls i stället av (H13)(a), mutation (5). (påverkat av lärdom:
+  **ja**, `2026-09-04 — test: två konstruktioner i storage.js körs aldrig och
+  överlever mutation` — ett villkor som ingen mutation kan fälla skrivs inte)
+- **(H12)(a) och (b) ändrades, och mutation (4) i (H12) ströks (2026-10-13)** —
+  utfyllnaden, bildens läge på smal skärm och `min-height` fick nya värden av
+  vågen och prövas nu av (H13)(b). Mutation (4) ströks i stället för att
+  numreras om, så att numren i byggarens tidigare redovisning fortfarande
+  pekar rätt. Skarvkantstabellen, "Layouten", kodblocken under "CSS", raden för
+  hero i sektionstabellen i del 3, "Filer", "HTML", "Tillgänglighet" och
+  "Manuell kontroll" skrevs om i samma ändring, så att filen har ett svar på
+  varje fråga. (påverkat av lärdom: **ja**, `2026-09-02 — dokumentation: "tom
+  lista ger 0 för samtliga fyra funktioner" motsägs av koden` och `2026-09-14 —
+  dokumentation: (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte
+  längre finns i koden`)
+- **En våg med krönet till vänster (användarens beslut 2026-10-13)** — arkitekten
+  lade fram antalet vågor och riktningen som frågorna F1 och F2 med ett förslag
+  vardera, och användaren valde förslagen oförändrade efter att ha sett
+  förhandsbilderna. Se "Frågor till användaren om vågen". (påverkat av lärdom:
+  nej)
+- **Kontrasten i vågen kördes (2026-10-13)** — byggaren körde (H13) i steg 8 i
+  "Byggarens instruktioner [hero-våg]", och arkitekten förde in raderna från
+  `t.diagnostic` här ur byggarens redovisning. Vågens färg, `--bakgrund`, mot
+  `--hero-yta` (`#a3c6f2`) gav 1,62:1 i ljust läge, där `--bakgrund` är
+  `#f7f5ef`, och 7,55:1 i mörkt läge, där den är `#022d68`. Kvoterna är inget
+  krav: vågen är dekorativ. De visar att övergången är mjuk i ljust läge och
+  tydlig i mörkt, som avsnittet "Färgerna, bindande" beskriver. (påverkat av
+  lärdom: **ja**, `2026-09-14 — dokumentation: fem antal skrevs in i
+  ARKITEKTUR.md utan kommandot` — talen kommer ur körningens egen utskrift och
+  står med sina ytor)
+- **Kaskadspärren: (H12) och (H13) kräver att deklarationen gäller, inte bara
+  att den finns (arkitektens beslut 2026-10-14, efter granskningen)** — se
+  "Kaskadspärren [hero-kaskad]". Tre led: exakt en regel per selektor och
+  kontext med varje egenskap en gång, den ordnade listan `HERO_RULES` med
+  kroppar, och inga vägar runt den i de filer sidan laddar. *Att bara räkna
+  regler per selektor, som granskaren föreslog som minimum, förkastades som
+  ensamt skydd:* det fäller G-1 och G-2 men inte en kortform som
+  `background: var(--hero-yta);` sist i `.hero` (K-12), som återställer
+  `background-image` och `background-size` utan att någon egenskap upprepas,
+  och inte en flyttad regel (K-13). Exakta kroppar i en ordnad lista fäller
+  båda. *Att tolka CSS med en riktig selektormotor och räkna ut den vinnande
+  deklarationen förkastades:* det kräver ett beroende eller en egen
+  kaskadimplementation, och det som återstår, regler utan `hero` i selektorn,
+  täcks av den manuella kontrollen. Varje egenskap i en hero-regel är därmed
+  fast, och en ändring av utseendet i hero kräver att `HERO_RULES` ändras här
+  först. (påverkat av lärdom: **ja**, `2026-10-13 — test: (H12) och (H13) kräver
+  att en regel innehåller en deklaration, men inte att den vinner kaskaden`,
+  `2026-09-07 — test: textspärren mot saveEntries i api.js går förbi med ett
+  alias` — spärren prövas med flera stavningar, (K-5) till (K-17) — och
+  `2026-10-13 — dokumentation: mutation E-10 är skriven utan ankare` — varje
+  ankare ska ge exakt `1`)
+- **Del 7 skrevs om i dåtid efter bytet till den slutliga bilden (2026-10-14)** —
+  användarbesluten överst, "Teknikval", "Bilden", "Tillgänglighet", "Licens och
+  attribution", "Bytet till den slutliga bilden", "Manuell kontroll", steg 2
+  och 14 i "Byggarens instruktioner [hero-bild]", raden som började
+  `**Kvar efter steg 13`, som nu är `**Utfört 2026-10-13`, och posterna i den
+  här loggen om filnamnet, om `kant.mjs` (i "Mätningen av hero.png kördes"),
+  om mutation (8) i (H11) (i "Kvoterna i hero kördes") och om den slutliga
+  mätningen. Längden 256 547 står bara kvar som den tillfälliga bildens längd,
+  och 279 561 är den enda längd som krävs. Förhandsbildens "exakta möte" skrevs
+  om till skillnaden på en bildpunkt mellan skissen och `bottom: -1px`. Posten
+  om den slutliga mätningen fick utdatan inklistrad, och "33 stycken" ströks i
+  stället för att förses med ett kommando, eftersom antalet ändras av
+  kaskadspärrens nya mutationer. (påverkat av lärdom: **ja**, `2026-10-13 —
+  dokumentation: del 7 beskriver fortfarande den tillfälliga bilden i presens
+  efter bytet till den slutliga`, `2026-10-13 — dokumentation: förhandsbilden
+  sägs visa ett exakt möte` och `2026-10-13 — dokumentation: mätningen av den
+  slutliga bilden står i beslutsloggen utan utdata, och "33 stycken" utan
+  kommando`)
+- **Led 3 och (H9) prövas mot rollen, inte mot en stavning (arkitektens beslut
+  2026-10-14, efter den andra granskningen)** — se "Stavningarna i led 3 och
+  (H9)" under "Kaskadspärren [hero-kaskad]". Mönstren är okänsliga för
+  skiftläge och tål blanktecken; premissen att sidan bara laddar `/tema.css`
+  och `/landning.css` blev ett eget krav med en tillåtelselista för `rel`;
+  `tema.css` fick samma `@import`-krav som `landning.css`; och tecknet `\` är
+  förbjudet i båda CSS-filerna, eftersom en escape stavar förbi varje mönster.
+  Granskarens sex mutationer står som (K-18), (K-19), (K-21), (K-24), (K-25)
+  och (K-26), och (K-20), (K-22), (K-23) och (K-27) till (K-32) prövar
+  stavningar som granskaren inte körde. *Att räkna upp förbjudna `rel`-värden
+  förkastades:* en förbudslista är en sluten lista över stavningar, medan en
+  tillåtelselista med `icon` och `stylesheet` fäller varje nytt `rel`, också
+  `preload` med ett `onload` som byter till `stylesheet` (K-23). Ett nytt
+  `rel`, till exempel om loggbytet i nästa del lägger till en ikon av en annan
+  sort, kräver därför en ny rad i led 3 krav 1 först. *Att tolka HTML och CSS
+  med en riktig tolk förkastades* av samma skäl som i posten om kaskadspärren:
+  det kräver ett beroende. *`image-set()` förbjuds i stället för att tolkas:*
+  `landning.css` har ingen, och att plocka ut strängar ur den skulle kräva ett
+  andra mönster med egna stavningar. *`@scope` täcks i stället för att skrivas
+  in som gräns:* led 2 och led 3 läser kontexten utöver selektorn, vilket inte
+  ändrar någon rad i `HERO_RULES`. (påverkat av lärdom: **ja**, `2026-10-14 —
+  test: kaskadspärrens led 3 och (H9) går förbi med en annan stavning av samma
+  sak` — mönstren, tillåtelselistan och mutationerna, `2026-10-13 —
+  dokumentation: mutation E-10 är skriven utan ankare` — de nya radernas
+  ankare är ankare som (K-15) redan använder eller rader i `landning.html` som
+  förekommer en gång, och byggaren kontrollerar varje ankare med
+  `grep -c -F` i steg 7, och `2026-09-12 — gränssnitt: renderUpcomings två
+  nollställningar överlever mutation` — mutationslistan är ett minimum, och
+  steg 8 tar fram resten ur diffen)
+- **Fyra rader i kaskadtabellen pekade ut en punkt som aldrig nås, och byggarens
+  B-1 till B-7 blev tabellrader (arkitektens beslut 2026-10-14, efter att
+  byggaren lämnat tillbaka [hero-stavning] enligt steg 10)** — tabellen angav
+  "(H12)(a) och (H13)(c)" för (K-1) och "(H13)(b) och (H13)(c)" i
+  kombinationerna för (K-3), (K-4) och (K-6). Byggarens körningar, en i taget
+  med `node --test tests/hero.test.js tests/server.test.js tests/demo.test.js tests/priser.test.js`
+  och loggarna i `scratchpad\hs\mut\<namn>.log`, gav `ℹ fail 2` och `EXIT=1`
+  för var och en, med dessa kryssrader och meddelanden:
+  (K-1) (H12) via `tests/hero.test.js` rad 376 och (H13) via rad 613, båda med
+  `landning.css: .hero i ingen at-regel deklarerar background-size 2 gånger`;
+  (K-3) (H12) via rad 376 och (H13) via rad 613, båda med
+  `landning.css: 2 regler .hero i ingen at-regel, inte 1`;
+  (K-4) (H12) via rad 393 och (H13) via rad 625, båda med
+  `landning.css: .hero i @media (min-width: 960px) deklarerar padding-bottom 2 gånger`;
+  (K-6) (H12) via rad 393 och (H13) via rad 625, båda med
+  `landning.css: 2 regler .hero i @media (min-width: 960px), inte 1`.
+  Rad 613 och 625 är `assertSingleRule` för `.hero` i (H13)(b). (H13)(c), som
+  jämför med `HERO_RULES`, kommer efter (b) i samma testfall och nåddes alltså
+  aldrig. Raderna skrevs om till "(H12)(a) och (H13)(b)" för (K-1) och (K-3)
+  och "(H12)(b) och (H13)(b)" för (K-4) och (K-6), och tabellens inledning
+  fick meningen att sista kolumnen namnger den punkt som fäller testfallet
+  först. *Att behålla (c) i kolumnen förkastades:* en punkt som ingen körning
+  kan visa i en kryssrad går inte att jämföra med utfallet, vilket steg 7
+  kräver. Mutationerna fälls fortfarande av (H13), och (H13)-radens hänvisning
+  "(K-1) till (K-7)" stämmer därför oförändrad.
+  B-1 till B-7 togs fram ur diffen i steg 8 och gav `ℹ fail 1` och `EXIT=1`
+  var för sig. Byggaren försvagade dessutom varje villkorsdel i led 3 och (H9)
+  för sig i `scratchpad\hs\mut-w.mjs` och körde den mutation som ska fälla
+  delen; utfallen står i `scratchpad\hs\resultat-w.txt`, där varje rad gav
+  `EXIT=0` och `ℹ fail 0`, alltså att mutationen ensam bär sin villkorsdel.
+  För B-1 till B-7 var de raderna: borttaget `rel.length === 1 && ` med B-1,
+  `/!\s*important/` utan `i` med B-2, `/@import\b/` i `tema.css` utan `i` med
+  B-3, `/<style\b/` utan `i` med B-4, teckenklassen utan `\/` med B-5,
+  teckenklassen utan `'` med B-6 och `/image-set\s*\(/` utan `i` med B-7.
+  Mutationerna fördes därför in som (K-33) till (K-39), med byggarens
+  ankare, som var och en gav en rad i arkitektens sökning med fast sträng i
+  `src/web/landning.html` 2026-10-14 (rad 14, 19 och 81). B-4 fälldes av
+  (H12) med `landning.html, led 3 krav 5: innehåller <style` och inte av
+  (P20), vilket raden för (K-36) anger. *Att låta B-1 till B-7 stå kvar bara i
+  byggarens redovisning förkastades:* en mutation som inte står i tabellen
+  ingår inte i den bindande listan, och nästa byggare som ändrar ett mönster i
+  led 3 skulle inte se att just den villkorsdelen har en egen mutation.
+  *Delen `\s*` i `/image-set\s*\(/i` har ingen mutation och står kvar som ett
+  namngivet undantag:* i CSS är `image-set (` med blanktecken före parentesen
+  ingen funktion, så ingen giltig stavning kan fälla en mutation som tar bort
+  delen. Den gör bara spärren strängare än CSS, utan att släppa igenom något,
+  och regeln i led 3 om att mönstren "tål blanktecken där CSS och HTML
+  tillåter dem" gäller därför inte den delen. (påverkat av lärdom: **ja**,
+  `2026-09-12 — gränssnitt: renderUpcomings två nollställningar överlever
+  mutation` — mutationerna ur diffen blev tabellrader, `2026-10-13 —
+  dokumentation: mutation E-10 är skriven utan ankare` — varje nytt ankare gav
+  en rad, och `2026-09-14 — test: fyra obligatoriska testfall byggdes utan sin
+  rad i ARKITEKTUR.md` — byggaren lämnade tillbaka i stället för att låta
+  tabellen och körningen skilja sig)
+- **Kommentarmarkörer i strängar blev en känd gräns i stället för en rättning
+  (användarens beslut 2026-10-14)** — granskarens (N1) och (N2) gav `ℹ fail 0`
+  och `EXIT=0`, eftersom kommentarborttagningen före led 1–3 inte känner till
+  strängar. Användaren beslutade att fynden inte rättas i testerna utan förs in
+  under "Det spärren inte fångar" i "Kaskadspärren [hero-kaskad]", med
+  mutationerna ordagrant och granskarens utfall, och det gjordes. Granskarens
+  iakttagelse om `[class="HERO" i]` fördes in på samma ställe. Skälet är att
+  spärren skyddar mot att någon av misstag skriver över hero-stilen i
+  projektets egna filer, och ingen skriver en kommentarmarkör inuti en sträng
+  av misstag. Den manuella kontrollen täcker gränsen. *Att göra
+  kommentarborttagningen strängmedveten, som lärdomen föreslår, förkastades av
+  användaren 2026-10-14* för att avsluta del 7. Inga filer i `src/` eller
+  `tests/` ändrades. (påverkat av lärdom: **ja**, `2026-10-14 — test:
+  kommentarborttagningen före kaskadspärren äter en regel eller ett attribut
+  som står mellan två kommentarmarkörer i strängar` — lärdomens regel framåt
+  följdes inte, enligt användarens beslut, och avvikelsen står här och under
+  "Det spärren inte fångar" i stället för att lämnas oskriven)

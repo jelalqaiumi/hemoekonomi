@@ -168,16 +168,30 @@ a:hover {
   color: var(--knapp-kontur-text);
 }
 
-/* Konturknapp mot den mörka slöjan i hero. */
-.knapp-kontur-ljus {
+/* Konturknapp i hero, mörk mot bildens ljusa blå i båda lägena. */
+.knapp-kontur-hero {
   background: transparent;
-  border-color: var(--text-pa-mork);
-  color: var(--text-pa-mork);
+  border-color: var(--hero-text);
+  color: var(--hero-text);
 }
 
-.knapp-kontur-ljus:hover {
-  background: var(--hover-pa-mork);
-  color: var(--text-pa-mork);
+.knapp-kontur-hero:hover {
+  background: var(--hero-hover);
+  color: var(--hero-text);
+}
+
+/* Fylld knapp i hero, mörkblå med vit text i båda lägena. Bara i hero;
+   resten av sidan använder .knapp-fylld och .knapp-guld. */
+.knapp-hero-fylld {
+  background: var(--hero-knapp-yta);
+  border-color: var(--hero-knapp-yta);
+  color: var(--hero-knapp-text);
+}
+
+.knapp-hero-fylld:hover {
+  background: var(--hero-knapp-yta-hover);
+  border-color: var(--hero-knapp-yta-hover);
+  color: var(--hero-knapp-text);
 }
 
 /* Guldknappen. --bla-marin på --guld ger 4,71:1, alltså AA för brödtext.
@@ -467,25 +481,36 @@ a:hover {
 }
 
 /* ============================================================= 2. hero
-   Foto som bakgrund med en mörk slöja ovanpå (användarens beslut 2026-10-13).
-   Fotot: N. Voitkevich, Pexels. Det är dekorativt och står därför här och inte
-   som <img> med alt-text i landning.html.
-   Slöjan är det övre bildlagret: en linear-gradient med två lika stopp är en
-   enfärgad yta, inte en övergång. Dess färg och genomskinlighet är
-   --hero-sloja i tema.css, och tests/hero.test.js (H4) kräver att den ljusa
-   texten når 4,5:1 mot slöjan också ovanpå en helt vit bildpunkt.
-   --morkt-block syns bara om fotot inte laddas; under slöjan blir den samma
-   marinblå ton som slöjan själv. */
+   Bild som bakgrund i sina egna färger, utan slöja (användarens beslut
+   2026-10-13, ARKITEKTUR.md del 7). Bilden är dekorativ och står därför här
+   och inte som <img> med alt-text i landning.html.
+   Texten står aldrig på bilden, och vågen längst ned står aldrig på någon av
+   dem. Smal skärm: bilden ligger under texten i hela sektionens bredd, och
+   padding-bottom är bildens höjd i förhållande till bredden plus vågens
+   remsa, --vag-hojd, så texten slutar där bilden börjar och bilden där
+   remsan börjar. Bred skärm: bilden tar innehållsrutans högra halva och
+   texten högst knappt halva innehållsbredden; vågens remsa är sektionens
+   padding-bottom.
+   --hero-yta är bildens egen blå. Den fyller resten av sektionen, så att
+   bildens kant inte syns. Texten är mörk i båda lägena, och
+   tests/hero.test.js räknar kontrasten ur tema.css. */
 
 .hero {
-  background-color: var(--morkt-block);
-  background-image:
-    linear-gradient(var(--hero-sloja), var(--hero-sloja)),
-    url("bilder/hero-ekonomi.jpg");
-  background-size: cover;
-  background-position: 35% 50%;
+  position: relative;
+  --vag-hojd: max(1.5rem, 5vw);
+  background-color: var(--hero-yta);
+  background-image: url("bilder/hero.png");
   background-repeat: no-repeat;
-  color: var(--text-pa-mork);
+  background-size: 100% auto;
+  background-position: center bottom var(--vag-hojd);
+  padding-bottom: calc(56.25% + var(--vag-hojd));
+  color: var(--hero-text);
+}
+
+/* --lank, som :focus-visible annars använder, byter värde i det mörka läget;
+   hero gör det inte. */
+.hero :focus-visible {
+  outline-color: var(--hero-fokus);
 }
 
 .hero-inre {
@@ -503,7 +528,7 @@ a:hover {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--guld-ljus);
+  color: var(--hero-text-accent);
 }
 
 .hero h1 {
@@ -514,13 +539,34 @@ a:hover {
 .hero-under {
   max-width: 34rem;
   font-size: 1.05rem;
-  color: var(--text-svag-pa-mork);
+  color: var(--hero-text);
 }
 
 .hero-knappar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+/* Vågen längst ned i hero (användarens önskan 2026-10-13, ARKITEKTUR.md del 7,
+   "Vågen i hero"). Ett inline-svg sist i hero-sektionen i landning.html,
+   dekorativt och utan text. Fyllningen är nästa sektions bakgrund, så vågen
+   byter färg med läget även om hero inte gör det. Den ligger i en egen remsa,
+   --vag-hojd hög, som .hero reserverar med padding-bottom, och täcker därför
+   aldrig bilden eller texten. bottom: -1px låter den gå en bildpunkt in i
+   nästa sektion, så att ingen hårfin linje av hero-blått syns i skarven. */
+.hero-vag {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  display: block;
+  width: 100%;
+  height: var(--vag-hojd);
+  pointer-events: none;
+}
+
+.hero-vag-yta {
+  fill: var(--bakgrund);
 }
 
 /* Hero bar först loggan bredvid texten. Användaren bad om att den togs bort:
@@ -538,6 +584,26 @@ a:hover {
 
   .hero h1 {
     font-size: 3rem;
+  }
+}
+
+/* Från 960 bildpunkter ligger bilden i sektionens högra halva och texten i den
+   vänstra. Bilden placeras i innehållsrutan, och min-height gör den rutan
+   minst lika hög som bilden, så att telefonen inte klipps upptill eller
+   nedtill. padding-bottom är vågens remsa, under innehållsrutan, så att vågen
+   aldrig täcker telefonen. */
+@media (min-width: 960px) {
+  .hero {
+    --vag-hojd: clamp(3rem, 4vw, 6rem);
+    background-size: 50% auto;
+    background-position: right center;
+    background-origin: content-box;
+    padding-bottom: var(--vag-hojd);
+    min-height: calc(28.125vw + var(--vag-hojd));
+  }
+
+  .hero-text {
+    max-width: min(46rem, 48%);
   }
 }
 

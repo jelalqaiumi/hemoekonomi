@@ -74,8 +74,8 @@
 
     <main id="innehall">
       <!-- ======================================================== 2. Hero
-           Foto som bakgrund med en mörk slöja ovanpå, se .hero i landning.css.
-           Fotot är dekorativt och ligger därför som CSS-bakgrund utan alt-text. -->
+           Bild som bakgrund i sina egna färger, se .hero i landning.css.
+           Bilden är dekorativ och ligger därför som CSS-bakgrund utan alt-text. -->
       <section class="hero">
         <div class="hero-inre">
           <div class="hero-text">
@@ -87,11 +87,16 @@
               räkning förfaller, utan att öppna ett enda kalkylblad.
             </p>
             <div class="hero-knappar">
-              <a class="knapp knapp-guld" href="/app">Kom igång</a>
-              <a class="knapp knapp-kontur-ljus" href="#sa-fungerar-det">Se hur det fungerar</a>
+              <a class="knapp knapp-hero-fylld" href="/app">Kom igång</a>
+              <a class="knapp knapp-kontur-hero" href="#sa-fungerar-det">Se hur det fungerar</a>
             </div>
           </div>
         </div>
+        <!-- Vågen mot nästa sektion. Dekorativ: aria-hidden och ingen text.
+             Formen och färgen står i ARKITEKTUR.md del 7, "Vågen i hero". -->
+        <svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" />
+        </svg>
       </section>
 
       <!-- ===================================================== 3. Fördelar

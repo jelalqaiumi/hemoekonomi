@@ -77,9 +77,8 @@ const CORE_FILE_PATTERN = /^[a-z0-9-]+\.js$/;
 // ingenting. Ett 404 i stället hade gett ett fel i webbläsarens konsol på varje
 // sidladdning.
 const DEMO_PREFIX = '/demo/';
-// Ändelsen fångas av gruppen och avgör innehållstypen, precis som för
-// bilderna: en fil kan därför aldrig serveras med en typ som inte hör till
-// dess namn.
+// Ändelsen fångas av gruppen och avgör innehållstypen: en fil kan därför
+// aldrig serveras med en typ som inte hör till dess namn.
 const DEMO_FILE_PATTERN = /^[a-z0-9-]+\.(js|css)$/;
 const DEMO_TYPES = Object.freeze(Object.assign(Object.create(null), {
   js: JS_TYPE,
@@ -88,17 +87,12 @@ const DEMO_TYPES = Object.freeze(Object.assign(Object.create(null), {
 
 // Bilderna under src/web/bilder/. Samma form som /core/ och av samma skäl:
 // mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
-// (annat än den som skiljer namn från ändelse), snedstreck eller versaler, så
+// (annat än den före ändelsen), snedstreck eller versaler, så
 // "..", "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
-// Ändelsen fångas av gruppen och avgör innehållstypen, så en fil kan aldrig
-// serveras med en typ som inte hör till dess namn.
+// Mönstret släpper bara igenom png, så innehållstypen är en enda konstant.
 const IMAGE_PREFIX = '/bilder/';
-const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg|jpg)$/;
-const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
-  png: 'image/png',
-  svg: 'image/svg+xml',
-  jpg: 'image/jpeg'
-}));
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.png$/;
+const IMAGE_TYPE = 'image/png';
 
 function sendNotFound(res) {
   res.writeHead(404);
@@ -160,14 +154,10 @@ function resolveStaticFile(pathname) {
 
   if (pathname.startsWith(IMAGE_PREFIX)) {
     const name = pathname.slice(IMAGE_PREFIX.length);
-    const match = IMAGE_FILE_PATTERN.exec(name);
-    if (match === null) {
+    if (!IMAGE_FILE_PATTERN.test(name)) {
       return null;
     }
-    // match[1] är 'png', 'svg' eller 'jpg' och ingenting annat: mönstret har redan
-    // avgjort det. Uppslaget kan alltså inte ge undefined, och tabellen har
-    // nollprototyp av samma skäl som STATIC_ROUTES.
-    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPES[match[1]] };
+    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPE };
   }
 
   return null;
