@@ -85,14 +85,20 @@ const DEMO_TYPES = Object.freeze(Object.assign(Object.create(null), {
   css: CSS_TYPE
 }));
 
-// Bilderna under src/web/bilder/. Samma form som /core/ och av samma skäl:
+// Bilderna under src/web/bilder/. Samma form som /demo/ och av samma skäl:
 // mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
-// (annat än den före ändelsen), snedstreck eller versaler, så
-// "..", "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
-// Mönstret släpper bara igenom png, så innehållstypen är en enda konstant.
+// (annat än den före ändelsen), snedstreck eller versaler, så "..",
+// "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
+// Ändelsen fångas av gruppen och avgör innehållstypen. En svg visas bara genom
+// <img> och <link rel="icon">, där webbläsaren varken kör skript eller hämtar
+// något utifrån; att filerna inte innehåller något sådant prövas av
+// tests/logga.test.js.
 const IMAGE_PREFIX = '/bilder/';
-const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.png$/;
-const IMAGE_TYPE = 'image/png';
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg)$/;
+const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
+  png: 'image/png',
+  svg: 'image/svg+xml'
+}));
 
 function sendNotFound(res) {
   res.writeHead(404);
@@ -154,10 +160,11 @@ function resolveStaticFile(pathname) {
 
   if (pathname.startsWith(IMAGE_PREFIX)) {
     const name = pathname.slice(IMAGE_PREFIX.length);
-    if (!IMAGE_FILE_PATTERN.test(name)) {
+    const imageMatch = IMAGE_FILE_PATTERN.exec(name);
+    if (imageMatch === null) {
       return null;
     }
-    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPE };
+    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPES[imageMatch[1]] };
   }
 
   return null;

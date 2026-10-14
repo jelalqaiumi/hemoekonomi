@@ -9004,6 +9004,10 @@ off-white. Tokennamnen är desamma, så ingen komponent vet vilket läge som gä
 
 ### Loggan
 
+**Ersatt av del 8 (användarens beslut 2026-10-14).** Png-loggorna i tabellen
+nedan togs bort, och sidorna visar användarens svg-filer (se "Del 8: ny
+logga"). Stycket nedan beskriver läget före del 8.
+
 Loggan är användarens egen bild. **Ingen ritad symbol används.** En förenklad
 SVG-symbol byggdes först, men användaren bad om originalet i stället, och
 `symbol.svg` och `symbol-mork.svg` togs bort.
@@ -13239,6 +13243,9 @@ skrivbord rörs inte.
 
 ### Servern
 
+**Ersatt av del 8:** `/bilder/` serverar `png` och `svg` (se "Servern [logga]").
+Stycket nedan beskriver läget efter del 7.
+
 `/bilder/` serverar bara `png`. `jpg` tas bort, eftersom ingen fil längre har den
 ändelsen. `svg` tas bort av samma skäl: den har saknat fil sedan `symbol.svg` och
 `symbol-mork.svg` togs bort (se "Loggan"), och mutationen
@@ -14270,7 +14277,7 @@ beslutsloggen).
 | (K-30) escape i `tema.css` | `tema.css`, först i filen | raden `@\69 mport "extra.css";` | (H12)(j), led 3 krav 4 |
 | (K-31) `@scope` i `landning.css` | `landning.css`, sist i filen | `@scope (.hero) { :scope { padding-bottom: 0; } }` | (H13)(c), led 2 |
 | (K-32) `@scope` i `tema.css` | `tema.css`, sist i filen | `@scope (.hero) { :scope { padding-bottom: 0; } }` | (H12)(j), led 3 krav 3 |
-| (K-33) = byggarens B-1, flera ord i `rel` | `landning.html`, (`<link rel="icon" href="/bilder/logga-liten.png"`) | `rel="icon"` → `rel="icon stylesheet"` på ankarraden | (H12)(j), led 3 krav 1 |
+| (K-33) = byggarens B-1, flera ord i `rel` | `landning.html`, (`<link rel="icon" href="/bilder/hem-ekonomi-ikon.svg"`; ankaret byttes i del 8, före del 8 var det `<link rel="icon" href="/bilder/logga-liten.png"`) | `rel="icon"` → `rel="icon stylesheet"` på ankarraden | (H12)(j), led 3 krav 1 |
 | (K-34) = byggarens B-2, versalt `!important` | `landning.css`, sist i filen | `section { overflow: hidden !IMPORTANT; }` | (H12)(j), led 3 krav 2 |
 | (K-35) = byggarens B-3, versal at-regel i `tema.css` | `tema.css`, först i filen | raden `@IMPORT "extra.css";` | (H12)(j), led 3 krav 3 |
 | (K-36) = byggarens B-4, versalt `<style>`-element | `landning.html`, (`</head>`) | raden `    <STYLE></STYLE>` tillagd före ankarraden | (H12)(j), led 3 krav 5 |
@@ -14466,6 +14473,9 @@ som aldrig nås" i beslutsloggen. Inga filer i `src/` eller `tests/` ändrades
 av rättningen.
 
 ### Kravlista [hero-bild]
+
+**(H6), (H7) och (H8) skrevs om i del 8** (se "Kravlista [logga]"). Raderna
+nedan gällde del 7; för de tre punkterna är del 8:s rader facit.
 
 (H1)–(H5) i del 6 är upphävda. Ingen testfil får hänvisa till dem efter del 7.
 Testnamnen för (H6), (H7) och (H9)–(H13) börjar med punktens nummer. (H8) är ett
@@ -15416,3 +15426,575 @@ redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
   som står mellan två kommentarmarkörer i strängar` — lärdomens regel framåt
   följdes inte, enligt användarens beslut, och avvikelsen står här och under
   "Det spärren inte fångar" i stället för att lämnas oskriven)
+
+## Del 8: ny logga [användarens beslut 2026-10-14]
+
+Del 8 byter loggan på landningssidan och i appen mot användarens svg-filer. Där
+del 3 ("Loggan") eller del 7 ("Servern", (H6) till (H8)) säger något annat
+gäller del 8.
+
+**Användarens beslut 2026-10-14**, markerade med [användaren]:
+
+- [användaren] Headern på landningssidan och sidomenyn i appen visar
+  `hem-ekonomi-logga.svg`.
+- [användaren] Sidfoten på landningssidan, som är marinblå, visar
+  `hem-ekonomi-logga-vit.svg`.
+- [användaren] Faviconen är `hem-ekonomi-ikon.svg`, på de sidor som har en
+  favicon. Bara `landning.html` har en; `index.html` har ingen och får ingen.
+- [användaren] `logga.png`, `logga-beskuren.png` och `logga-liten.png` tas bort
+  ur `src/web/bilder/`.
+- [användaren] `2 · H&E-monogram@1x.png` på skrivbordet ingår inte.
+
+Källfilerna ligger i `C:\Users\qaium\OneDrive\Desktop\`. Enligt användaren är
+`hem-ekonomi-logga.svg` och `hem-ekonomi-logga-vit.svg` 27005 byte var, med
+olika innehåll, och `hem-ekonomi-ikon.svg` 1902 byte. Byggaren kontrollerar
+längderna i steg 2 nedan.
+
+Allt annat i den här delen är arkitektens beslut, med skäl i beslutsloggen
+längst ned. Två av dem bör användaren se i den manuella kontrollen: namnet
+intill loggan döljs visuellt (beslut L-3), och headerns logga får en ljus platta
+i det mörka läget (beslut L-4).
+
+### Filerna [logga]
+
+Arkitekten läste de tre filerna 2026-10-14. Varje fil är en rad text och
+innehåller bara elementen `svg`, `rect` och `path`, med attributen `xmlns`,
+`viewBox`, `width` och `height` på `svg`, `x`, `y`, `width`, `height`, `rx` och
+`fill` på `rect`, och `d` och `fill` på `path`. Arkitektens sökning med
+Grep-verktyget efter `script`, `href`, `foreignObject`, `<image`, `url(`,
+`style`, attribut som börjar med `on`, `<!`, `<?` och `http`, utan hänsyn till
+skiftläge, gav en enda träff per fil: namnrymden
+`xmlns="http://www.w3.org/2000/svg"`, som är en identifierare och ingen
+hämtning. Inga skript, inga externa referenser och inget `foreignObject`.
+
+**Filerna används byte-identiska.** Ingen optimering, ingen omformatering och
+inga ändrade attribut. Varje färg står som `fill`-attribut i filen, vilket är
+tillåtet för en bild: regeln i `tema.css` om hexkoder gäller stilmallar och
+sidor, inte användarens bildfiler (kommentaren i `tema.css` skrivs om, se
+"Ändringar per fil").
+
+Det öppnande `svg`-elementet, bindande ordagrant och prövat av (L1):
+
+| Fil | Öppnande tagg |
+|---|---|
+| `hem-ekonomi-logga.svg` | `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 428.38 104" width="428" height="104">` |
+| `hem-ekonomi-logga-vit.svg` | `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 428.38 104" width="428" height="104">` |
+| `hem-ekonomi-ikon.svg` | `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104.00 104" width="104" height="104">` |
+
+Mängden av `fill`-värden per fil, sorterad, bindande och prövad av (L1). Det är
+den som skiljer de två loggorna åt:
+
+| Fil | `fill`-värden |
+|---|---|
+| `hem-ekonomi-logga.svg` | `#0B2C63`, `#4A5875`, `#E3A21A`, `#FFFFFF` |
+| `hem-ekonomi-logga-vit.svg` | `#0B2C63`, `#D6DEEC`, `#E3A21A`, `#FFFFFF` |
+| `hem-ekonomi-ikon.svg` | `#0B2C63`, `#E3A21A`, `#FFFFFF` |
+
+`hem-ekonomi-logga.svg` har mörk text (`#0B2C63`) för ljus botten.
+`hem-ekonomi-logga-vit.svg` har vit text och en vit ruta för mörk botten.
+Bredden 428 och `viewBox`-bredden 428.38 skiljer sig med mindre än en bildpunkt;
+filen används ändå som den är.
+
+**Placering:** `src/web/bilder/hem-ekonomi-logga.svg`,
+`src/web/bilder/hem-ekonomi-logga-vit.svg` och
+`src/web/bilder/hem-ekonomi-ikon.svg`. Namnen följer servermönstret
+`/^[a-z0-9-]+\.(png|svg)$/` nedan. Katalogen innehåller därefter exakt de tre
+svg-filerna och `hero.png`, vilket (H7) kräver.
+
+**Radslut:** `core.autocrlf` är `true` i det här arbetsträdet och projektet har
+ingen `.gitattributes`. Slutar en fil på LF kan git checka ut den med CRLF. Det
+spelar ingen roll för webbläsaren, och (L1) godtar därför både `</svg>` sist,
+`</svg>` följt av LF och `</svg>` följt av CRLF. Byte-identiteten mot källfilen
+kontrolleras i arbetsträdet före commit (steg 2).
+
+### Teknikval [logga]
+
+| Val | Varför | Vad vi valde bort |
+|-----|--------|-------------------|
+| svg som egen fil, visad med `<img>` och `<link rel="icon">` | En svg som bild kör inga skript och hämtar inget utifrån, och filen kan användas byte-identisk. Inget beroende. | Inline-`<svg>` i HTML: drygt 27 kB i varje sida, och en inline-svg kan köra skript i sidans eget sammanhang. `svgo` eller annan optimering: ett nytt beroende, och filen slutar vara användarens. |
+| Servern får `svg` med `image/svg+xml` | Utan rätt typ visar webbläsaren inte en svg i `<img>`. | En `Content-Security-Policy` på svg-svaren: en andra väg i `serveStatic` för ett fall som (L1) redan stänger, eftersom filerna ligger i projektet och prövas på skript och externa referenser. |
+| Ljus platta som egen token, `--logga-platta` | Sidomenyn är marinblå i båda lägena, och `--bakgrund` blir marinblå i det mörka läget, så den mörka loggan försvann på den gamla plattan. En token som inte byter värde löser det utan att röra någon annan komponent. | Att återanvända `--text-pa-mork`: rätt färg men fel roll. Att visa den vita loggan i sidomenyn: strider mot användarens beslut. |
+
+Inget beroende tillkommer.
+
+### Servern [logga]
+
+`src/server/server.js`. Blocket ovanför `resolveStaticFile`, från kommentaren
+`// Bilderna under src/web/bilder/.` till och med `const IMAGE_TYPE = 'image/png';`,
+ersätts av, bindande ordagrant:
+
+```js
+// Bilderna under src/web/bilder/. Samma form som /demo/ och av samma skäl:
+// mönstret prövas på namnet FÖRE path.join, och det tillåter varken punkt
+// (annat än den före ändelsen), snedstreck eller versaler, så "..",
+// "../../package.json" och "%2e%2e" kan aldrig nå sammanslagningen.
+// Ändelsen fångas av gruppen och avgör innehållstypen. En svg visas bara genom
+// <img> och <link rel="icon">, där webbläsaren varken kör skript eller hämtar
+// något utifrån; att filerna inte innehåller något sådant prövas av
+// tests/logga.test.js.
+const IMAGE_PREFIX = '/bilder/';
+const IMAGE_FILE_PATTERN = /^[a-z0-9-]+\.(png|svg)$/;
+const IMAGE_TYPES = Object.freeze(Object.assign(Object.create(null), {
+  png: 'image/png',
+  svg: 'image/svg+xml'
+}));
+```
+
+Bildgrenen i `resolveStaticFile` blir, bindande ordagrant:
+
+```js
+  if (pathname.startsWith(IMAGE_PREFIX)) {
+    const name = pathname.slice(IMAGE_PREFIX.length);
+    const imageMatch = IMAGE_FILE_PATTERN.exec(name);
+    if (imageMatch === null) {
+      return null;
+    }
+    return { filePath: path.join(getImageDir(), name), type: IMAGE_TYPES[imageMatch[1]] };
+  }
+```
+
+Variabeln heter `imageMatch` och inte `match`, så att varje mutation nedan har
+ett ankare som förekommer en gång i filen (demogrenen har redan
+`if (match === null) {`). Inget annat i servern ändras.
+
+### Ändringar per fil [logga]
+
+| Fil | Ändring |
+|---|---|
+| `src/web/bilder/hem-ekonomi-logga.svg`, `hem-ekonomi-logga-vit.svg`, `hem-ekonomi-ikon.svg` | **Nya.** Kopierade byte för byte från skrivbordet. |
+| `src/web/bilder/logga.png`, `logga-beskuren.png`, `logga-liten.png` | **Tas bort.** |
+| `src/server/server.js` | Enligt "Servern [logga]". |
+| `src/web/tema.css` | Enligt "tema.css [logga]" under tabellen. |
+| `src/web/landning.html` | Enligt "HTML [logga]". |
+| `src/web/index.html` | Enligt "HTML [logga]". |
+| `src/web/landning.css` | Enligt "CSS [logga]". |
+| `src/web/style.css` | Enligt "CSS [logga]". |
+| `tests/server.test.js` | (H6), (H7), (H8), testfallet `en sökväg utanför /bilder/ …` och en kommentar, enligt "Kravlista [logga]". |
+| `tests/logga.test.js` | **Ny.** (L1) till (L4). |
+| `README.md` | Ingenting. Arkitektens sökning med Grep-verktyget 2026-10-14 efter `logga[-.]`, `favicon` och `bilder/` i `README.md` gav bara två träffar på ankaret `#logga-in`, och sökningen efter `[Ll]oggan`, `[Ll]ogotyp` och `bilder` gav ingen. Dokumentatorn behöver inte rätta något om loggan; vill användaren att README nämner loggan är det ett eget beslut. |
+
+### tema.css [logga]
+
+Filens första kommentar, från `/* Designsystemets tokens.` till och med raden
+som slutar `och inte valda:`, ersätts av, bindande ordagrant (raderna därefter,
+från `ett histogram över`, är oförändrade):
+
+```css
+/* Designsystemets tokens. Den HÄR filen är den enda stilmallen eller sidan i
+   src/web/ som får innehålla en hexkod; bildfilerna i src/web/bilder/ är
+   användarens egna och står utanför regeln. Varje annan regel, i landning.css
+   och i allt som byggs senare, läser en token med var(). Skälet är mätbart: en
+   hexkod utanför :root kan inte bytas av det mörka läget, och då går temat isär.
+
+   Loggans tio toner uppmättes ur användarens tidigare logga, en png som togs
+   bort i ARKITEKTUR.md del 8, och valdes inte:
+```
+
+I det ljusa `:root`, direkt efter raden `--morkt-block: var(--bla-marin);`,
+läggs till, bindande ordagrant:
+
+```css
+
+  /* Plattan bakom den mörka loggan på en mörk yta: sidomenyn i båda lägena och
+     headern i det mörka läget. Den byter inte värde i det mörka läget,
+     eftersom --bakgrund då blir marinblå. */
+  --logga-platta: #f7f5ef;
+```
+
+Det mörka lägets `:root` får ingen `--logga-platta`.
+
+### HTML [logga]
+
+**`src/web/landning.html`, i `<head>`.** HTML-kommentaren ovanför faviconen och
+raden `<link rel="icon" …>` ersätts av, bindande ordagrant:
+
+```html
+    <!-- Faviconen är hem-ekonomi-ikon.svg, användarens egen fil kopierad byte
+         för byte. type följer filen. -->
+    <link rel="icon" href="/bilder/hem-ekonomi-ikon.svg" type="image/svg+xml" />
+```
+
+`rel` är oförändrat `icon`, så led 3 krav 1 i kaskadspärren gäller som förut, och
+(K-33) har bytt ankare (se tabellen under "Kaskadspärren [hero-kaskad]").
+
+**`src/web/landning.html`, headern.** HTML-kommentaren som börjar
+`<!-- Loggan är användarens egen bild, den nedskalade kopian.` och `<img>`-
+elementet i `<a class="markeslank" href="/">` ersätts av, bindande ordagrant:
+
+```html
+        <!-- Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
+             height står i bildens egen storlek, 428 gånger 104, så att headern
+             inte hoppar medan bilden laddas; visningsstorleken är .markessymbol
+             i landning.css. alt är tomt därför att namnet står som text i länken
+             intill. Texten är visuellt dold, eftersom namnet redan står i
+             loggan, men den är länkens namn för en skärmläsare. -->
+        <a class="markeslank" href="/">
+          <img
+            class="markessymbol"
+            src="/bilder/hem-ekonomi-logga.svg"
+            alt=""
+            width="428"
+            height="104"
+            decoding="async"
+          />
+          <span class="markesnamn">Hem och Ekonomi</span>
+        </a>
+```
+
+**`src/web/landning.html`, sidfoten.** HTML-kommentaren som börjar
+`<!-- Samma bild som i headern.` och `<img>`-elementet i
+`<div class="sidfot-marke">` ersätts av, bindande ordagrant:
+
+```html
+        <!-- Sidfoten är marinblå och visar hem-ekonomi-logga-vit.svg, som är
+             ritad för mörk botten, så ingen platta behövs. Namnet intill är
+             visuellt dolt av samma skäl som i headern. -->
+        <div class="sidfot-marke">
+          <img
+            class="markessymbol"
+            src="/bilder/hem-ekonomi-logga-vit.svg"
+            alt=""
+            width="428"
+            height="104"
+            decoding="async"
+          />
+          <span class="markesnamn">Hem och Ekonomi</span>
+        </div>
+```
+
+**`src/web/index.html`, sidomenyn.** Raderna i HTML-kommentaren över
+`<aside class="sidomeny">` från `Loggan är användarens egen bild, beskuren till
+motivet och nedskalad:` till och med `skärmläsare som läser båda skulle säga
+samma sak två gånger.` ersätts av:
+
+```html
+             Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
+             height står i bildens egen storlek, 428 gånger 104, så att raden
+             inte hoppar medan bilden laddas; visningsstorleken sätts i
+             style.css. alt är tomt därför att namnet står som text intill.
+             Texten är visuellt dold, eftersom namnet redan står i loggan, men en
+             skärmläsare läser den.
+```
+
+`<img>`-elementet blir, bindande ordagrant:
+
+```html
+            <img
+              class="sidomeny-logga"
+              src="/bilder/hem-ekonomi-logga.svg"
+              alt=""
+              width="428"
+              height="104"
+              decoding="async"
+            />
+```
+
+Ingen synlig text ändras: `<span class="markesnamn">Hem och Ekonomi</span>` och
+`<span class="sidomeny-namn">Hem och Ekonomi</span>` står kvar. (P20) läser
+uppmärkningen och inte stilen, så T3 och T59 i "Landningssidans synliga text"
+står kvar oförändrade, och (P18), (P19) och (P20) ska passera oförändrade.
+
+### CSS [logga]
+
+Alla regler nedan är bindande ordagrant, och (L3) prövar dem.
+
+**`src/web/landning.css`.**
+
+1. Kommentaren som börjar `/* Loggan är beskuren till motivet och därför bred,`
+   och regeln `.markessymbol { … }` direkt under ersätts av:
+
+   ```css
+   /* Loggan är hem-ekonomi-logga.svg i headern och hem-ekonomi-logga-vit.svg i
+      sidfoten, båda 428 gånger 104 i sin egen storlek. Höjden styr och bredden
+      följer med. Vid 320 bildpunkter räcker bredden: sidans marginaler 32,
+      mellanrummet 8, Registrera cirka 90, knapparnas mellanrum 6,4 och
+      hamburgaren 44 lämnar cirka 139 för loggan, som vid 2rem är cirka 132
+      bred. Räknat ur reglerna i den här filen och inte mätt i en webbläsare. */
+   .markessymbol {
+     height: 2rem;
+     width: auto;
+     flex: none;
+   }
+   ```
+
+2. Kommentaren som börjar `/* Loggan i sidfoten står på en ljus platta.` och
+   regeln `.sidfot-marke .markessymbol { … }` ersätts av:
+
+   ```css
+   /* Headerns logga har mörk text och är ritad för ljus botten. I det mörka
+      läget är headerns yta mörk, så loggan står där på en ljus platta.
+      Sidfoten behöver ingen: den visar den vita loggan. */
+   @media (prefers-color-scheme: dark) {
+     .markeslank .markessymbol {
+       box-sizing: content-box;
+       padding: 0.15rem;
+       border-radius: var(--radie-liten);
+       background: var(--logga-platta);
+     }
+   }
+   ```
+
+3. Regeln `.markesnamn { … }` ersätts av:
+
+   ```css
+   /* Namnet står redan i loggan. Texten finns kvar som länkens namn för en
+      skärmläsare men visas inte, så att namnet inte står två gånger. */
+   .markesnamn {
+     position: absolute;
+     width: 1px;
+     height: 1px;
+     overflow: hidden;
+     clip-path: inset(50%);
+     white-space: nowrap;
+   }
+   ```
+
+4. Kommentaren som börjar `/* Vid 320 bildpunkter ska sidhuvudet rymmas` och
+   blocket `@media (max-width: 399px) { … }` under den tas bort. Namnet är dolt
+   i alla bredder, och räkningen står i kommentaren i punkt 1.
+
+5. Regeln `.markesnamn { font-size: 1.1rem; }`, som står sist i det
+   `@media (min-width: 840px)` vars första regel är `.meny-bred`, ersätts av:
+
+   ```css
+     .markessymbol {
+       height: 2.5rem;
+     }
+   ```
+
+**`src/web/style.css`.** De två kommentarerna ovanför `.sidomeny-logga` (från
+`/* Loggan står på en ljus platta och inte direkt på det marinblå.` till och med
+`Höjden styr, bredden följer proportionerna. */`), regeln `.sidomeny-logga` och
+regeln `.sidomeny-namn` ersätts av:
+
+```css
+/* Loggan är hem-ekonomi-logga.svg, med mörk text för ljus botten, och står
+   därför på en ljus platta på det marinblå. Plattan är --logga-platta, som är
+   ljus i båda lägena: --bakgrund blir marinblå i det mörka läget och skulle
+   göra loggan osynlig. 428 gånger 104 i sin egen storlek; höjden styr. */
+.sidomeny-logga {
+  height: 2.5rem;
+  width: auto;
+  flex: none;
+  padding: 0.2rem;
+  border-radius: var(--radie-liten);
+  background: var(--logga-platta);
+}
+
+/* Namnet står redan i loggan. Texten finns kvar för en skärmläsare men visas
+   inte, så att namnet inte står två gånger. */
+.sidomeny-namn {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+```
+
+Ingen av de nya selektorerna innehåller `hero`, `svg` eller `path`, så led 2 och
+led 3 i kaskadspärren och filtret i (H13)(c) påverkas inte. Ingen kommentar i
+`landning.css` får innehålla `url(` eller `\` (se (H9) och led 3 krav 4).
+
+### Kravlista [logga]
+
+Testnamnen börjar med punktens nummer. (H6), (H7) och (H8) ersätter del 7:s
+rader för samma nummer.
+
+| # | Fil | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|---|
+| (H6) | `tests/server.test.js` | `/bilder/` väljer typ efter ändelsen | Testet byter namn till `(H6) bilderna under /bilder/ ger 200 med sin egen Content-Type`. Konstanten `const SVG_TYPE = 'image/svg+xml';` läggs till under `PNG_TYPE`. Testet kräver `assertFileServed` med `SVG_TYPE` för `/bilder/hem-ekonomi-logga.svg` och med `PNG_TYPE` för `/bilder/hero.png`. Raderna för `logga.png` och `logga-liten.png` tas bort. Kommentaren i testet blir `// Servern väljer typ efter ändelsen sedan ARKITEKTUR.md del 8: png och svg.` | var och en för sig, i `src/server/server.js`: (1) `svg: 'image/svg+xml'` → `svg: 'image/png'`; (2) `png: 'image/png'` → `png: 'image/jpeg'`; (3) `IMAGE_TYPES[imageMatch[1]]` → `IMAGE_TYPES.png` |
+| (H7) | `tests/server.test.js` | katalogen har exakt de väntade bilderna, och var och en levereras | Testet byter namn till `(H7) src/web/bilder har exakt loggorna och hero-bilden, och varje bild levereras under /bilder/ med sitt eget innehåll`. Det läser hela katalogen med `fs.readdir`, sorterar, och kräver `assert.deepEqual(names, ['hem-ekonomi-ikon.svg', 'hem-ekonomi-logga-vit.svg', 'hem-ekonomi-logga.svg', 'hero.png'])`. Därefter `assertFileServed` för varje namn, med `SVG_TYPE` för namn som slutar på `.svg` och `PNG_TYPE` för namn som slutar på `.png`. Kraven `notPng` och `names.includes('hero.png')` tas bort; den fullständiga listan ersätter dem. Kommentaren i testet blir: `// Listan läses ur katalogen utan filter och jämförs med hela listan, så att en` `// bortglömd eller ny bild fäller testet. Loggorna är användarens svg-filer` `// (ARKITEKTUR.md del 8), och hero.png är hero-bilden, som landning.css hämtar.` | var och en för sig, i kopian: (1) `src/web/bilder/logga-liten.png` ur HEAD kvar i katalogen; (2) `hem-ekonomi-ikon.svg` omdöpt till `hem-ekonomi-favicon.svg`; (3) `/^[a-z0-9-]+\.(png|svg)$/` → `/^[a-z0-9-]+\.(png)$/` i `src/server/server.js` |
+| (H8) | `tests/server.test.js` | sökvägsfiltret avvisar versaler i namn vars fil finns | I testfallet `sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp` blir sondlistan exakt, i den här ordningen: `'/bilder/../index.html'`, `'/bilder/..%2findex.html'`, `'/bilder/../../package.json'`, `'/bilder/%2e%2e/index.html'`, `'/bilder/..%2Fserver%2Fpaths.js'`, `'/bilder/under/hero.png'`, `'/bilder/Hero.png'`, `'/bilder/HERO.PNG'`, `'/bilder/hero.png%00.png'`, `'/bilder/hero.png.'`, `'/bilder/hero.png::$DATA'`, `'/bilder/hero.txt'`, `'/bilder/hero.js'`, `'/bilder/finns-inte.png'`, `'/bilder/finns-inte.svg'`, `'/bilder/hero.PNG'`, `'/bilder/HERO.png'`, `'/bilder/hem-ekonomi-ikon.SVG'`, `'/bilder/HEM-EKONOMI-IKON.svg'`, `'/bilder/'`, `'/bilder'`. Varje sond som namngav `logga` pekade på en fil som tas bort och hade gett 404 oavsett mönstret (lärdomen 2026-10-13 om `.jpeg`-sonden), så de byts mot `hero`. Kontrollsonden sist blir `assertFileServed(port, '/bilder/hero.png', path.join(getImageDir(), 'hero.png'), PNG_TYPE)`. Kommentaren i testfallet, från `// Vilken sond som mäter filtret` till och med `// normaliseringen byts ut.`, blir: `// Mutationerna i ARKITEKTUR.md del 8, (H8), fälls av versala namn på filer` `// som finns, /bilder/hero.PNG och /bilder/hem-ekonomi-ikon.SVG: NTFS hittar` `// filen under det versala namnet, så 404 kan bara komma från mönstret.` `// Punktsegmenten normaliseras bort av new URL() innan resolveStaticFile ser` `// sökvägen, så traversal-sonderna ger 404 även utan filtret. De står kvar` `// som sonder ändå: ett test som bara prövar det filtret råkar fånga vore inget` `// skydd mot att normaliseringen byts ut.` `// /bilder/hero.png::$DATA är NTFS:s namn på filens dataström. Utan $ sist i` `// mönstret ger den 200 med filens innehåll, så det är den sonden som mäter $.` | var och en för sig, i `src/server/server.js`: (1) `/^[a-z0-9-]+\.(png|svg)$/` → `/^[a-z0-9-]+\.(png|svg)$/i`; (2) `if (imageMatch === null) {` → `if (false) {`; (3) `/^[a-z0-9-]+\.(png|svg)$/` → `/^[a-z0-9-]+\.(png|svg)/` (ankaret är samma som i (1) och ger exakt `1` i filen; fälls av sonden `'/bilder/hero.png::$DATA'`) |
+| (H8b) | `tests/server.test.js` | befintligt testfall `en sökväg utanför /bilder/ ger 404 även när dess svans är ett bildfilnamn`; namnet behålls | Sonderna blir `['/bilden/hero.png', '/xxxxxxxhero.png', '/bilder2/hero.png']` och kontrollsonden `assertFileServed(port, '/bilder/hero.png', path.join(getImageDir(), 'hero.png'), PNG_TYPE)`. I kommentaren byts `slice ge "logga.png"` mot `slice ge "hero.png"`. Utan bytet hade `/bilden/logga.png` gett 404 för att filen saknas | (1) `if (pathname.startsWith(IMAGE_PREFIX)) {` → `if (true) {` i `src/server/server.js` |
+| (L1) | `tests/logga.test.js` | loggorna är användarens svg-filer utan skript eller externa referenser | Testnamn `(L1) loggorna i src/web/bilder är användarens svg-filer utan skript eller externa referenser`. För var och en av de tre filerna, läst som `Buffer` med sökvägen byggd ur `import.meta.url`: (a) varje byte är under `0x80`, med index och värde för den första avvikande byten i meddelandet (fäller en BOM och varje tecken utanför ASCII); (b) texten börjar med den öppnande taggen i tabellen under "Filerna [logga]"; (c) texten matchar `/<\/svg>(\r?\n)?$/`; (d) texten innehåller varken `<!`, `<?` eller `&`; (e) varje tagg tas ut med `/<(\/?)([^\s>\/]+)([^>]*)>/g`; den första är `svg`, den sista är `/svg`, ingen annan är `svg` eller `/svg`, och varje övrig är `rect` eller `path`; (f) när taggarna tagits bort ur texten återstår bara blanktecken; (g) attributen i varje tagg tas ut med led 3:s mönster `/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g`; när de matchade attributen tagits bort ur attributdelen återstår bara blanktecken och högst ett `/`; namnen är en delmängd av `xmlns`, `viewBox`, `width`, `height` för `svg`, `x`, `y`, `width`, `height`, `rx`, `fill` för `rect` och `d`, `fill` för `path`; (h) `xmlns` är exakt `http://www.w3.org/2000/svg`, och varje `fill` matchar `/^#[0-9A-F]{6}$/`; (i) den sorterade mängden `fill`-värden är exakt den i tabellen under "Filerna [logga]" | var och en för sig, i kopian av svg-filen: (1) i `hem-ekonomi-logga.svg`: `</svg>` → `<script>alert(1)</script></svg>`; (2) i `hem-ekonomi-ikon.svg`: `<rect x="0"` → `<rect onload="alert(1)" x="0"`; (3) i `hem-ekonomi-logga-vit.svg`: `</svg>` → `<foreignObject></foreignObject></svg>`; (4) i `hem-ekonomi-ikon.svg`: `fill="#0B2C63"` → `fill="url(#a)"`; (5) byten `EF BB BF` först i `hem-ekonomi-logga.svg`; (6) i `hem-ekonomi-logga.svg`: `width="428" height="104"` → `width="214" height="52"`; (7) `hem-ekonomi-logga-vit.svg` ersatt av en kopia av `hem-ekonomi-logga.svg`; (8) i `hem-ekonomi-ikon.svg`: `<rect x="0"` → `<rect href="https://example.com/x.svg" x="0"` |
+| (L2) | `tests/logga.test.js` | sidorna pekar ut rätt logga i bildens egen storlek, och faviconen är ikonen | Testnamn `(L2) sidorna pekar ut rätt logga, med bildens egen storlek, och faviconen är ikonen`. HTML-kommentarerna tas bort med `/<!--[\s\S]*?-->/g` innan något krav prövas. Varje `<img …>` tas ut med `/<img\b[^>]*>/gi` och dess attribut med led 3:s mönster till ett objekt med namnen i gemener, i filens ordning. (a) `landning.html` ger exakt `[{ class: 'markessymbol', src: '/bilder/hem-ekonomi-logga.svg', alt: '', width: '428', height: '104', decoding: 'async' }, { class: 'markessymbol', src: '/bilder/hem-ekonomi-logga-vit.svg', alt: '', width: '428', height: '104', decoding: 'async' }]`. (b) `index.html` ger exakt `[{ class: 'sidomeny-logga', src: '/bilder/hem-ekonomi-logga.svg', alt: '', width: '428', height: '104', decoding: 'async' }]`. (c) Bland `<link …>` i `landning.html`, uttagna med `/<link\b[^>]*>/gi`, är de vars `rel` är `icon` (tolkat som att `icon` är ett av orden i `rel`, `rel.toLowerCase().split(/\s+/).includes('icon')`, så att `shortcut icon` också räknas och fäller den exakta jämförelsen) exakt `[{ rel: 'icon', href: '/bilder/hem-ekonomi-ikon.svg', type: 'image/svg+xml' }]`, och i `index.html` finns ingen `<link` med `rel` `icon` | var och en för sig: (1) i `landning.html`: `src="/bilder/hem-ekonomi-logga.svg"` → `src="/bilder/hem-ekonomi-logga-vit.svg"`; (2) i `landning.html`: `src="/bilder/hem-ekonomi-logga-vit.svg"` → `src="/bilder/hem-ekonomi-logga.svg"`; (3) i `landning.html`: `type="image/svg+xml"` → `type="image/png"`; (4) i `landning.html`: `href="/bilder/hem-ekonomi-ikon.svg"` → `href="/bilder/hem-ekonomi-logga.svg"`; (5) i `index.html`: `width="428"` → `width="480"`; (6) i `index.html`: `src="/bilder/hem-ekonomi-logga.svg"` → `src="/bilder/logga-liten.png"` (fälls också av (L4)) |
+| (L3) | `tests/logga.test.js` | loggornas stilregler och plattans token | Testnamn `(L3) loggornas stilregler och plattans token`. CSS-kommentarerna tas bort med `/\/\*[\s\S]*?\*\//g` och blanktecken slås ihop till ett mellanslag innan något krav prövas. Reglerna tas ut med `/([^{}]+)\{([^{}]*)\}/g`, med selektor och kropp trimmade; en regel i en at-regel kommer ut utan sin kontext, och ordningen i filen skiljer dem åt. (a) I `landning.css` är listan `[selektor, kropp]` för varje regel vars selektor innehåller `markes`, i filens ordning och utan sortering, exakt: `['.markeslank, .sidfot-marke', 'display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; color: inherit; min-width: 0;']`, `['.markessymbol', 'height: 2rem; width: auto; flex: none;']`, `['.markeslank .markessymbol', 'box-sizing: content-box; padding: 0.15rem; border-radius: var(--radie-liten); background: var(--logga-platta);']`, `['.markesnamn', 'position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;']`, `['.markessymbol', 'height: 2.5rem;']`. Den kommentarfria texten innehåller `@media (prefers-color-scheme: dark) { .markeslank .markessymbol {` exakt en gång. (b) I `style.css` är samma lista för selektorer som innehåller `sidomeny-logga` eller `sidomeny-namn` exakt `['.sidomeny-logga', 'height: 2.5rem; width: auto; flex: none; padding: 0.2rem; border-radius: var(--radie-liten); background: var(--logga-platta);']` och `['.sidomeny-namn', 'position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;']`. (c) I den kommentarfria `tema.css` förekommer `--logga-platta:` exakt en gång, som `--logga-platta: #f7f5ef;`, och före `@media (prefers-color-scheme: dark)`. **Gränsen:** en regel med en annan selektor, till exempel `img { height: 9rem !important; }`, kan ändra loggans storlek utan att (L3) faller. Den manuella kontrollen täcker gränsen | var och en för sig: (1) i `landning.css`, i `.markessymbol` utanför at-regel: `height: 2rem;` → `height: 3.25rem;`; (2) regeln `.markessymbol { height: 3rem; }` tillagd sist i `landning.css`; (3) i `landning.css`, i `.markesnamn`: raden `clip-path: inset(50%);` borttagen; (4) i `landning.css`, i `.markeslank .markessymbol`: `background: var(--logga-platta);` → `background: var(--bakgrund);`; (5) i `style.css`, i `.sidomeny-logga`: `background: var(--logga-platta);` → `background: var(--bakgrund);`; (6) i `tema.css`: raden `--logga-platta: var(--bla-marin);` tillagd i det mörka lägets `:root`; (7) i `landning.css`: `@media (prefers-color-scheme: dark) {` → `@media (prefers-color-scheme: light) {` |
+| (L4) | `tests/logga.test.js` | ingen fil i `src` nämner de borttagna png-loggorna | Testnamn `(L4) ingen fil i src nämner de borttagna png-loggorna`. Varje fil under `src/` som slutar på `.html`, `.css` eller `.js`, läst med `fs.readdir(…, { recursive: true })` från `src/` med sökvägen byggd ur `import.meta.url`, läses som text **med kommentarerna kvar**, och ingen innehåller `logga.png`, `logga-liten` eller `logga-beskuren`. Meddelandet namnger filen och strängen. Testet kräver dessutom att minst en `.html`-fil lästes, så att en tom läsning inte gör testet innehållslöst | var och en för sig: (1) `/* logga-liten.png */` tillagt sist i `src/web/style.css`; (2) `<!-- logga-beskuren -->` tillagt före `</body>` i `src/web/index.html` |
+
+Varje mutation körs en i taget i en kopia av trädet under scratchpad-katalogen,
+aldrig i `src/`, och kryssraden klistras in. Listan är ett minimum (lärdomen
+2026-09-12 om `renderUpcoming`): byggaren räknar dessutom upp varje `if` i de
+ändrade raderna i `src/server/server.js` och prövar den.
+
+Innan paketet lämnas vidare körs `grep -c -F -e "<uttrycket före pilen>" <filen>`
+för varje mutation som ersätter ett uttryck, och varje värde ska vara exakt `1`
+(lärdomen 2026-10-13 om mutation E-10). En mutation som namnger sin regel ("i
+`.markessymbol` utanför at-regel", "i `.sidomeny-logga`") prövas inom den
+regeln: skriptet räknar uttrycket bara i den regelns kropp, ska få exakt `1`
+där, och vägrar köra annars. Ger något uttryck ett annat värde än `1` lämnas
+paketet tillbaka till arkitekten, i stället för att ankaret väljs av byggaren.
+Förväntade ankare som gäller hela filen: `svg: 'image/svg+xml'`,
+`png: 'image/png'`, `IMAGE_TYPES[imageMatch[1]]`,
+`/^[a-z0-9-]+\.(png|svg)$/` och `if (imageMatch === null) {` i
+`src/server/server.js`; `src="/bilder/hem-ekonomi-logga.svg"`,
+`src="/bilder/hem-ekonomi-logga-vit.svg"`, `type="image/svg+xml"` och
+`href="/bilder/hem-ekonomi-ikon.svg"` i `src/web/landning.html`; `width="428"`
+och `src="/bilder/hem-ekonomi-logga.svg"` i `src/web/index.html`;
+`@media (prefers-color-scheme: dark) {` i `src/web/landning.css`; `</svg>`,
+`<rect x="0"`, `width="428" height="104"` och (i ikonen) `fill="#0B2C63"` i
+respektive svg-fil. För `fill="#0B2C63"` i ikonen avser ankaret `rect`-elementets
+attribut; ger `grep -c -F` mer än `1` i ikonen gäller regeln ovan.
+
+### Byggarens instruktioner [logga]
+
+I den här ordningen:
+
+1. Kopiera `src/server/server.js`, `src/web/tema.css`, `src/web/landning.html`,
+   `src/web/index.html`, `src/web/landning.css`, `src/web/style.css` och
+   `tests/server.test.js` till scratchpad-katalogen och klistra in
+   `sha256sum` för varje kopia. Kör inget `git checkout --`, `git restore` eller
+   `git reset --hard` under paketet (lärdomen 2026-09-10).
+2. Kopiera de tre svg-filerna från `C:\Users\qaium\OneDrive\Desktop\` till
+   `src/web/bilder/` med `Copy-Item`, utan att öppna dem i ett program. Kör
+   `Get-FileHash` och `(Get-Item <fil>).Length` på källa och mål för var och en
+   och klistra in raderna. Hash och längd ska vara lika för varje par. Skiljer
+   sig en längd från användarens uppgift (27005, 27005 och 1902 byte) lämnas
+   paketet tillbaka till arkitekten.
+3. Ta bort `src/web/bilder/logga.png`, `src/web/bilder/logga-beskuren.png` och
+   `src/web/bilder/logga-liten.png`.
+4. Ändra `src/server/server.js` enligt "Servern [logga]".
+5. Ändra `src/web/tema.css` enligt raden för filen under "Ändringar per fil
+   [logga]".
+6. Ändra `src/web/landning.html` och `src/web/index.html` enligt "HTML [logga]".
+7. Ändra `src/web/landning.css` och `src/web/style.css` enligt "CSS [logga]".
+8. Ändra `tests/server.test.js` enligt (H6), (H7), (H8) och (H8b). Ersätt
+   dessutom i testfallet `/ ger landningssidan och /app ger appen, och de är inte
+   samma fil` kommentarraderna från `// landning.css. Bilderna delas numera`
+   till och med `// två assertionerna nedan är de enda som gäller blandningen.`
+   med, bindande ordagrant:
+
+   ```js
+     // landning.css. Bilderna delas: båda sidorna hämtar
+     // /bilder/hem-ekonomi-logga.svg, så loggan är inte något som skiljer dem,
+     // och de två assertionerna nedan är de enda som gäller blandningen.
+   ```
+9. Skriv `tests/logga.test.js` enligt (L1) till (L4). Filen startar ingen server
+   och har inga tidsgränser. Den första kommentaren i filen säger att den prövar
+   ARKITEKTUR.md del 8.
+10. Kör `npm test` och klistra in raderna `ℹ tests`, `ℹ fail` och `EXIT=` från
+    den sista körningen. Den ska ge `fail 0` och `EXIT=0`. Faller
+    `fall 1: instans två startar inte mot samma datafil` med `timeout` och
+    `exitCode=null`, gäller lärdomen 2026-10-12: tre gröna körningar i rad krävs.
+11. Kör varje mutation i "Kravlista [logga]" en i taget i en kopia av trädet
+    under scratchpad-katalogen, efter ankarkontrollen ovan, och klistra in
+    kryssraden och `EXIT=` för var och en. Ger en mutation `EXIT=0` lämnas
+    paketet tillbaka till arkitekten.
+12. Kör, och klistra in utdatan från, var och en av:
+    `grep -rn "logga\.png\|logga-liten\|logga-beskuren" src tests | grep -v "^tests/logga.test.js:"`
+    (ska ge noll rader);
+    `grep -rnP "[^\x00-\x7F]" src/web/bilder/*.svg` (ska ge noll rader);
+    `grep -rn $'\xc2\xa0\|\xe2\x80\x93\|\xe2\x88\x92\|\xef\xbb\xbf' src tests | cat -v`,
+    där varje träff i en rad som paketet ändrat är ett fel (lärdomen
+    2026-10-10 om U+FEFF);
+    `git diff HEAD -- src`, läst rad för rad, där en tillagd rad med
+    `console.log`, `INSTRUMENT`, `TODO` eller `FIXME` är ett fel;
+    `git status --porcelain -uall`.
+13. Redovisa paketet med utdatan från steg 2 och 10 till 12. Hittar byggaren en
+    skillnad mellan den här delen och det koden eller testerna ger, lämnas
+    paketet tillbaka till arkitekten innan det redovisas.
+14. **Tillägg 2026-10-14, efter återlämningen (L-11).** Lägg till sonden
+    `'/bilder/hero.png::$DATA'` direkt efter `'/bilder/hero.png.'` i (H8):s
+    sondlista och de två nya kommentarraderna sist i (H8):s kommentar, båda
+    ordagrant enligt (H8)-raden. Inget i `src/` ändras. Kör därefter
+    ankarkontrollen för `/^[a-z0-9-]+\.(png|svg)$/` (ska ge `1`), mutation (3)
+    i (H8) i en kopia och klistra in kryssraden för (H8) och `EXIT=1`, och kör
+    om steg 10 och 12. Steg 11 behöver inte göras om för de övriga mutationerna,
+    eftersom bara (H8):s sondlista ändras och en sond till inte kan få en fälld
+    mutation att överleva.
+
+### Manuell kontroll [logga]
+
+Ingen agent kan öppna en webbläsare. Användaren öppnar `/` och `/app` efter
+granskaren och före commit, i ljust och mörkt läge, och ser efter:
+
+- att headerns logga syns vid 320, 400, 840 och 1280 bildpunkters bredd, utan
+  vågrät skrollning vid 320, och att den står på en ljus platta i det mörka
+  läget;
+- att sidfotens vita logga syns på det marinblå;
+- att sidomenyn i appen visar loggan på en ljus platta i båda lägena;
+- att fliken visar ikonen (Safari visar inte svg-favicons och kan visa ingen
+  ikon alls);
+- att namnet "Hem och Ekonomi" inte längre står som text bredvid loggan.
+  Vill användaren ha kvar texten synlig är det beslut L-3 som ändras: de två
+  reglerna `.markesnamn` och `.sidomeny-namn` och (L3).
+
+#### Beslutslogg [logga]
+
+- **L-1: svg-filerna används byte-identiska** — läsningen visade bara `svg`,
+  `rect` och `path` med kända attribut och ingen extern referens, och en
+  bearbetning hade gjort filen till något annat än användarens. (L1) gör
+  läsningen till ett test, så att en senare export med skript eller externa
+  referenser fäller sviten i stället för att godtas på arkitektens ord.
+  (påverkat av lärdom: **ja**, `2026-08-18 — miljö: testkommandot i
+  ARKITEKTUR.md skrevs ned utan att köras` — påståendet om filernas innehåll
+  bärs av ett test, inte av arkitektens läsning)
+- **L-2: servern får en typtabell igen, `IMAGE_TYPES`** — del 7 tog bort
+  tabellen därför att mutationen `IMAGE_TYPES[match[1]]` → `IMAGE_TYPES.png`
+  inte gick att fälla med bara png-filer. Med svg-filer i katalogen fälls den av
+  (H6), som begär en svg och kräver `image/svg+xml`. Variabeln döptes till
+  `imageMatch` för att varje ankare ska förekomma en gång. (påverkat av lärdom:
+  **ja**, `2026-10-13 — dokumentation: mutation E-10 är skriven utan ankare`)
+- **L-3: namnet intill loggan döljs visuellt men står kvar i uppmärkningen** —
+  loggorna innehåller namnet, så texten intill hade visat det två gånger. Att ta
+  bort `<span>`-elementen hade ändrat T3 och T59 i (P20), numreringen och
+  `texter[17]`, och länken i headern hade behövt få sitt namn genom `alt`. Den
+  visuellt dolda texten behåller både (P20) och länkens namn. `display: none`
+  valdes bort: det tar texten också från skärmläsaren. Användaren tillfrågas i
+  den manuella kontrollen. (påverkat av lärdom: nej)
+- **L-4: `--logga-platta` och en platta i headerns mörka läge** — sidomenyns
+  platta var `--bakgrund`, som blir marinblå i det mörka läget, och headerns yta
+  blir mörk där. Den mörka loggan hade inte synts på någon av dem. Sidfoten
+  visar den vita loggan enligt användarens beslut och behöver ingen platta, så
+  regeln `.sidfot-marke .markessymbol` togs bort. Inget kontrasttal skrivs här:
+  inget är uppmätt, och den manuella kontrollen avgör att loggan syns.
+  (påverkat av lärdom: **ja**, `2026-09-23 — dokumentation: gränsvärdespåstående
+  om flyttal skrevs ned utan att köras` och `2026-10-13 — dokumentation:
+  förhandsbilden sägs visa ett exakt möte` — inga omätta tal)
+- **L-5: storleken** — `width` och `height` står som attribut i bildens egen
+  storlek, 428 gånger 104 och 104 gånger 104, så att layouten inte hoppar
+  medan bilden laddas, och (L2) kräver dem. Höjden i headern blev 2rem på smal
+  skärm och 2.5rem från 840 bildpunkter, i sidomenyn 2.5rem. Räkningen för 320
+  bildpunkter står i kommentaren i `landning.css` och är räknad, inte mätt.
+  Regeln `@media (max-width: 399px)` togs bort, eftersom namnet är dolt i alla
+  bredder. (påverkat av lärdom: nej)
+- **L-6: sonderna i (H8) och (H8b) pekar på `hero` i stället för `logga`** — en
+  sond mot en borttagen fil ger 404 oavsett mönstret och skyddar ingenting.
+  `hem-ekonomi-ikon.SVG` och `HEM-EKONOMI-IKON.svg` lades till som sonder mot en
+  svg-fil som finns. (påverkat av lärdom: **ja**, `2026-10-13 — test: sonden
+  /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas`)
+- **L-7: (H7) jämför hela listan i stället för ändelser** — användarens beslut
+  att ta bort png-loggorna bevakas av listan, och en kvarglömd fil fäller (H7).
+  (påverkat av lärdom: **ja**, `2026-10-13 — test: (H12) och (H13) kräver att en
+  regel innehåller en deklaration` — listan jämförs som lista, inte som mängd)
+- **L-8: (L4) läser texten med kommentarerna kvar** — en kommentar som nämner en
+  borttagen fil är en osann uppgift om vad sidan hämtar, så kommentarerna i
+  `tema.css`, `landning.css`, `style.css`, `landning.html` och `index.html`
+  skrevs om utan filnamnen. (påverkat av lärdom: **ja**, `2026-10-13 — tema:
+  --gron-djup blev en token utan användare` — det som pekade på det borttagna
+  söktes upp)
+- **L-9: del 3, del 7 och (K-33) fick hänvisningar hit** — "Loggan" i del 3,
+  "Servern" och kravlistan i del 7 fick en rad som säger att del 8 gäller, och
+  ankaret i (K-33) byttes till den nya `href`. Utan bytet hade (K-33) pekat på en
+  rad som inte finns. (påverkat av lärdom: **ja**, `2026-09-14 —
+  dokumentation: (S1):s mutation i ARKITEKTUR.md citerar ett uttryck som inte
+  längre finns i koden` och `2026-08-23 — dokumentation: två facit i samma fil`)
+- **L-10: ingen favicon i `index.html`** — användarens beslut gäller sidor som
+  har en favicon, och appen har ingen. (L2)(c) kräver att den fortfarande saknas,
+  så att en tillagd favicon blir ett beslut och inte en följd. "`rel` är `icon`"
+  tolkas som att `icon` är ett av orden i `rel`, eftersom `rel` är en ordlista i
+  HTML och `shortcut icon` annars hade gått förbi kravet. (påverkat av lärdom:
+  **ja**, `2026-09-07 — test: textspärren mot saveEntries i api.js går förbi med
+  ett alias`)
+- **L-11: (H8) fick sonden `/bilder/hero.png::$DATA` och mutation (3)** — när
+  byggaren lämnade tillbaka del 8 hade hen kört sin egen mutation X-1,
+  `/^[a-z0-9-]+\.(png|svg)$/` → `/^[a-z0-9-]+\.(png|svg)/`, och den överlevde
+  med `fail 0` och `EXIT=0`. Mot en riktig server gav `GET /bilder/hero.png::$DATA`
+  med X-1 `200 image/png 279561 byte` (NTFS alternativa dataström) och med
+  originalkoden `404` med 0 byte. Sonderna `hero.png.`, `hero.png%00.png`,
+  `hero.pngx` och `hero.png%20` gav 404 också med X-1. Mutationen är alltså inte
+  likvärdig. Luckan fanns redan i del 7 (`\.png$`). X-2 (`^` borttaget) fälldes
+  redan av (H8). (påverkat av lärdom: **ja**, `2026-10-13 — test: sonden
+  /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas` — sonden gäller en fil
+  som finns, så 404 kan bara komma från mönstret)

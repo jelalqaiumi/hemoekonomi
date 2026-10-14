@@ -8,10 +8,9 @@
       name="description"
       content="Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar vad som är kvar att leva på varje månad och när räkningarna förfaller."
     />
-    <!-- Faviconen är användarens egen logga, den nedskalade kopian: 400 gånger
-         400 bildpunkter och 60 159 byte, mot originalets 1024 gånger 1024 och
-         1 454 661 byte. En PNG fungerar som favicon, och type följer filen. -->
-    <link rel="icon" href="/bilder/logga-liten.png" type="image/png" />
+    <!-- Faviconen är hem-ekonomi-ikon.svg, användarens egen fil kopierad byte
+         för byte. type följer filen. -->
+    <link rel="icon" href="/bilder/hem-ekonomi-ikon.svg" type="image/svg+xml" />
     <!-- tema.css först: landning.css läser dess tokens och innehåller själv
          ingen hexkod. -->
     <link rel="stylesheet" href="/tema.css" />
@@ -27,17 +26,19 @@
          JavaScript. Registrera ligger utanför hamburgaren och syns alltid. -->
     <header class="sidhuvud">
       <div class="sidhuvud-inre">
-        <!-- Loggan är användarens egen bild, den nedskalade kopian. width och
-             height står i bildens egen storlek så att headern inte hoppar medan
-             bilden laddas; visningsstorleken är .markessymbol i landning.css.
-             alt är tomt därför att namnet står som text i länken intill. -->
+        <!-- Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
+             height står i bildens egen storlek, 428 gånger 104, så att headern
+             inte hoppar medan bilden laddas; visningsstorleken är .markessymbol
+             i landning.css. alt är tomt därför att namnet står som text i länken
+             intill. Texten är visuellt dold, eftersom namnet redan står i
+             loggan, men den är länkens namn för en skärmläsare. -->
         <a class="markeslank" href="/">
           <img
             class="markessymbol"
-            src="/bilder/logga-liten.png"
+            src="/bilder/hem-ekonomi-logga.svg"
             alt=""
-            width="480"
-            height="261"
+            width="428"
+            height="104"
             decoding="async"
           />
           <span class="markesnamn">Hem och Ekonomi</span>
@@ -349,18 +350,16 @@
          ser oavslutad ut och lovar en sida som inte finns. -->
     <footer class="sidfot">
       <div class="block sidfot-inre">
-        <!-- Samma bild som i headern. Sidfoten är marinblå, och loggan är ritad
-             för en ljus botten: 69,3 procent av bildens täckande bildpunkter har
-             under 3:1 mot --bla-marin, uppmätt. Därför står den på en ljus platta
-             här, precis som i appens sidomeny — regeln för den är
-             .sidfot-marke .markessymbol i landning.css. -->
+        <!-- Sidfoten är marinblå och visar hem-ekonomi-logga-vit.svg, som är
+             ritad för mörk botten, så ingen platta behövs. Namnet intill är
+             visuellt dolt av samma skäl som i headern. -->
         <div class="sidfot-marke">
           <img
             class="markessymbol"
-            src="/bilder/logga-liten.png"
+            src="/bilder/hem-ekonomi-logga-vit.svg"
             alt=""
-            width="480"
-            height="261"
+            width="428"
+            height="104"
             decoding="async"
           />
           <span class="markesnamn">Hem och Ekonomi</span>

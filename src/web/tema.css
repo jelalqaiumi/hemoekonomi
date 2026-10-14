@@ -1,9 +1,11 @@
-/* Designsystemets tokens. Den HÄR filen är den enda i src/web/ som får
-   innehålla en hexkod. Varje annan regel, i landning.css och i allt som byggs
-   senare, läser en token med var(). Skälet är mätbart: en hexkod utanför :root
-   kan inte bytas av det mörka läget, och då går temat isär.
+/* Designsystemets tokens. Den HÄR filen är den enda stilmallen eller sidan i
+   src/web/ som får innehålla en hexkod; bildfilerna i src/web/bilder/ är
+   användarens egna och står utanför regeln. Varje annan regel, i landning.css
+   och i allt som byggs senare, läser en token med var(). Skälet är mätbart: en
+   hexkod utanför :root kan inte bytas av det mörka läget, och då går temat isär.
 
-   Loggans tio toner är uppmätta ur src/web/bilder/logga.png och inte valda:
+   Loggans tio toner uppmättes ur användarens tidigare logga, en png som togs
+   bort i ARKITEKTUR.md del 8, och valdes inte:
    ett histogram över de mättade bildpunkterna, grupperade i intervall om 24
    nivåer per kanal, med de tio största gruppernas medelvärde. Antalet
    bildpunkter per ton står i ARKITEKTUR.md, "Färgpaletten (bindande)".
@@ -127,6 +129,11 @@
 
   /* ---------------------------------------------- mörka block */
   --morkt-block: var(--bla-marin);
+
+  /* Plattan bakom den mörka loggan på en mörk yta: sidomenyn i båda lägena och
+     headern i det mörka läget. Den byter inte värde i det mörka läget,
+     eftersom --bakgrund då blir marinblå. */
+  --logga-platta: #f7f5ef;
 
   /* ---------------------------------------------- skuggor */
   --skugga-kort: 0 1px 2px #0218400f, 0 8px 24px #02184014;

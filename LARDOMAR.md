@@ -4354,3 +4354,30 @@ borttagningen avvisa en kommentar som börjar inuti ett attributvärde. Skriv
 kravet i `ARKITEKTUR.md` först. (N1) och (N2) ovan ska stå i mutationstabellen och
 ge `EXIT=1`.
 **⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — test: sidomenyns dolda namn kan tas bort utan att något test faller, och specen kallar ändringen "ingen synlig text"
+**Vad gick fel:** Specen för del 8 säger i `ARKITEKTUR.md`, under "Ingen synlig
+text ändras", att `<span class="markesnamn">Hem och Ekonomi</span>` och
+`<span class="sidomeny-namn">Hem och Ekonomi</span>` står kvar. Det är
+användarens beslut att namnet ska finnas kvar för skärmläsare. Bara det första
+av de två elementen har ett test. Mutationen kördes i en kopia under scratchpad:
+`<span class="sidomeny-namn">Hem och Ekonomi</span>` togs bort ur
+`src/web/index.html`, och alla testfiler utom `storage` och `lock` gav
+`ℹ fail 0` och `EXIT=0`. Sidomenyn har då bara en bild med `alt=""`, så en
+skärmläsare får inget namn alls. Motsvarande borttagning i `landning.html`
+fälls, men bara av (P20), som granskar sidans text och inte är skriven för
+logga-beslutet. Meningen "Ingen synlig text ändras" stämmer inte heller, för del
+8 döljer båda namnen visuellt. Det som inte ändras är uppmärkningen.
+**Varför:** (L2) jämför bara `<img>`-attributen och (L3) bara stilreglerna. Kravet
+att texten ska finnas kvar står som en mening i löptext och inte som en rad i
+kravlistan, och därför fick det ingen mutation. Det är samma fel som posten
+2026-10-11 om `#report-error`: ett bindande element i `index.html` vars
+uppmärkning inget test läser.
+**Regel framåt:** Ett användarbeslut som kräver att ett element finns kvar ska
+bli en rad i kravlistan med en assertion på hela elementet ordagrant. Här ska
+(L2) kräva `<span class="sidomeny-namn">Hem och Ekonomi</span>` i `index.html`
+och `<span class="markesnamn">Hem och Ekonomi</span>` två gånger i
+`landning.html`. Mutationen som tar bort elementet ska stå i (L2):s
+mutationskolumn och ge `EXIT=1`. En mening i specen som beskriver vad en ändring
+*inte* gör ska skilja på uppmärkning och det som visas: skriv "uppmärkningen
+ändras inte", aldrig "ingen synlig text ändras", när texten döljs med CSS.

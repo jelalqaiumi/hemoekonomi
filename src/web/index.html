@@ -55,24 +55,22 @@
         <!-- Sidomenyn: loggan överst, vem som är inloggad och vägen ut.
              Adressen står bredvid knappen: två som delar dator ska kunna se vems
              budget som visas. Texten skrivs av app.js ur GET /api/mig.
-             Loggan är användarens egen bild, beskuren till motivet och nedskalad:
-             480 gånger 261 bildpunkter. Originalet logga.png har motivet i bara
-             26,3 procent av ytan, så en obeskuren bild skalar med sin tomma yta
-             och märket blir litet i en rad med begränsad höjd.
-             width och height står som attribut i bildens egen storlek, så att
-             raden inte hoppar medan bilden laddas; visningsstorleken sätts i
-             style.css. alt är tomt därför att namnet står som text intill: en
-             skärmläsare som läser båda skulle säga samma sak två gånger.
+             Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
+             height står i bildens egen storlek, 428 gånger 104, så att raden
+             inte hoppar medan bilden laddas; visningsstorleken sätts i
+             style.css. alt är tomt därför att namnet står som text intill.
+             Texten är visuellt dold, eftersom namnet redan står i loggan, men en
+             skärmläsare läser den.
              På mobil är menyn en rad överst, vid 60rem en spalt till vänster;
              vilket av dem som gäller är style.css:s sak. -->
         <aside class="sidomeny">
           <div class="sidomeny-marke">
             <img
               class="sidomeny-logga"
-              src="/bilder/logga-liten.png"
+              src="/bilder/hem-ekonomi-logga.svg"
               alt=""
-              width="480"
-              height="261"
+              width="428"
+              height="104"
               decoding="async"
             />
             <span class="sidomeny-namn">Hem och Ekonomi</span>

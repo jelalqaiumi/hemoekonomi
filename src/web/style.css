@@ -322,29 +322,27 @@ button:disabled:hover {
   gap: 0.5rem;
 }
 
-/* Loggan står på en ljus platta och inte direkt på det marinblå. Skälet är
-   uppmätt på src/web/bilder/logga-liten.png: 69,3 procent av bildens täckande
-   bildpunkter har under 3:1 mot --bla-marin, därför att loggan är ritad i mörk
-   grön och mörk blå för en ljus botten — de tre vanligaste tonerna ger 1,72:1,
-   1,39:1 och 1,15:1 mot marinblått, men 7,09:1, 8,79:1 och 14,00:1 mot
-   --bakgrund. Bildens bakgrund är genomskinlig (87,9 procent av bildpunkterna
-   har alfa 0), så plattan syns genom den och ger ingen grå ruta.
-   Vill man i stället ha loggan direkt på det marinblå är det de två raderna
-   background och padding som ska bort — resten av sidomenyn är oberoende av
-   dem. */
-/* Beskuren till motivet, alltså bred och inte kvadratisk (480 gånger 261).
-   Höjden styr, bredden följer proportionerna. */
+/* Loggan är hem-ekonomi-logga.svg, med mörk text för ljus botten, och står
+   därför på en ljus platta på det marinblå. Plattan är --logga-platta, som är
+   ljus i båda lägena: --bakgrund blir marinblå i det mörka läget och skulle
+   göra loggan osynlig. 428 gånger 104 i sin egen storlek; höjden styr. */
 .sidomeny-logga {
-  height: 4.25rem;
+  height: 2.5rem;
   width: auto;
   flex: none;
   padding: 0.2rem;
   border-radius: var(--radie-liten);
-  background: var(--bakgrund);
+  background: var(--logga-platta);
 }
 
+/* Namnet står redan i loggan. Texten finns kvar för en skärmläsare men visas
+   inte, så att namnet inte står två gånger. */
 .sidomeny-namn {
-  font-weight: 700;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 

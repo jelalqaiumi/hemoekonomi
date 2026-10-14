@@ -334,51 +334,39 @@ a:hover {
   min-width: 0;
 }
 
-/* Loggan är beskuren till motivet och därför bred, inte kvadratisk: 480 gånger
-   261 bildpunkter. Höjden styr och bredden följer med, så att bildens egna
-   proportioner behålls — en låst kvadrat skulle dra ut märket. */
+/* Loggan är hem-ekonomi-logga.svg i headern och hem-ekonomi-logga-vit.svg i
+   sidfoten, båda 428 gånger 104 i sin egen storlek. Höjden styr och bredden
+   följer med. Vid 320 bildpunkter räcker bredden: sidans marginaler 32,
+   mellanrummet 8, Registrera cirka 90, knapparnas mellanrum 6,4 och
+   hamburgaren 44 lämnar cirka 139 för loggan, som vid 2rem är cirka 132
+   bred. Räknat ur reglerna i den här filen och inte mätt i en webbläsare. */
 .markessymbol {
-  height: 3.25rem;
+  height: 2rem;
   width: auto;
   flex: none;
 }
 
-/* Loggan i sidfoten står på en ljus platta. Skälet är uppmätt på
-   src/web/bilder/logga-liten.png: 69,3 procent av bildens täckande bildpunkter
-   har under 3:1 mot --bla-marin, som är sidfotens yta — loggan är ritad i mörk
-   grön och mörk blå för en ljus botten, och de tre vanligaste tonerna ger
-   1,72:1, 1,39:1 och 1,15:1 mot marinblått men 7,09:1, 8,79:1 och 14,00:1 mot
-   --bakgrund. Bildens egen bakgrund är genomskinlig (87,9 procent av
-   bildpunkterna har alfa 0), så plattan syns genom den. Samma regel finns för
-   appens sidomeny i style.css, av samma skäl. Headern behöver den inte: dess yta
-   är --yta. */
-.sidfot-marke .markessymbol {
-  box-sizing: content-box;
-  padding: 0.15rem;
-  border-radius: var(--radie-liten);
-  background: var(--bakgrund);
-}
-
-.markesnamn {
-  font-weight: 700;
-  font-size: 1rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Vid 320 bildpunkter ska sidhuvudet rymmas utan att något skjuter ut: 32 för
-   symbolen, cirka 90 för Registrera, 44 för hamburgaren och 32 för sidans
-   marginaler. Namnet är det enda som kan ge vika, så det tas bort under 400 och
-   klipps med ellips däröver. Regeln finns för att spillet inte ska uppstå:
-   body:s overflow-x döljer ett vågrätt skrollfält men tar inte bort orsaken,
-   och ett krav som uppfylls av att felet göms är inte uppfyllt. Summan ovan är
-   räknad ur reglerna i den här filen och inte mätt i en webbläsare: ingen agent
-   kan öppna en. */
-@media (max-width: 399px) {
-  .markeslank .markesnamn {
-    display: none;
+/* Headerns logga har mörk text och är ritad för ljus botten. I det mörka
+   läget är headerns yta mörk, så loggan står där på en ljus platta.
+   Sidfoten behöver ingen: den visar den vita loggan. */
+@media (prefers-color-scheme: dark) {
+  .markeslank .markessymbol {
+    box-sizing: content-box;
+    padding: 0.15rem;
+    border-radius: var(--radie-liten);
+    background: var(--logga-platta);
   }
+}
+
+/* Namnet står redan i loggan. Texten finns kvar som länkens namn för en
+   skärmläsare men visas inte, så att namnet inte står två gånger. */
+.markesnamn {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .meny-bred {
@@ -475,8 +463,8 @@ a:hover {
     display: none;
   }
 
-  .markesnamn {
-    font-size: 1.1rem;
+  .markessymbol {
+    height: 2.5rem;
   }
 }
 
