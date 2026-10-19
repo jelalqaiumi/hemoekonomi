@@ -194,7 +194,7 @@ a:hover {
   color: var(--hero-knapp-text);
 }
 
-/* Guldknappen. --bla-marin på --guld ger 4,71:1, alltså AA för brödtext.
+/* Guldknappen. --bla-marin på --guld ger 6,08:1, alltså AA för brödtext.
    Guld som TEXT på ljus bakgrund når inte AA och finns inte i den här filen. */
 .knapp-guld {
   background: var(--knapp-guld-yta);
@@ -216,12 +216,8 @@ a:hover {
   display: block;
 }
 
-.sv-fyll-gron {
-  fill: var(--ikon-gron);
-}
-
-.sv-fyll-gron-ljus {
-  fill: var(--gron-ljus);
+.sv-fyll-grabla {
+  fill: var(--ikon-grabla);
 }
 
 .sv-fyll-bla {
@@ -240,7 +236,7 @@ a:hover {
   fill: var(--yta);
 }
 
-.sv-linje-gron,
+.sv-linje-grabla,
 .sv-linje-bla,
 .sv-linje-guld,
 .sv-linje-text,
@@ -252,8 +248,8 @@ a:hover {
   stroke-linejoin: round;
 }
 
-.sv-linje-gron {
-  stroke: var(--ikon-gron);
+.sv-linje-grabla {
+  stroke: var(--ikon-grabla);
 }
 
 .sv-linje-bla {
@@ -277,16 +273,8 @@ a:hover {
 }
 
 /* Symbolens varianter på alltid mörk yta, alltså i sidfoten. */
-.sv-fyll-gron-pa-mork {
-  fill: var(--ikon-gron-pa-mork);
-}
-
 .sv-fyll-bla-pa-mork {
   fill: var(--ikon-bla-pa-mork);
-}
-
-.sv-fyll-gron-ljus-pa-mork {
-  fill: var(--ikon-gron-ljus-pa-mork);
 }
 
 .sv-fyll-bla-ljus-pa-mork {
@@ -597,7 +585,7 @@ a:hover {
 
 /* ========================================================= 3. fördelar
    Fyra punkter med ikon. En kolumn på mobil, två vid 600 och fyra vid 960.
-   Bakgrunden är --bakgrund; nästa sektion tar den gröna tonen. */
+   Bakgrunden är --bakgrund; nästa sektion tar --yta-mjuk. */
 
 .fordelar {
   background: var(--bakgrund);
@@ -641,7 +629,7 @@ a:hover {
 }
 
 /* ============================================ 4. varför Hem och Ekonomi
-   Tre kolumner. Svag grön ton som bakgrund, så att varannan sektion bryter av
+   Tre kolumner. --yta-mjuk som bakgrund, så att varannan sektion bryter av
    mot --bakgrund. */
 
 .varfor {
@@ -674,7 +662,7 @@ a:hover {
 
 /* =================================================== 5. så fungerar det
    Tre numrerade steg. Numret är en egen guldruta med --bla-marin som
-   textfärg, 4,71:1, och aldrig guld som text på ljus bakgrund. */
+   textfärg, 6,08:1, och aldrig guld som text på ljus bakgrund. */
 
 .steg {
   background: var(--bakgrund);
@@ -807,7 +795,7 @@ a:hover {
   top: 0.5rem;
   width: 0.4rem;
   height: 0.7rem;
-  border: solid var(--gron-primar);
+  border: solid var(--ikon-bla);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -883,7 +871,7 @@ a:hover {
 }
 
 /* =========================================================== 8. footer
-   Bakgrund --bla-marin i båda lägena. Texten är off-white, 12,21:1.
+   Bakgrund --bla-marin i båda lägena. Texten är off-white, 12,39:1.
    Kontakt, Villkor och Integritetspolicy är a-element utan href, alltså
    platshållarlänkar: sidorna finns inte än, och en länk som svarar 404 är
    sämre än en text som säger att sidan byggs senare. */

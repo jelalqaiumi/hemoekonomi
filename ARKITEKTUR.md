@@ -8958,7 +8958,13 @@ månaden, och en tom vy tar bort information användaren kan läsa.
 
 ### Färgpaletten (bindande) [design]
 
-Färgerna är **uppmätta ur loggan**, inte valda på ögonmått. Metoden var ett
+**Ersatt av del 9 (användarens beslut 2026-10-14: "ja, ta bort grönt och följ
+loggans färger").** Den bindande paletten står under "Del 9: temat följer
+loggan, och grönt tas bort". Tabellerna och styckena nedan, till och med "Mörkt
+läge", beskriver paletten som den var före del 9: den uppmättes ur
+`logga.png`, som togs bort i del 8, och hade tre gröna toner.
+
+Färgerna var **uppmätta ur loggan**, inte valda på ögonmått. Metoden var ett
 histogram över de mättade bildpunkterna i `src/web/bilder/logga.png`, grupperade i
 intervall om 24 nivåer per kanal, och de tio största grupperna med sitt
 medelvärde. Kommandot gick genom `System.Drawing` i PowerShell. Varje ton nedan
@@ -9051,8 +9057,9 @@ Sektionerna uppifrån och ned:
 | 7 | FAQ | Frågor som fälls ut med `<details>` och `<summary>` — inget JavaScript behövs för att öppna dem. Frågan om flera i hushållet ströks 2026-10-11, se "Landningssidan lovar inget som inte finns". |
 | 8 | Footer | Logga, länkarna `Priser`, `FAQ`, `Kontakt`, `Villkor`, `Integritetspolicy`, och upphovsrättsrad. Bakgrund `--bla-marin`. |
 
-**Varannan sektion** har `--bakgrund` respektive en svag grön ton, så att sidan
-inte blir genomgående ljus.
+**Varannan sektion** har `--bakgrund` respektive `--yta-mjuk`, så att sidan
+inte blir genomgående ljus. `--yta-mjuk` var en svag grön ton fram till del 9 och
+är sedan del 9 en ljus ton av loggans gråblå.
 
 **Ikonerna ritas som inline-SVG** i loggans färger. Inget ikonbibliotek hämtas:
 Lucide och Phosphor är beroenden, och projektet har noll. En ikon är fem till
@@ -9096,8 +9103,10 @@ gäller oförändrat.
 Appen fick samtidigt en sidomeny i `--morkt-block` med loggan, den inloggade
 adressen och `Logga ut`: en rad överst på mobil, en spalt till vänster vid 60rem.
 I mörkt läge är `--bakgrund` samma ton som sidomenyn, så menyn skulle flyta in i
-sidan — en ram i `--guld` skiljer dem åt, och guld är den enda ton i temat som
-når 3:1 mot marinblått och samtidigt syns mot `--bakgrund` i ljust läge.
+sidan — en ram i `--guld` skiljer dem åt. När det skrevs var guld den enda ton i
+temat som nådde 3:1 mot marinblått och samtidigt syntes mot `--bakgrund` i ljust
+läge. Efter del 9 når fler toner 3:1 mot `--bla-marin`, och ramen står kvar i
+`--guld` med 6,08:1 (del 9, FK32).
 
 ---
 
@@ -9673,6 +9682,10 @@ Strecket är bindestreck-minus (U+002D), samma som i bannerns texter.
                  </p>
                </li>
    ```
+
+   Klassen `sv-fyll-gron` i blocket ovan döptes om till `sv-fyll-grabla` i del 9
+   ("Del 9: temat följer loggan, och grönt tas bort"); blocket visar läget före
+   del 9.
 
    Påståendet stämmer mot koden: `readOverview` svarar med tolv månader
    (`OVERVIEW_MONTHS` i `src/server/api.js`), var och en med `incomeOre`,
@@ -10810,7 +10823,7 @@ förbudet, och den projektet redan har precedens för: `svgElement` i
 
 | `status` | Utseende |
 |---|---|
-| `klart` | Grön stapel, texten `Målet är nått` |
+| `klart` | Guldstapel (`--guld-grafik`, sedan del 9; före del 9 grön), texten `Målet är nått` |
 | `forsenat` | Röd ram, `Slutdatumet har passerat` |
 | `pagaende` | Vanlig |
 
@@ -10852,7 +10865,7 @@ låsmekanismen från steg 1 får något att låsa.
 |---|---|---|
 | (84) | kortet visar stapel och procent | tre mål, rätt bredd |
 | (85) | Bas ser låsraden i stället för kortet | och knappen `Se planer` |
-| (86) | ett nått mål visas som klart | grön stapel, texten |
+| (86) | ett nått mål visas som klart | guldstapel (före del 9 grön), texten; testnamnet enligt stycket "(86) i `tests/app.test.js`" under "Kravlista [del 9]" |
 | (87) | `+ Sätt in` ökar `savedOre` och ritar om raden | stapeln och procenten följer med |
 
 ---
@@ -13410,6 +13423,11 @@ Den skrivs om, utan uppräkning av användare:
   /* Guldknappen: --bla-marin på --guld, 4,71:1. */
 ```
 
+Kommentaren ersattes i del 9, där `--bla-marin` och `--guld` bytte värde. Den
+lyder sedan dess `/* Guldknappen: --bla-marin på --guld, 6,08:1. */`, och övriga
+värden i blocket ovan gäller med del 9:s toner (se "`src/web/tema.css` efter del
+9").
+
 **Användarna av varje token** efter ändringen. Byggaren körde sökningen i steg
 12 i "Byggarens instruktioner [hero-bild]" 2026-10-13. Arkitekten körde den igen
 2026-10-14 som `grep -rn "var(--hero-" src/web`, som gav 15 rader, alla i
@@ -13429,7 +13447,11 @@ Den skrivs om, utan uppräkning av användare:
 | `--knapp-guld-yta`, `--knapp-guld-text`, `--knapp-guld-yta-hover` | `.knapp-guld` i `landning.css`, som priskorten använder. Klassen försvinner ur hero men tokenerna och regeln står kvar |
 | `--text-pa-mork`, `--text-svag-pa-mork`, `--guld-ljus`, `--morkt-block` | Oförändrade användare utanför hero (sidfoten, appens sidomeny, demons banderoll). De förlorar sina användare i hero men har andra kvar. |
 
-**`--gron-djup` står kvar utan användare** i `src/web/` (lärdomen 2026-10-13 om
+**Upphävt av del 9:** `--gron-djup` tas bort tillsammans med de andra gröna
+tokenerna (se "Del 9: temat följer loggan, och grönt tas bort"). Stycket nedan
+beskriver beslutet i del 7.
+
+**`--gron-djup` stod kvar utan användare** i `src/web/` (lärdomen 2026-10-13 om
 `--gron-djup`). Skälet: den är en av loggans tio uppmätta toner i
 "Färgpaletten (bindande)", och paletten är en mätning av loggan och inte en lista
 över komponenttoner. Den tas inte i bruk i hero: som accenttext mot bildens blå
@@ -13844,8 +13866,8 @@ prövas i den manuella kontrollen.
 **Vågens fyllning är nästa sektions bakgrund.** Sektionen efter hero är
 `<section class="fordelar">`, och `.fordelar` har `background: var(--bakgrund);`.
 Vågen fylls därför med `fill: var(--bakgrund);`, samma token och ingen ny.
-`--bakgrund` är `#f7f5ef` i ljust läge och `var(--bla-marin)`, alltså `#022d68`, i
-mörkt läge. Byter `.fordelar` bakgrund ska vågen byta till samma token. (H13)(d)
+`--bakgrund` är `#f7f5ef` i ljust läge och `var(--bla-marin)` i mörkt läge. Där var
+värdet `#022d68` fram till del 9 och är `#0b2c63` sedan del 9. Byter `.fordelar` bakgrund ska vågen byta till samma token. (H13)(d)
 kräver att de två är samma token.
 
 **I mörkt läge** är hero fortfarande ljusblå (användarens beslut 2026-10-13), och
@@ -14043,7 +14065,8 @@ I den här ordningen. Byggaren skriver inte i `ARKITEKTUR.md`.
       bildpunkter hög remsa för nästa sektion under hero i `--bakgrund`, alltså
       `#f7f5ef` i ljust och `#022d68` i mörkt läge; headern i `--yta`, alltså
       `#ffffff` respektive `#0a3c7e`, med texten i `#022d68` respektive
-      `#f7f5ef`. I nästa sektions remsa skrivs rubriken `Fyra saker appen gör` i
+      `#f7f5ef`. (Värdena gällde när förhandsbilderna ritades i del 7. Sedan
+      del 9 är `--bla-marin` `#0b2c63`.) I nästa sektions remsa skrivs rubriken `Fyra saker appen gör` i
       `--text`, `#101820` respektive `#f7f5ef`.
     - Bilden ritas med `ImageAttributes` och `SetWrapMode(TileFlipXY)`, så att
       GDI+ inte ritar en ljus kantlinje runt den. Den syntes i de förra
@@ -14488,7 +14511,7 @@ befintligt testfall vars namn behålls.
 | (H8) | `tests/server.test.js` | sökvägsfiltret avvisar versaler i ett namn vars fil finns | I testfallet `sökvägsfiltret för /bilder/: en sökväg ut ur bildkatalogen ger 404 utan kropp` ersätts sonderna `/bilder/hero-ekonomi.JPG` och `/bilder/hero-ekonomi.jpeg` av `/bilder/hero.PNG` och `/bilder/HERO.png`. Filen `hero.png` finns, och NTFS hittar den under de versala namnen, så `404` kan bara komma från mönstret (lärdomen 2026-10-13 om `.jpeg`-sonden). Ingen sond för en annan ändelse läggs till: ingen sådan fil finns, så en sond skulle ge `404` oavsett mönstret. Att katalogen bara har png bevakas av (H7) | (1) `/^[a-z0-9-]+\.png$/` → `/^[a-z0-9-]+\.png$/i` (fälls av bland annat `/bilder/hero.PNG`); (2) `if (!IMAGE_FILE_PATTERN.test(name)) {` → `if (false) {` |
 | (H9) | `tests/server.test.js` | adressen i `landning.css` ger bilden med `image/png` | Testfallet `landning.css pekar ut hero-fotot, och adressen ger image/jpeg` ersätts av `(H9) landning.css pekar ut hero-bilden, och adressen ger image/png`. Det tar ut varje adress ur den råa texten i `src/web/landning.css` med `/url\(\s*(["']?)([^"')]+)\1\s*\)/gi` och värdet ur grupp 2, så att dubbla citattecken, enkla citattecken, inga citattecken och varje skiftläge av `url` räknas lika. Det kräver exakt en adress, med värdet `bilder/hero.png`, och noll träffar på `/image-set\s*\(/i` i samma text (se "Stavningarna i led 3 och (H9)" under "Kaskadspärren [hero-kaskad]"). Kommentaren i testfallet som säger att mönstret ser "alla tre stavningarna" skrivs om till: `// Mönstret ser dubbla, enkla och inga citattecken och varje skiftläge av url(,` `// och image-set() är förbjudet, eftersom det hämtar en bild utan url(.` `new URL(värdet, 'http://127.0.0.1/landning.css').pathname` ska vara `/bilder/hero.png`, och därefter krävs `assertFileServed` för den sökvägen med `PNG_TYPE` | var och en för sig: (1) `url("bilder/hero.png")` → `url("bilder/finns-inte.png")`; (2) raden `background-image: url("bilder/logga.png");` tillagd i `.hero-inre`; (3) samma rad med `url('bilder/logga.png')`; (4) samma rad med `url(bilder/logga.png)`. Dessutom (K-26), (K-27) och (K-39) i tabellen under "Kaskadspärren [hero-kaskad]" |
 | (H10) | `tests/hero.test.js` | bilden är en PNG på 1920 x 1080 och högst 400 000 byte | Sökvägen byggs ur `import.meta.url`, och filen läses som `Buffer`. Krav i den här ordningen: `buffer.length <= 400000`, med längden i meddelandet; de åtta första byten är `0x89 0x50 0x4e 0x47 0x0d 0x0a 0x1a 0x0a`; `buffer.readUInt32BE(8) === 13` och `buffer.toString('latin1', 12, 16) === 'IHDR'`; bredden `buffer.readUInt32BE(16) === 1920` och höjden `buffer.readUInt32BE(20) === 1080`; bitdjupet `buffer[24] === 8`; färgtypen `buffer[25]` är `2` eller `6`; de tolv sista byten är ett tomt `IEND`-stycke: `buffer.readUInt32BE(buffer.length - 12) === 0` och `buffer.toString('latin1', buffer.length - 8, buffer.length - 4) === 'IEND'`. Inget krav på innehåll, färger eller hash | var och en för sig, i kopian: (1) `hero.png` ersatt av en PNG på 1920 x 1080 med brus i varje bildpunkt, sparad med `System.Drawing` (fäller längdkravet); (2) `hero.png` ersatt av samma bild nedskalad till 1280 x 720 (fäller måttkravet, inte längdkravet); (3) `hero.png` ersatt av `hero-ekonomi.jpg` ur HEAD, omdöpt (fäller signaturen); (4) de tolv sista byten borttagna (fäller `IEND`); (5) byte 25 satt till `3` (fäller färgtypen) |
-| (H11) | `tests/hero.test.js` | den mörka texten når 4,5:1, och fokusramen och den fyllda knappens yta 3:1, mot bildens blå, i båda lägena | Läser `src/web/tema.css` med samma tolkning som del 6:s (H4) (det första `:root { … }` för det ljusa läget, `:root { … }` inuti `@media (prefers-color-scheme: dark)` ovanpå för det mörka, `var(--x)` upplöst tills värdet är en hexkod med 6 eller 8 siffror), men `readThemes` returnerar dessutom det mörka lägets egna deklarationer för sig. Konstanterna `MIN_CONTRAST = 4.5`, `MIN_NON_TEXT_CONTRAST = 3` och `HERO_YTA_TOLERANS = 8`. Krav: (a) namnen på de tokener i det ljusa `:root` som börjar med `--hero-` är, sorterade, exakt `['--hero-fokus', '--hero-hover', '--hero-knapp-text', '--hero-knapp-yta', '--hero-knapp-yta-hover', '--hero-text', '--hero-text-accent', '--hero-yta']`; inget namn som börjar med `--hero-` deklareras i det mörka lägets egna `:root`; och varje `--hero-`-token löses upp till samma hexkod i båda lägena. (b) `--hero-yta` har 6 siffror. Ytorna är `Y` = `--hero-yta`, `Yljus` = varje kanal plus `HERO_YTA_TOLERANS`, högst 255, och `Ymork` = varje kanal minus `HERO_YTA_TOLERANS`, minst 0. (c) `--hero-text` och `--hero-text-accent` är ogenomskinliga, har lägre luminans än varje yta och minst 4,5:1 mot `Y`, `Yljus` och `Ymork`. (d) `--hero-hover` har 8 siffror; ytorna `--hero-hover` över `Yljus` och över `Ymork` (formeln `c = a * s + (1 - a) * b`); `--hero-text` har lägre luminans än båda och minst 4,5:1 mot båda. (e) `--hero-fokus` har minst 3:1 mot `Yljus` och `Ymork`. (f) `--hero-knapp-yta`, `--hero-knapp-yta-hover` och `--hero-knapp-text` är ogenomskinliga; `--hero-knapp-text` har högre luminans än båda knappytorna och minst 4,5:1 mot var och en. (g) `--hero-knapp-yta` och `--hero-knapp-yta-hover` har var för sig lägre luminans än `Yljus` och `Ymork` och minst 3:1 mot båda. Guldknappen prövas inte här: den finns inte i hero efter del 7. Varje kvot skrivs ut med `t.diagnostic` med två decimaler, och meddelandet vid fel namnger läge, token och yta. Testet skriver ingen färg själv | var och en för sig: (1) `--hero-text-accent: var(--bla-primar);` → `--hero-text-accent: var(--gron-primar);` (ska fällas av (c); ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (2) `--hero-yta: #a3c6f2;` → `--hero-yta: #7fa0cc;` (ska fällas av (c)); (3) raden `--hero-text: #f7f5ef;` tillagd i det mörka lägets `:root` (fäller (a)); (4) `--hero-fokus: var(--bla-marin);` → `--hero-fokus: var(--lank);` (fäller (a), eftersom `--lank` byter värde i det mörka läget); (5) `--hero-hover: #ffffff66;` → `--hero-hover: #00000099;` (fäller (d)); (6) raden `--hero-sloja: #022d68cc;` tillagd i det ljusa `:root` (fäller (a)); (7) `--hero-knapp-yta: var(--bla-marin);` → `--hero-knapp-yta: var(--guld);` (fäller (f)); (8) `--hero-knapp-yta-hover: var(--bla-primar);` → `--hero-knapp-yta-hover: var(--bla-ljus);` (ska fällas av (g), eftersom vit text på `--bla-ljus` klarar (f) men ytan är för ljus mot bildens blå; ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (9) `--hero-knapp-text: #ffffff;` → `--hero-knapp-text: var(--bla-primar);` (fäller (f)); (10) raden `--hero-knapp-yta: var(--knapp-fylld-yta);` tillagd i det mörka lägets `:root` (fäller (a)) |
+| (H11) | `tests/hero.test.js` | den mörka texten når 4,5:1, och fokusramen och den fyllda knappens yta 3:1, mot bildens blå, i båda lägena | Läser `src/web/tema.css` med samma tolkning som del 6:s (H4) (det första `:root { … }` för det ljusa läget, `:root { … }` inuti `@media (prefers-color-scheme: dark)` ovanpå för det mörka, `var(--x)` upplöst tills värdet är en hexkod med 6 eller 8 siffror), men `readThemes` returnerar dessutom det mörka lägets egna deklarationer för sig. Konstanterna `MIN_CONTRAST = 4.5`, `MIN_NON_TEXT_CONTRAST = 3` och `HERO_YTA_TOLERANS = 8`. Krav: (a) namnen på de tokener i det ljusa `:root` som börjar med `--hero-` är, sorterade, exakt `['--hero-fokus', '--hero-hover', '--hero-knapp-text', '--hero-knapp-yta', '--hero-knapp-yta-hover', '--hero-text', '--hero-text-accent', '--hero-yta']`; inget namn som börjar med `--hero-` deklareras i det mörka lägets egna `:root`; och varje `--hero-`-token löses upp till samma hexkod i båda lägena. (b) `--hero-yta` har 6 siffror. Ytorna är `Y` = `--hero-yta`, `Yljus` = varje kanal plus `HERO_YTA_TOLERANS`, högst 255, och `Ymork` = varje kanal minus `HERO_YTA_TOLERANS`, minst 0. (c) `--hero-text` och `--hero-text-accent` är ogenomskinliga, har lägre luminans än varje yta och minst 4,5:1 mot `Y`, `Yljus` och `Ymork`. (d) `--hero-hover` har 8 siffror; ytorna `--hero-hover` över `Yljus` och över `Ymork` (formeln `c = a * s + (1 - a) * b`); `--hero-text` har lägre luminans än båda och minst 4,5:1 mot båda. (e) `--hero-fokus` har minst 3:1 mot `Yljus` och `Ymork`. (f) `--hero-knapp-yta`, `--hero-knapp-yta-hover` och `--hero-knapp-text` är ogenomskinliga; `--hero-knapp-text` har högre luminans än båda knappytorna och minst 4,5:1 mot var och en. (g) `--hero-knapp-yta` och `--hero-knapp-yta-hover` har var för sig lägre luminans än `Yljus` och `Ymork` och minst 3:1 mot båda. Guldknappen prövas inte här: den finns inte i hero efter del 7. Varje kvot skrivs ut med `t.diagnostic` med två decimaler, och meddelandet vid fel namnger läge, token och yta. Testet skriver ingen färg själv | var och en för sig: (1) `--hero-text-accent: var(--bla-primar);` → `--hero-text-accent: var(--guld);` (före del 9 stod här `var(--gron-primar)`, som del 9 tar bort; ska fällas av (c); ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (2) `--hero-yta: #a3c6f2;` → `--hero-yta: #7fa0cc;` (ska fällas av (c)); (3) raden `--hero-text: #f7f5ef;` tillagd i det mörka lägets `:root` (fäller (a)); (4) `--hero-fokus: var(--bla-marin);` → `--hero-fokus: var(--lank);` (fäller (a), eftersom `--lank` byter värde i det mörka läget); (5) `--hero-hover: #ffffff66;` → `--hero-hover: #00000099;` (fäller (d)); (6) raden `--hero-sloja: #022d68cc;` tillagd i det ljusa `:root` (fäller (a)); (7) `--hero-knapp-yta: var(--bla-marin);` → `--hero-knapp-yta: var(--guld);` (fäller (f)); (8) `--hero-knapp-yta-hover: var(--bla-primar);` → `--hero-knapp-yta-hover: var(--bla-ljus);` (ska fällas av (g), eftersom vit text på `--bla-ljus` klarar (f) men ytan är för ljus mot bildens blå; ger mutationen `EXIT=0` lämnas paketet tillbaka till arkitekten); (9) `--hero-knapp-text: #ffffff;` → `--hero-knapp-text: var(--bla-primar);` (fäller (f)); (10) raden `--hero-knapp-yta: var(--knapp-fylld-yta);` tillagd i det mörka lägets `:root` (fäller (a)) |
 | (H12) | `tests/hero.test.js` | `landning.css` har bilden utan slöja, och texten kan inte hamna på bilden | Läser `src/web/landning.css`, `src/web/tema.css` och `src/web/landning.html`. Kommentarerna tas bort ur båda CSS-filerna med `/\/\*[\s\S]*?\*\//g` **innan** något deklarationskrav prövas, så att en kommentar aldrig kan uppfylla ett krav. Blanktecken slås ihop till ett mellanslag. Reglerna tas ut med `ruleList` och prövas med `assertSingleRule` (se "Kaskadspärren [hero-kaskad]"), som kräver exakt en regel med selektorn i kontexten, ingen egenskap två gånger i kroppen och varje krävd deklaration som en egen deklaration. Kontexten `''` är ingen at-regel. (a) `.hero` i kontexten `''` har `background-color: var(--hero-yta);`, `background-image: url("bilder/hero.png");`, `background-repeat: no-repeat;`, `background-size: 100% auto;` och `color: var(--hero-text);`, och dess kropp innehåller inte ordet `gradient`, oavsett skiftläge. (b) `.hero` i kontexten `'@media (min-width: 960px)'` har `background-size: 50% auto;` och `background-position: right center;`, och `.hero-text` i samma kontext har `max-width: min(46rem, 48%);`. Utfyllnaden, bildens läge på smal skärm, `background-origin` och `min-height` prövas sedan 2026-10-13 av (H13)(b), eftersom deras värden ändrades av vågen. (c) `.hero-ingress` i `''` har `color: var(--hero-text-accent);` och `.hero-under` i `''` har `color: var(--hero-text);`. (d) `.hero :focus-visible` i `''` har `outline-color: var(--hero-fokus);`. (e) `.knapp-kontur-hero` i `''` har `border-color: var(--hero-text);` och `color: var(--hero-text);`, och `.knapp-kontur-hero:hover` i `''` har `background: var(--hero-hover);`. (f) Varje `var(--hero-…)` i `landning.css` är deklarerat i `tema.css`, och varje `--hero-`-token som deklareras i `tema.css` används i `landning.css`. (g) I filernas **råa** text, alltså med kommentarerna kvar, förekommer inget av `--hero-sloja`, `--hover-pa-mork`, `--hero-fran`, `--hero-till`, `--rutnat`, `knapp-kontur-ljus` och `hero-ekonomi`, i någon av de tre filerna. (h) I `landning.html` tas hero-sektionen ut, från `<section class="hero">` till det första `</section>` efter den. Den innehåller `class="knapp knapp-hero-fylld"` och `class="knapp knapp-kontur-hero"` och innehåller inte `knapp-guld`. (i) `.knapp-hero-fylld` i `''` har `background: var(--hero-knapp-yta);`, `border-color: var(--hero-knapp-yta);` och `color: var(--hero-knapp-text);`, och `.knapp-hero-fylld:hover` i `''` har `background: var(--hero-knapp-yta-hover);`, `border-color: var(--hero-knapp-yta-hover);` och `color: var(--hero-knapp-text);`. (j) Led 3 i kaskadspärren, krav 1–5 under "Spärrens tre led", med mönstren där ordagrant och mot den kommentarfria texten (HTML-kommentarerna borttagna med `/<!--[\s\S]*?-->/g`): stilmallarnas `href` är exakt `['/tema.css', '/landning.css']` och varje `<link` har `rel` `icon` eller `stylesheet`; `landning.css` ger noll träffar på `/!\s*important/i` och `/@import\b/i`; `tema.css` ger noll träffar på `/@import\b/i` och har ingen regel vars selektor eller kontext innehåller `hero`; ingen av de två CSS-filerna innehåller `\`; och `landning.html` ger noll träffar på `/<style\b/i` och `/[\s"'\/]style\s*=/i`. Varje krav har ett eget meddelande som namnger filen och kravet. **Gränsen:** se "Det spärren inte fångar" under "Kaskadspärren [hero-kaskad]" | var och en för sig: (1) `background-image: url("bilder/hero.png");` → `background-image: linear-gradient(#022d68cc, #022d68cc), url("bilder/hero.png");` (fäller (a)); (2) i `@media (min-width: 960px)`: `background-size: 50% auto;` → `background-size: cover;` (fäller (b)); (3) `max-width: min(46rem, 48%);` → `max-width: 46rem;` (fäller (b)); (4) struken 2026-10-13: uttrycket finns inte längre efter vågen, och utfyllnaden prövas av (H13) mutation (17); (5) regeln `.hero :focus-visible { … }` borttagen (fäller (d)); (6) raden `--hero-oanvand: #ffffff;` tillagd i det ljusa `:root` i `tema.css` (fäller (f)); (7) deklarationen `background-size: 100% auto;` i det översta `.hero` ersatt av kommentaren `/* background-size: 100% auto; */` (fäller (a) och visar att kommentarer inte räknas); (8) `/* --hero-sloja */` tillagd i en kommentar i `tema.css` (fäller (g)); (9) i `.knapp-hero-fylld`: `background: var(--hero-knapp-yta);` → `background: var(--knapp-guld-yta);` (fäller (i)); (10) i `landning.html`: `class="knapp knapp-hero-fylld"` → `class="knapp knapp-guld"` (fäller (h)). Dessutom de mutationer i tabellen under "Kaskadspärren [hero-kaskad]" vars sista kolumn nämner (H12): (K-1), (K-3), (K-4), (K-6), (K-7), (K-8), (K-14), (K-15), (K-16), (K-17), (K-18) till (K-25), (K-28) till (K-30) och (K-32) till (K-38) |
 | (H13) | `tests/hero.test.js` | vågen i hero finns, har nästa sektions bakgrund i båda lägena och rör varken bilden, texten, (H9) eller (P20) | Testnamnet är `(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena och täcker varken bilden eller texten`. Läser `src/web/landning.html`, `src/web/landning.css` och `src/web/tema.css`. HTML-kommentarerna tas bort med `/<!--[\s\S]*?-->/g` och CSS-kommentarerna med `stripComments` **innan** något krav prövas, så att en bortkommenterad våg eller regel aldrig räknas. Konstanten `VAG_SVG` är vågens markering ur "HTML, bindande ordagrant" under "Vågen i hero", med blanktecknen ihopslagna som av `collapse`: `<svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"> <path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" /> </svg>`. (a) Hero-sektionen, uttagen ur den kommentarfria texten från `<section class="hero">` till det första `</section>` efter den och ihopslagen med `collapse`, slutar med `VAG_SVG`, och den kommentarfria texten innehåller strängen `hero-vag` exakt två gånger (klasserna `hero-vag` och `hero-vag-yta`). (b) Med `assertSingleRule` på `ruleList` av den kommentarfria `landning.css` (exakt en regel per kontext, ingen egenskap två gånger): `.hero` i kontexten `''` har `position: relative;`, `--vag-hojd: max(1.5rem, 5vw);`, `padding-bottom: calc(56.25% + var(--vag-hojd));` och `background-position: center bottom var(--vag-hojd);`, och `.hero` i kontexten `'@media (min-width: 960px)'` har `--vag-hojd: clamp(3rem, 4vw, 6rem);`, `background-origin: content-box;`, `padding-bottom: var(--vag-hojd);` och `min-height: calc(28.125vw + var(--vag-hojd));`. Ingen av de två har en deklaration vars namn börjar med `overflow`. `/--vag-hojd\s*:/g` ger exakt två träffar i den kommentarfria `landning.css`, och den råa texten i `tema.css` innehåller inte `--vag-hojd`. (c) Bland `ruleList(landning)` finns exakt en regel med selektorn `.hero-vag`, med kroppen exakt `position: absolute; left: 0; bottom: -1px; display: block; width: 100%; height: var(--vag-hojd); pointer-events: none;`, och exakt en med selektorn `.hero-vag-yta`, med kroppen exakt `fill: var(--bakgrund);`. Led 2 i kaskadspärren: listan `[context, selector, body]` för varje regel i `ruleList(landning)` vars selektor eller kontext innehåller `hero`, i filens ordning och **utan sortering**, är exakt `HERO_RULES` (tabellen under "Kaskadspärren [hero-kaskad]"), jämförd i de tre steg som står där. Varje olik selektor i `ruleList(landning)` som innehåller ordet `svg` eller ordet `path`, som helt ord, är exakt `img, svg`. (d) Nästa sektion är klassen i den första `<section class="…">` efter hero-sektionens `</section>` i den kommentarfria texten. Bland reglerna med den klassen som selektor finns exakt en deklaration av `background` eller `background-color`, på formen `var(--x)`, och `--x` är samma token som i `.hero-vag-yta`:s `fill`. Med `readThemes` och `resolveToken` är tokenen i båda lägena en hexkod med 6 siffror som skiljer sig från `--hero-yta`. Kvoten mellan tokenen och `--hero-yta` skrivs ut med `t.diagnostic` per läge, med två decimaler, utan krav. (H9) och (P20) körs oförändrade; (a) och (c) gör att vågen varken kan få en adress eller en text som (P20) inte ser. **Gränsen:** en regel vars selektor varken innehåller `hero`, `svg` eller `path`, till exempel `section > :last-child { display: none; }`, kan dölja vågen utan att (H13) faller. Hela gränsen, med (KG-1) och (KG-2) körda, står i "Det spärren inte fångar" under "Kaskadspärren [hero-kaskad]". Den manuella kontrollen täcker den | var och en för sig, (1)–(7) i `landning.html`, (10) i `tema.css` och övriga i `landning.css`: (1) blocket från `<svg class="hero-vag"` till och med `</svg>` borttaget (vågen borttagen, fäller (a)); (2) samma block inneslutet i `<!--` och `-->` (fäller (a)); (3) blocket flyttat till efter hero-sektionens `</section>` (fäller (a)); (4) i vågens `<svg>`: `preserveAspectRatio="none" aria-hidden="true" ` → `preserveAspectRatio="none" ` (ankaret avgränsar mutationen till vågen, eftersom `aria-hidden="true" ` förekommer nio gånger i `landning.html`; fäller (a)); (5) `<title>Våg</title>` inlagt före `<path` (text som (P20) inte ser, fäller (a)); (6) `d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z"` → `d="M0 50 H1440 V100 H0 Z"` (rak linje, fäller (a)); (7) `preserveAspectRatio="none"` → `preserveAspectRatio="xMidYMid meet"` (skalas inte med bredden, fäller (a)); (8) `fill: var(--bakgrund);` → `fill: var(--yta);` (fel färg, fäller (c)); (9) i `.fordelar`: `background: var(--bakgrund);` → `background: var(--yta-mjuk);` (nästa sektion byter färg men vågen följer inte med, fäller (d)); (10) i det mörka lägets `:root`: `--bakgrund: var(--bla-marin);` → `--bakgrund: #a3c6f2;` (vågen osynlig mot hero i mörkt läge, fäller (d)); (11) i `.hero-vag`: `display: block;` → `display: none;` (fäller (c)); (12) regeln `.hero-vag { display: none; }` tillagd i `@media (min-width: 960px)` (fäller (c)); (13) regeln `.hero svg { display: none; }` tillagd efter `.hero-vag-yta` (fäller (c)); (14) regeln `main svg { display: none; }` tillagd efter `.hero-vag-yta` (fäller (c)); (15) i `.hero-vag`: raden `animation: vag 6s infinite;` tillagd (fäller (c)); (16) i `.hero-vag`: raden `background-image: url("data:image/svg+xml,%3Csvg%3E%3C/svg%3E");` tillagd (fäller (c) och dessutom (H9)); (17) `padding-bottom: calc(56.25% + var(--vag-hojd));` → `padding-bottom: 56.25%;` (vågen täcker bildens nederkant på smal skärm, fäller (b)); (18) `background-position: center bottom var(--vag-hojd);` → `background-position: center bottom;` (fäller (b)); (19) `min-height: calc(28.125vw + var(--vag-hojd));` → `min-height: 28.125vw;` (fäller (b)); (20) raden `background-origin: content-box;` borttagen (fäller (b)); (21) `--vag-hojd: max(1.5rem, 5vw);` → `--vag-hojd: 0;` (rak linje, fäller (b)); (22) i det översta `.hero`: raden `overflow: hidden;` tillagd (klipper bildpunkten mot nästa sektion, fäller (b)); (23) raden `position: relative;` borttagen ur `.hero` (fäller (b)); (24) i `.hero-vag`: `height: var(--vag-hojd);` → `height: 0;` (rak linje, fäller (c)). Byggarens egna mutationer ur diffen (steg 7 i "Byggarens instruktioner [hero-våg]"), körda 2026-10-13, var och en med `EXIT=1` och kryssraden för (H13): (E-1) i `@media (min-width: 960px)`: `--vag-hojd: clamp(3rem, 4vw, 6rem);` → `--vag-hojd: 3rem;`; (E-2) i `@media (min-width: 960px)`: `padding-bottom: var(--vag-hojd);` → `padding-bottom: 0;`; (E-3) i `.hero-vag`: `position: absolute;` → `position: relative;`; (E-4) i `.hero-vag`: raden `left: 0;` borttagen; (E-5) i `.hero-vag`: `bottom: -1px;` → `bottom: 0;`; (E-6) i `.hero-vag`: `width: 100%;` → `width: 50%;`; (E-7) i `.hero-vag`: raden `pointer-events: none;` borttagen; (E-8) i `landning.html`: `class="hero-vag"` → `class="vag"`; (E-9) i `landning.html`: `viewBox="0 0 1440 100"` → `viewBox="0 0 1440 200"`; (E-10) i `landning.html`: `preserveAspectRatio="none" aria-hidden="true" focusable="false">` → `preserveAspectRatio="none" aria-hidden="true">`, alltså `focusable="false"` borttaget ur vågens `<svg>` och ingen annanstans (`grep -c 'focusable="false"' src/web/landning.html` gav `9` 2026-10-14, medan `grep -c -F 'preserveAspectRatio="none" aria-hidden="true" focusable="false">' src/web/landning.html` gav `1`; byggarens första körning ankrade i stället på vågens `<path class="hero-vag-yta"` på raden efter, med samma utfall); (E-11) i `landning.html`: `class="hero-vag-yta"` → `class="vag-yta"`. Dessutom de mutationer i tabellen under "Kaskadspärren [hero-kaskad]" vars sista kolumn nämner (H13): (K-1) till (K-7), (K-9) till (K-13) och (K-31) |
 
@@ -14579,7 +14602,8 @@ om. **Bygget fortsätter från steg 4.**
       `src/web/landning.css`, och varje token i tabellen under "Tema" ska ha
       minst en träff.
     - `grep -rn "var(--gron-djup)" src` ska ge noll rader, vilket stämmer med
-      raden om `--gron-djup` under "Tema".
+      raden om `--gron-djup` under "Tema". (Efter del 9 finns token inte alls,
+      och sökningen ger fortfarande noll rader.)
     - `grep -c "url(" src/web/landning.css` ska ge `1`.
     - `grep -rn "knapp-hero-fylld" src/web` ska ge träffar bara i
       `src/web/landning.css` och `src/web/landning.html`, och i
@@ -14684,7 +14708,7 @@ redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
   svagare kopia av "är detta ett objekt"` — en färg som redan har en ägare får
   ingen kopia)
 - **`--hero-sloja` och `--hover-pa-mork` tas bort, `--gron-djup` står kvar med
-  skäl** — de två första förlorar sina enda användare. Sökningen efter vilka
+  skäl** (det sista upphävt av del 9, som tar bort `--gron-djup`) — de två första förlorar sina enda användare. Sökningen efter vilka
   tokener som förlorar sin sista användare gjordes ett led ner:
   `--text-pa-mork`, `--text-svag-pa-mork`, `--guld-ljus` och `--morkt-block` har
   användare utanför hero kvar (sidfoten, `style.css`, `demo/banner.css`, sökt med
@@ -15281,7 +15305,8 @@ redovisas (lärdomen 2026-09-02 om exempelsträngen för `formatSek`).
   "Byggarens instruktioner [hero-våg]", och arkitekten förde in raderna från
   `t.diagnostic` här ur byggarens redovisning. Vågens färg, `--bakgrund`, mot
   `--hero-yta` (`#a3c6f2`) gav 1,62:1 i ljust läge, där `--bakgrund` är
-  `#f7f5ef`, och 7,55:1 i mörkt läge, där den är `#022d68`. Kvoterna är inget
+  `#f7f5ef`, och 7,55:1 i mörkt läge, där den då var `#022d68`. Med del 9:s
+  `#0b2c63` ger samma par 7,67:1 (del 9, körning 2, rad 82). Kvoterna är inget
   krav: vågen är dekorativ. De visar att övergången är mjuk i ljust läge och
   tydlig i mörkt, som avsnittet "Färgerna, bindande" beskriver. (påverkat av
   lärdom: **ja**, `2026-09-14 — dokumentation: fem antal skrevs in i
@@ -15998,3 +16023,1608 @@ granskaren och före commit, i ljust och mörkt läge, och ser efter:
   redan av (H8). (påverkat av lärdom: **ja**, `2026-10-13 — test: sonden
   /bilder/hero-ekonomi.jpeg ger 404 för att filen saknas` — sonden gäller en fil
   som finns, så 404 kan bara komma från mönstret)
+
+## Del 9: temat följer loggan, och grönt tas bort [användarens beslut 2026-10-14]
+
+Där del 3 ("Färgpaletten (bindande)"), del 7 ("Tema") eller del 8 säger något
+annat om färger gäller del 9.
+
+**Användarens beslut**, markerade med [användaren]:
+
+- [användaren] 2026-10-14: "ja, ta bort grönt och följ loggans färger".
+- [användaren] Inkomster (`--positiv`) får blått ur loggan: mörkblå `#0b2c63`
+  eller en klarare blå ur samma familj. Turkos är inte valt.
+- [användaren] `--negativ` görs mörkare i samma del, så att de röda beloppen i
+  tabellerna når 4,5:1 mot `--yta` och `--bakgrund` i det ljusa läget.
+
+Allt annat i den här delen är arkitektens beslut, med skäl i beslutsloggen
+längst ned (F9-1 till F9-12).
+
+**Omfattning.** Del 9 gäller temats färger: `src/web/tema.css` och allt som
+läser det, alltså `landning.css`, `style.css`, `demo/banner.css` och klassnamnen
+i `landning.html`, samt kommentarer i `src/` och `tests/` som beskriver färgerna.
+Användarens bildfiler i `src/web/bilder/` (hero-bilden och de tre svg-filerna)
+ingår inte. De är användarens egna filer, och regeln om hexkoder gäller
+stilmallar och sidor, inte bilder (del 8, "Filerna [logga]").
+
+### Mätningarna [del 9]
+
+Arkitekten har inget skal i den här miljön. Koordinatorn körde skripten åt
+arkitekten, oförändrade, i scratchpad-katalogen, och utdatan nedan är klistrad
+ordagrant ur filerna `del9-matning.out` och `del9-kandidater.out`. Skripten
+finns kvar i scratchpad-katalogen men är inga projektfiler.
+
+**Körning 1, loggans färger.** Kommandot var
+`node del9-matning.mjs C:/Users/qaium/source/repos/hemochekonomi`, och det gav
+`EXIT=0`. Skriptet räknar förekomster och inte rader, utan hänsyn till
+skiftläge, med mönstret `/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi`. Raderna 1–3 i
+utdatan:
+
+```
+hem-ekonomi-logga.svg {"#0b2c63":12,"#ffffff":2,"#e3a21a":1,"#4a5875":21}
+hem-ekonomi-logga-vit.svg {"#ffffff":12,"#0b2c63":2,"#e3a21a":1,"#d6deec":21}
+hem-ekonomi-ikon.svg {"#0b2c63":1,"#ffffff":2,"#e3a21a":1}
+```
+
+Loggan har alltså fyra färger utöver vitt: mörkblå `#0b2c63`, gråblå
+`#4a5875`, ljust gråblå `#d6deec` och guld `#e3a21a`. Ingen av dem är grön.
+Samma körning gav nyansen för dagens `--yta-mjuk`:
+`tema #edf3ec {"hue":111,"s":23,"l":94}`.
+
+**Körning 2, kandidaterna.** Kommandot var
+`node del9-kandidater.mjs > del9-kandidater.out; echo EXIT=$?`, och det gav
+`EXIT=0` och 128 rader. Skriptet räknar kontrasten med exakt den formel som
+(H11) använder i `tests/hero.test.js` (tröskeln `0.04045`). Körning 1 räknade
+med `0.03928`, och därför kommer alla kontrasttal i den här delen ur körning 2.
+Nedan följer de rader som paletten och tabellerna bygger på, ordagrant och med
+radnumret i `del9-kandidater.out` först:
+
+```
+ 2  #0b2c63 hue 217.5 s 80.0 l 21.6
+ 3  #4a5875 hue 220.5 s 22.5 l 37.5
+ 4  #d6deec hue 218.2 s 36.7 l 88.2
+ 5  #e3a21a hue 40.6 s 79.4 l 49.6
+ 8  #feed7e hue 52.0 s 98.5 l 74.5
+12  #0069b7 hue 205.6 s 100.0 l 35.9
+18  #eef1f7 hue 220.0 s 36.0 l 95.1
+23  #cf961a hue 41.1 s 77.7 l 45.7
+26  #a06e0e hue 39.5 s 83.9 l 34.1
+28  #c9d3e6 hue 219.3 s 36.7 l 84.5
+30  #7cc0ff hue 208.9 s 100.0 l 74.3
+33  #2E8B57 hue 146.5 s 50.3 l 36.3
+34  #3a5 hue 137.1 s 53.8 l 43.3
+35  #22aa5580 hue 142.5 s 66.7 l 40.0
+36  #edf3ec hue 111.4 s 22.6 l 93.9
+37  #e3f0e0 hue 108.8 s 34.8 l 91.0
+38  #1aa3a3 hue 180.0 s 72.5 l 37.1
+39  #9acd32 hue 79.7 s 60.8 l 50.0
+40  #808000 hue 60.0 s 100.0 l 25.1
+42  16,41 :1   #101820 på #f7f5ef   L text/bakgrund
+43  17,89 :1   #101820 på #ffffff   L text/yta
+44  7,13 :1   #4a5875 på #ffffff   L gråblå (text-svag, ikon-grabla)/yta
+45  6,54 :1   #4a5875 på #f7f5ef   L gråblå/bakgrund
+46  10,13 :1   #014085 på #ffffff   L bla-primar (lank, ikon-bla)/yta
+47  9,29 :1   #014085 på #f7f5ef   L bla-primar/bakgrund
+48  7,81 :1   #01529c på #ffffff   L bla-mellan (lank-hover)/yta
+49  5,67 :1   #0069b7 på #ffffff   L bla-ljus (positiv)/yta
+50  5,20 :1   #0069b7 på #f7f5ef   L bla-ljus (positiv)/bakgrund
+51  4,38 :1   #d64545 på #ffffff   L negativ/yta
+52  4,02 :1   #d64545 på #f7f5ef   L negativ/bakgrund
+53  7,43 :1   #a52020 på #ffffff   L fel-text/yta
+54  6,81 :1   #a52020 på #f7f5ef   L fel-text/bakgrund
+55  10,13 :1   #ffffff på #014085   L vitt/bla-primar (fylld knapp)
+56  7,81 :1   #ffffff på #01529c   L vitt/bla-mellan (fylld knapp hover)
+57  6,08 :1   #0b2c63 på #e3a21a   L marin/guld (guldknapp, steg, badge)
+58  2,22 :1   #e3a21a på #ffffff   L guld/yta
+59  7,10 :1   #014085 på #dcd8cb   L bla-primar (goal-bar)/kant (spåret)
+60  15,82 :1   #101820 på #eef1f7   L text/yta-mjuk #eef1f7
+61  6,30 :1   #4a5875 på #eef1f7   L gråblå/yta-mjuk #eef1f7
+62  8,95 :1   #014085 på #eef1f7   L bla-primar/yta-mjuk #eef1f7
+70  4,50 :1   #0b2c63 på #c48a12   L marin/guld-mork #c48a12
+71  5,17 :1   #0b2c63 på #cf961a   L marin/guld-mork #cf961a
+76  4,44 :1   #a06e0e på #ffffff   L guld-grafik #a06e0e/yta
+77  4,07 :1   #a06e0e på #f7f5ef   L guld-grafik #a06e0e/bakgrund
+78  3,11 :1   #a06e0e på #dcd8cb   L guld-grafik #a06e0e/kant
+81  2,61 :1   #b07a12 på #dcd8cb   L guld-grafik #b07a12/kant
+82  7,67 :1   #0b2c63 på #a3c6f2   H marin/hero-yta
+83  8,32 :1   #0b2c63 på #abcefa   H marin/hero-yta+8
+84  7,04 :1   #0b2c63 på #9bbeea   H marin/hero-yta-8
+85  5,75 :1   #014085 på #a3c6f2   H bla-primar (accent)/hero-yta
+86  6,24 :1   #014085 på #abcefa   H bla-primar/hero-yta+8
+87  5,28 :1   #014085 på #9bbeea   H bla-primar/hero-yta-8
+88  13,51 :1   #ffffff på #0b2c63   H vitt/marin (hero-knapp)
+89  10,13 :1   #ffffff på #014085   H vitt/bla-primar (hero-knapp hover)
+90  12,39 :1   #f7f5ef på #0b2c63   M text-pa-mork/marin
+91  9,98 :1   #d6deec på #0b2c63   M text-svag-pa-mork #d6deec/marin
+92  6,08 :1   #e3a21a på #0b2c63   M guld/marin (sidomenyns ram, demoknapp)
+93  11,34 :1   #feed7e på #0b2c63   M guld-ljus/marin (demobannerns text)
+94  9,83 :1   #f7f5ef på #0a3c7e   D text/yta
+95  8,66 :1   #f7f5ef på #0d4588   D text/yta-upphojd
+96  11,05 :1   #f7f5ef på #04356f   D text/yta-mjuk
+97  7,92 :1   #d6deec på #0a3c7e   D text-svag #d6deec/yta
+98  6,98 :1   #d6deec på #0d4588   D text-svag #d6deec/yta-upphojd
+99  8,90 :1   #d6deec på #04356f   D text-svag #d6deec/yta-mjuk
+100  7,11 :1   #c9d3e6 på #0a3c7e   D ikon-grabla #c9d3e6/yta
+101  6,27 :1   #c9d3e6 på #0d4588   D ikon-grabla #c9d3e6/yta-upphojd
+102  8,00 :1   #c9d3e6 på #04356f   D ikon-grabla #c9d3e6/yta-mjuk
+106  5,70 :1   #8fc2f2 på #0a3c7e   D lank, ikon-bla/yta
+107  5,02 :1   #8fc2f2 på #0d4588   D lank, ikon-bla/yta-upphojd
+108  6,40 :1   #8fc2f2 på #04356f   D lank/yta-mjuk
+109  7,18 :1   #8fc2f2 på #0b2c63   D lank/bakgrund
+110  4,35 :1   #8fc2f2 på #1a4e95   D ikon-bla (goal-bar)/kant (spåret)
+111  5,53 :1   #7cc0ff på #0a3c7e   D positiv #7cc0ff/yta
+112  6,97 :1   #7cc0ff på #0b2c63   D positiv #7cc0ff/bakgrund
+117  5,35 :1   #ff9c9c på #0a3c7e   D negativ, fel-text/yta
+118  6,75 :1   #ff9c9c på #0b2c63   D negativ, fel-text/bakgrund
+119  4,82 :1   #e3a21a på #0a3c7e   D guld (guld-grafik)/yta
+120  4,25 :1   #e3a21a på #0d4588   D guld (guld-grafik)/yta-upphojd
+121  3,68 :1   #e3a21a på #1a4e95   D guld (guld-grafik)/kant (spåret)
+122  8,99 :1   #feed7e på #0a3c7e   D guld-ljus (ikon-guld)/yta
+123  5,67 :1   #ffffff på #0069b7   D vitt/bla-ljus (fylld knapp)
+124  7,81 :1   #ffffff på #01529c   D vitt/bla-mellan (fylld knapp hover)
+125  7,18 :1   #8fc2f2 på #0b2c63   D knapp-kontur-text/bakgrund
+127  10,18 :1   #0b2c63 på #ffffff66 över #abcefa
+128  9,28 :1   #0b2c63 på #ffffff66 över #9bbeea
+```
+
+Varje kontrasttal i den här delen är ett av talen ovan. (FA1) räknar om varje
+tal ur `tema.css` i paket 2 och kräver samma två decimaler.
+
+### Regeln för grönt (bindande) [del 9]
+
+En färg räknas som **grön** när dess HSL-nyans ligger mellan 70 och 175 grader,
+gränserna inräknade, **och** dess HSL-mättnad är minst 10 procent. Nyans och
+mättnad räknas utan avrundning ur kanalerna R, G och B, var och en delad med
+255. Alfa räknas inte. En tresiffrig hexkod (`#rgb`) och en fyrsiffrig
+(`#rgba`) expanderas först genom att varje siffra dubbleras. Formeln:
+
+- `max = max(R, G, B)`, `min = min(R, G, B)`, `d = max − min`, `l = (max + min) / 2`
+- mättnad `s = 0` om `d = 0`, annars `s = d / (1 − |2l − 1|)`
+- nyans `0` om `d = 0`; annars `60 · (((G − B) / d) mod 6)` om `max = R`,
+  `60 · ((B − R) / d + 2)` om `max = G` och `60 · ((R − G) / d + 4)` om
+  `max = B`. Här är `mod` JavaScripts `%`, och ett negativt resultat får 360
+  adderat.
+
+Koden står ordagrant i `hueSaturation` under "Kravlista [del 9]", och samma
+formel gav talen i körning 2 och körning 5. Regeln gäller varje hexkod i
+`tema.css`, både i det ljusa `:root` och i det mörka lägets egna `:root`.
+(FA2)(s) kräver att filen inte innehåller något annat än de två blocken.
+
+Regeln är skriven som ett intervall och inte som en lista över namn. Därför
+fångar den också gröna toner som aldrig stått i filen, i vilken stavning som
+helst. Kontrollfallen ur körning 2:
+
+| Färg | Nyans och mättnad (rad i utdatan) | Grön enligt regeln |
+|---|---|---|
+| `#edf3ec` (dagens `--yta-mjuk`) | 111,4 och 22,6 (rad 36) | ja |
+| `#e3f0e0` | 108,8 och 34,8 (rad 37) | ja |
+| `#9acd32` | 79,7 och 60,8 (rad 39) | ja |
+| `#2E8B57` | 146,5 och 50,3 (rad 33) | ja |
+| `#3a5` | 137,1 och 53,8 (rad 34) | ja |
+| `#22aa5580` | 142,5 och 66,7 (rad 35) | ja |
+| `#feed7e` (`--guld-ljus`) | 52,0 och 98,5 (rad 8) | nej |
+| `#808000` | 60,0 och 100,0 (rad 40) | nej |
+| `#1aa3a3` (turkos) | 180,0 och 72,5 (rad 38) | nej |
+
+**Svaret om `--yta-mjuk`** följer av regeln: `#edf3ec` är grön och byts ut.
+Gränsen 175 grader ligger under turkos (180). Användaren har inte valt turkos,
+men gränsen behövs inte för att stänga ute den: ingen ton i paletten ligger
+mellan 175 och 200 grader, och regeln behöver därför inte dras längre.
+
+**Värdenas form.** En grön ton som inte skrivs som hexkod, till exempel `green`,
+`rgb(46 139 87)` eller `hsl(146 50% 36%)`, går förbi en hexkodsregel. (FA2)
+kräver därför att varje deklaration i `tema.css` har en av tre former: exakt
+`var(--namn)`; exakt typsnittsstacken för `--typsnitt`; eller en
+kommaseparerad lista vars ord alla är hexkoder (3, 4, 6 eller 8 siffror) eller
+tal med enheten `px`, `rem`, `em`, `%` eller ingen enhet. Den sista formen
+täcker skuggorna, radierna och måtten. Allt annat fäller testet.
+
+### Paletten (bindande) [del 9]
+
+**Loggans toner**, lästa ur svg-filernas `fill`-attribut (körning 1):
+
+| Token | Värde | I loggan |
+|---|---|---|
+| `--bla-marin` | `#0b2c63` | rutan bakom H&E och den mörka loggans text |
+| `--gra-bla` | `#4a5875` | undertexten i `hem-ekonomi-logga.svg` |
+| `--gra-bla-ljus` | `#d6deec` | undertexten i `hem-ekonomi-logga-vit.svg` |
+| `--guld` | `#e3a21a` | et-tecknet |
+
+**Valda toner**, med skäl:
+
+| Token | Ljust läge | Mörkt läge | Skäl |
+|---|---|---|---|
+| `--bla-primar` | `#014085` | samma | Den klarare blå familjen (nyans 211,4, rad 10). Loggan har en enda mättad blå, och länkar, knappar och hovring behöver fler steg. Värdet är oförändrat. |
+| `--bla-mellan` | `#01529c` | samma | som ovan (nyans 208,6, rad 11) |
+| `--bla-ljus` | `#0069b7` | samma | som ovan (nyans 205,6, rad 12) |
+| `--guld-mork` | `#cf961a` | samma | Guldknappens hovring, loggans guld mörkare (nyans 41,1, rad 23). `--bla-marin` på den ger 5,17:1 (rad 71; oavrundat 5.165418 i körning 4). `#c48a12` visas som 4,50 på rad 70, men oavrundat är kvoten 4.496945 (körning 4), alltså under kravet, och tonen valdes bort. |
+| `--guld-grafik` | `#a06e0e` | `var(--guld)` | **Ny.** Guld för grafik med betydelse, alltså stapeln för ett nått mål och påminnelsens ram. Loggans guld ger 2,22:1 mot vitt (rad 58). `#a06e0e` är den enda kandidaten som når 3:1 också mot `--kant` (3,11:1, rad 78). I det mörka läget räcker loggans guld (rad 119–121). |
+| `--guld-ljus` | `#feed7e` | samma | Guldtext på en mörk yta (11,34:1, rad 93). Oförändrad. Nyansen 52,0 ligger utanför regeln för grönt. |
+| `--bakgrund` | `#f7f5ef` | `var(--bla-marin)` | oförändrad varm off-white |
+| `--positiv` | `var(--bla-ljus)` | `#7cc0ff` | Användarens beslut: blått ur loggans familj. Se "Inkomster" nedan. |
+| `--negativ` | `var(--fel-text)` | `#ff9c9c` | Användarens beslut: mörkare. Se "Utgifter" nedan. |
+| `--fel-text` | `#a52020` | `var(--negativ)` | oförändrad |
+| `--yta-mjuk` | `#eef1f7` | `#04356f` | Den gröna tonen är borta. Den nya är en ljus ton av loggans gråblå (nyans 220,0, rad 18). |
+| `--text-svag` | `var(--gra-bla)` | `var(--gra-bla-ljus)` | Loggans gråblå, som är loggans egen undertext. Tidigare var värdena `#4a5560` och `#c9d8ea`. |
+| `--text-svag-pa-mork` | `var(--gra-bla-ljus)` | samma | tidigare `#c9d8ea` |
+| `--ikon-grabla` | `var(--gra-bla)` | `#c9d3e6` | **Ny.** Ersätter `--ikon-gron`. Ikonernas andra ton bredvid blått och guld, ur loggans gråblå. I det mörka läget en ljusare gråblå (nyans 219,3, rad 28), som når 4,5:1 mot `--yta` (7,11:1, rad 100). |
+
+**Tas bort** (i paket 3): `--gron-primar`, `--gron-djup`, `--gron-ljus`,
+`--ikon-gron`, `--ikon-gron-pa-mork` och `--ikon-gron-ljus-pa-mork`.
+
+**Oförändrade:** `--text`, `--text-pa-mork`, `--kant`, `--yta`, `--yta-upphojd`,
+länk-, knapp- och hero-tokenerna (som läser de toner som byts ovan), skuggorna,
+måtten och `--logga-platta`. `--bla-marin` byter värde från `#022d68` till
+`#0b2c63`. Därmed byter också `--bakgrund` i det mörka läget, `--morkt-block`
+och alla hero-tokener som läser `--bla-marin` värde.
+
+#### Inkomster (`--positiv`)
+
+`--positiv` är `#0069b7` i det ljusa läget och `#7cc0ff` i det mörka. Båda når
+4,5:1 och inte bara 3:1 (rad 49, 50, 111 och 112). Skälet är att
+`left-positive` också står på cellerna `budget-left` och `overview-left` i
+`src/web/app.js` (rad 804 och 2205), och de cellerna har normal textstorlek.
+Påståendet i del 3 och i `style.css` att `--positiv` "bara" bär raden *Kvar att
+leva på* stämde alltså inte, och kravet 3:1 räckte inte för de cellerna.
+
+**Hur inkomster skiljs från länkar och rubriker.** Inget plustecken införs.
+Skälen:
+
+1. Positiva och negativa belopp skiljer sig redan utan färg, eftersom
+   `formatSek` skriver ett minustecken före ett negativt belopp.
+2. Ett belopp är aldrig en länk och aldrig klickbart. Det står i en beloppscell
+   eller, i fetstil och 1,5rem, på raden *Kvar att leva på*. Länkarna i appen
+   står i knappar och i löptext, inte i beloppskolumner.
+3. Rubrikerna läser `--text`, som är nästan svart, inte blå.
+4. `--positiv` och `--lank` är olika blå i båda lägena: `#0069b7` mot `#014085`
+   i det ljusa och `#7cc0ff` mot `#8fc2f2` i det mörka.
+
+Ett plustecken hade varit ny text mot användaren. Det hade ändrat utdata från
+`formatSek` i tre vyer och "noll räknas som positivt" (`+0,00 kr`). PLAN.md
+tillåter bara den text som färgbytet kräver, och färgbytet kräver inget tecken,
+eftersom tecknet aldrig var det som skilde positivt från negativt.
+
+#### Utgifter (`--negativ`)
+
+`--negativ` läser `--fel-text` (`#a52020`) i det ljusa läget: 7,43:1 mot `--yta`
+och 6,81:1 mot `--bakgrund` (rad 53 och 54). Det tidigare värdet `#d64545` gav
+4,38:1 och 4,02:1 (rad 51 och 52), alltså under 4,5:1 för cellerna
+`budget-left` och `overview-left`. I det mörka läget är `--negativ` oförändrat
+`#ff9c9c`, med 5,35:1 och 6,75:1 (rad 117 och 118).
+
+**Varför de slås ihop och ingen tredje röd införs.** `--fel-text` fanns redan
+som den mörka röda som når 4,5:1, och den skapades just för att `--negativ` inte
+gjorde det (del 3, `--fel-text`). Rollerna är olika (ett belopp och ett
+felmeddelande), men innebörden är densamma: något går inte ihop. De står heller
+aldrig bredvid varandra i samma element, och appen färgar redan förfallna
+räkningar med `--fel-text`. Tokenerna behåller var sin roll i namnet, så en
+senare del kan skilja dem åt genom att ändra en enda rad. I det mörka läget
+hänger de redan ihop åt andra hållet (`--fel-text: var(--negativ)`), så
+kopplingen är densamma i båda lägena. Det ljusa `--negativ: var(--fel-text)` och
+det mörka `--fel-text: var(--negativ)` bildar ingen cirkel: i det mörka läget har
+`--negativ` ett eget värde, och upplösningen i (H11):s `resolveToken` når
+`#ff9c9c`.
+
+### Mappningen: gröna tokener och deras användare [del 9]
+
+Användarna söktes med Grep-verktyget den 2026-10-14 efter `gron`, `grön`,
+`positiv`, `yta-mjuk`, `ikon-` och `--guld` i `src/web` (radnummer före del 9).
+
+| Gammal token | Ersätts med | Användare (fil:rad) och vad den läser efter del 9 |
+|---|---|---|
+| `--gron-primar` | tas bort | `tema.css:89` (`--ikon-gron`, tas bort); `landning.css:810` bocken i `.pris-punkter li::before`: `border: solid var(--ikon-bla);` |
+| `--gron-djup` | tas bort | ingen användare (del 7) |
+| `--gron-ljus` | tas bort | `landning.css:223–225` regeln `.sv-fyll-gron-ljus`, tas bort (ingen klass i `landning.html` använder den) |
+| `--ikon-gron` | `--ikon-grabla` | `landning.css:219–221` `.sv-fyll-gron` blir `.sv-fyll-grabla { fill: var(--ikon-grabla); }`; `landning.css:243` och `:255–257` `.sv-linje-gron` blir `.sv-linje-grabla` med `stroke: var(--ikon-grabla);`; `style.css:518` `.item-recurring`: `color: var(--ikon-grabla);`; `style.css:693` `.goal-bar-klart`: `fill: var(--guld-grafik);` (se F9-6) |
+| `--ikon-gron-pa-mork` | tas bort | `landning.css:280–282` regeln `.sv-fyll-gron-pa-mork`, tas bort (oanvänd); `tema.css:194` det mörka `--ikon-gron`, tas bort |
+| `--ikon-gron-ljus-pa-mork` | tas bort | `landning.css:288–290` regeln `.sv-fyll-gron-ljus-pa-mork`, tas bort (oanvänd) |
+| `--positiv` (grön) | blå, se paletten | `style.css:451` `.left-positive` och `style.css:850` `.overview-bar-positive`: oförändrat `var(--positiv)` |
+| `--yta-mjuk` (grön) | gråblå, samma namn | `landning.css:167, 440, 648, 732` och `style.css:214, 229, 274, 788`: oförändrat `var(--yta-mjuk)` |
+
+**Klassnamnen i `landning.html`** (rad före del 9): `sv-linje-gron` på rad 146,
+147 och 202 blir `sv-linje-grabla`, och `sv-fyll-gron` på rad 162, 184 och 215
+blir `sv-fyll-grabla`. Sökningen med Grep-verktyget efter `sv-(fyll|linje)` gav
+träffar bara i `landning.html`, `landning.css`, `PLAN.md` och `ARKITEKTUR.md`.
+Ingen testfil läser klassnamnen.
+
+**Guldets användare** (ingen grön, men `--guld` byter värde):
+
+| Användare | Efter del 9 | Skäl |
+|---|---|---|
+| `style.css:313` sidomenyns ram | oförändrat `var(--guld)` | 6,08:1 mot `--morkt-block` (FK32/FK70) |
+| `style.css:593` `.bill-paminnelse` | `border: 2px solid var(--guld-grafik);` | Ramen bär betydelse. Loggans guld ger 2,22:1 mot vitt, och redan det tidigare guldet nådde inte 3:1 (2,83:1 enligt kommentaren). |
+| `landning.css:708` `.steg-nummer` och `:766` `.pris-badge` | oförändrat `var(--guld)` med `--knapp-guld-text` | ytor med mörk text, 6,08:1 (FK20) |
+| `landning.css:756` `.pris-kort-upphojd` (ram) | oförändrat `var(--guld)` | Dekoration: det är badgen `Populärast` som bär betydelsen. |
+| `demo/banner.css:48` och `:56` | oförändrat `var(--guld)` | på `--bla-marin`, 6,08:1 |
+| `landning.css:236` och `:264` (`--ikon-guld`) | oförändrat | detaljer i ikoner, se kommentaren i `tema.css` |
+
+`demo/banner.css` innehåller inget grönt och ändras inte.
+
+### `src/web/tema.css` efter del 9 (bindande ordagrant)
+
+Hela filen ersätts av texten nedan. Paket 2 skriver den, med övergångsraderna
+under blocket. Paket 3 tar bort övergångsraderna.
+
+```css
+/* Designsystemets tokens. Den HÄR filen är den enda stilmallen eller sidan i
+   src/web/ som får innehålla en hexkod; bildfilerna i src/web/bilder/ är
+   användarens egna och står utanför regeln. Varje annan regel, i landning.css
+   och i allt som byggs senare, läser en token med var(). Skälet är mätbart: en
+   hexkod utanför :root kan inte bytas av det mörka läget, och då går temat isär.
+
+   Temat följer loggan, hem-ekonomi-logga.svg och hem-ekonomi-logga-vit.svg i
+   src/web/bilder/ (ARKITEKTUR.md del 9). Loggans fyra toner står först och är
+   lästa ur filernas fill-attribut. Övriga toner är valda, med skälet utskrivet
+   vid varje. Ingen färg i filen har en nyans mellan 70 och 175 grader och en
+   mättnad på minst 10 procent; tests/tema.test.js prövar det.
+
+   Kontrast: varje kombination i kontrasttabellen i ARKITEKTUR.md del 9 räknas
+   av tests/tema.test.js ur den här filen, och talen i kommentarerna nedan är
+   testets, utom 2,22:1. Det talet, loggans guld mot vitt, kommer ur körning 2
+   i ARKITEKTUR.md del 9 och är ingen rad i testets tabell. Loggans guld bär
+   därför ingen text och ingen grafik med betydelse på en ljus yta; där läser
+   grafiken --guld-grafik. */
+
+:root {
+  /* ---------------------------------------------- loggans toner (ur svg) */
+  --bla-marin: #0b2c63;
+  --gra-bla: #4a5875;
+  --gra-bla-ljus: #d6deec;
+  --guld: #e3a21a;
+
+  /* ---------------------------------------------- valda toner */
+  /* Den klarare blå familjen. Loggan har en enda mättad blå, och länkar,
+     knappar och hovring behöver fler steg. */
+  --bla-primar: #014085;
+  --bla-mellan: #01529c;
+  --bla-ljus: #0069b7;
+  /* Guldknappens hovring: loggans guld, mörkare. --bla-marin på den ger
+     5,17:1. */
+  --guld-mork: #cf961a;
+  /* Guld för grafik med betydelse på en ljus yta: stapeln för ett nått mål och
+     påminnelsens ram. 4,44:1 mot --yta, 4,07:1 mot --bakgrund och 3,11:1 mot
+     --kant. */
+  --guld-grafik: #a06e0e;
+  /* Guldtext på mörk yta: 11,34:1 mot --bla-marin. */
+  --guld-ljus: #feed7e;
+  /* Varm off-white. Rent vitt mot så mättade toner ger hård kontrast. */
+  --bakgrund: #f7f5ef;
+  /* Inkomster: den klarare blå, 5,67:1 mot --yta och 5,20:1 mot --bakgrund.
+     Beloppen står också i tabellceller i normal storlek, så kravet är 4,5:1. */
+  --positiv: var(--bla-ljus);
+  /* Utgifter och feltext har samma röda. Ett negativt belopp står i
+     tabellceller i normal storlek och behöver 4,5:1, och feltextens ton når
+     det: 7,43:1 mot --yta och 6,81:1 mot --bakgrund. */
+  --negativ: var(--fel-text);
+  --fel-text: #a52020;
+
+  /* ---------------------------------------------- ytor, text och ramar */
+  /* De här namnen är de enda en komponent använder. Det mörka läget byter
+     värdena och behåller namnen, så ingen komponent vet vilket läge som gäller. */
+  --yta: #ffffff;
+  /* Varannan sektion och hovring: en ljus ton av loggans gråblå. */
+  --yta-mjuk: #eef1f7;
+  --yta-upphojd: var(--yta);
+  --text: #101820;
+  /* Loggans gråblå, samma ton som loggans undertext. 7,13:1 mot --yta. */
+  --text-svag: var(--gra-bla);
+  /* Text på en yta som är mörk i båda lägena, som sidfoten. Hero har egna
+     tokener, se --hero-text. */
+  --text-pa-mork: #f7f5ef;
+  --text-svag-pa-mork: var(--gra-bla-ljus);
+  --kant: #dcd8cb;
+  /* Länkar och ikonytor i brödtext. 9,29:1 mot --bakgrund. */
+  --lank: var(--bla-primar);
+  --lank-hover: var(--bla-mellan);
+
+  /* ---------------------------------------------- knappar */
+  /* Fylld knapp: vit text på --bla-primar, 10,13:1. */
+  --knapp-fylld-yta: var(--bla-primar);
+  --knapp-fylld-text: #ffffff;
+  --knapp-fylld-yta-hover: var(--bla-mellan);
+  /* Konturknapp på ljus bakgrund. */
+  --knapp-kontur-text: var(--bla-primar);
+  --knapp-kontur-kant: var(--bla-primar);
+  /* Guldknappen: --bla-marin på --guld, 6,08:1. */
+  --knapp-guld-yta: var(--guld);
+  --knapp-guld-text: var(--bla-marin);
+  --knapp-guld-yta-hover: var(--guld-mork);
+
+  /* ---------------------------------------------- ikoner
+     Ikonerna ritas som inline-SVG i landning.html och får sina färger härifrån,
+     aldrig ur ett fill-attribut: en hexkod i märkspråket går inte att byta i
+     det mörka läget. Ikoner är grafik och inte text, så målet är 3:1. Märket för
+     en återkommande post i appen läser --ikon-grabla och är brödtext, så där är
+     målet 4,5:1. Uppmätt mot --yta: gråblå 7,13:1 och blå 10,13:1. Guld når
+     2,22:1 (körning 2, ingen rad i testets tabell) och bär därför bara
+     detaljer inuti en ikon som redan har en gråblå eller blå kontur, aldrig en
+     ikons enda form. */
+  --ikon-grabla: var(--gra-bla);
+  --ikon-bla: var(--bla-primar);
+  --ikon-guld: var(--guld);
+  /* Varianter för en yta som alltid är mörk. Ingen klass i landning.html läser
+     dem direkt; det mörka läget läser --ikon-bla-pa-mork genom --ikon-bla, och
+     dess tal står vid det mörka lägets ikoner. */
+  --ikon-bla-pa-mork: #8fc2f2;
+  --ikon-guld-pa-mork: var(--guld);
+  --ikon-bla-ljus-pa-mork: #bcdcfa;
+  /* Myntets K: --bla-marin på --guld, 6,08:1. */
+  --ikon-mynt-text: var(--bla-marin);
+
+  /* ---------------------------------------------- hero */
+  /* Hero har en ljus bild som bakgrund i båda lägena, och de här tokenerna
+     byter därför inte värde i det mörka läget. tests/hero.test.js (H11)
+     räknar kontrasten ur den här filen.
+     --hero-yta är bildens egen blå, uppmätt ur src/web/bilder/hero.png (se
+     ARKITEKTUR.md del 7). Den syns där bilden inte täcker sektionen och medan
+     bilden laddas. */
+  --hero-yta: #a3c6f2;
+  --hero-text: var(--bla-marin);
+  --hero-text-accent: var(--bla-primar);
+  /* Hovringen på konturknappen i hero: en ljus ton ovanpå bildens blå. */
+  --hero-hover: #ffffff66;
+  /* Fokusramen i hero. --lank byter värde i det mörka läget, det gör inte
+     den här. */
+  --hero-fokus: var(--bla-marin);
+  /* Den fyllda knappen i hero (Kom igång): mörkblå med vit text. Egna
+     tokener, eftersom --knapp-fylld-yta byter värde i det mörka läget. */
+  --hero-knapp-yta: var(--bla-marin);
+  --hero-knapp-yta-hover: var(--bla-primar);
+  --hero-knapp-text: #ffffff;
+
+  /* ---------------------------------------------- mörka block */
+  --morkt-block: var(--bla-marin);
+
+  /* Plattan bakom den mörka loggan på en mörk yta: sidomenyn i båda lägena och
+     headern i det mörka läget. Den byter inte värde i det mörka läget,
+     eftersom --bakgrund då blir marinblå. */
+  --logga-platta: #f7f5ef;
+
+  /* ---------------------------------------------- skuggor */
+  --skugga-kort: 0 1px 2px #0218400f, 0 8px 24px #02184014;
+  --skugga-upphojd: 0 2px 6px #02184017, 0 18px 42px #0218402e;
+  --skugga-header: 0 1px 0 #0218401a;
+
+  /* ---------------------------------------------- form */
+  --radie-kort: 16px;
+  --radie-liten: 10px;
+  --radie-knapp: 999px;
+  /* Minsta träffyta. Kravet är 44 bildpunkter på knappar och fält. */
+  --traffyta: 44px;
+  --sidbredd: 1120px;
+
+  /* ---------------------------------------------- typsnitt */
+  /* Inget hämtas från Google Fonts. En @import dit är en extern begäran vid
+     varje sidvisning, och den som läser sidan ska inte behöva skicka en
+     förfrågan till en tredje part för att göra det. Finns Inter eller Plus
+     Jakarta Sans installerat används det, annars systemets eget. */
+  --typsnitt: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ------------------------------------------------ mörkt läge
+   Samma tokennamn, andra värden. --bakgrund blir --bla-marin, korten en ton
+   strax ljusare, texten off-white. Loggans toner och de valda tonerna överst i
+   :root står kvar oförändrade.
+
+   Uppmätt i det mörka läget, mot --yta: --text 9,83:1, --text-svag 7,92:1,
+   --lank 5,70:1, --positiv 5,53:1, --negativ 5,35:1, --ikon-grabla 7,11:1,
+   --guld-grafik 4,82:1 och --guld-ljus 8,99:1. --text mot --bakgrund ger
+   12,39:1. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bakgrund: var(--bla-marin);
+    --yta: #0a3c7e;
+    --yta-mjuk: #04356f;
+    --yta-upphojd: #0d4588;
+    --text: #f7f5ef;
+    --text-svag: var(--gra-bla-ljus);
+    --kant: #1a4e95;
+    --lank: #8fc2f2;
+    --lank-hover: #bcdcfa;
+    /* Inkomster: en ljus blå, 5,53:1 mot --yta och 6,97:1 mot --bakgrund. */
+    --positiv: #7cc0ff;
+    --negativ: #ff9c9c;
+    /* På en mörk yta är --negativ ljus nog för brödtext: 5,35:1 mot --yta och
+       6,75:1 mot --bakgrund. Feltexten läser därför --negativ här. */
+    --fel-text: var(--negativ);
+
+    --knapp-fylld-yta: var(--bla-ljus);
+    --knapp-fylld-yta-hover: var(--bla-mellan);
+    --knapp-kontur-text: var(--lank);
+    --knapp-kontur-kant: #2a639f;
+
+    /* Ikonerna ljusnar med ytan. Uppmätt mot --yta: gråblå 7,11:1, blå 5,70:1
+       och guld 8,99:1. */
+    --ikon-grabla: #c9d3e6;
+    --ikon-bla: var(--ikon-bla-pa-mork);
+    --ikon-guld: var(--guld-ljus);
+    /* Loggans guld når 3:1 på de mörka ytorna: 4,82:1 mot --yta, 4,25:1 mot
+       --yta-upphojd och 3,68:1 mot --kant. */
+    --guld-grafik: var(--guld);
+
+    --skugga-kort: 0 1px 2px #00102c66, 0 8px 24px #00102c59;
+    --skugga-upphojd: 0 2px 6px #00102c73, 0 18px 42px #00102c8c;
+    --skugga-header: 0 1px 0 #00102c99;
+  }
+}
+```
+
+**Övergångsraderna (paket 2 skriver dem, paket 3 tar bort dem).** De finns för
+att `landning.css` och `style.css` läser de gröna tokenerna tills paket 3 byter
+användarna. Utan raderna hade en ikon tappat sin färg mellan de två paketen,
+vilket bara syns som en färg som saknas. I det ljusa `:root`, direkt efter
+raden `  --ikon-mynt-text: var(--bla-marin);`:
+
+```css
+  /* Övergång: läses av landning.css och style.css tills ARKITEKTUR.md del 9
+     paket 3 byter användarna och tar bort de här raderna. */
+  --gron-primar: #0b6a3b;
+  --gron-djup: #025b38;
+  --gron-ljus: #248038;
+  --ikon-gron: var(--gron-primar);
+  --ikon-gron-pa-mork: #5cc98d;
+  --ikon-gron-ljus-pa-mork: #8fe0b5;
+```
+
+I det mörka lägets `:root`, direkt efter raden
+`    --ikon-guld: var(--guld-ljus);`:
+
+```css
+    --ikon-gron: var(--ikon-gron-pa-mork);
+```
+
+### Kontrasttabellen (bindande) [del 9]
+
+Varje rad prövas av (FA1). Förgrund och bakgrund är tokener, och de löses upp
+ur `tema.css` med (H11):s upplösning: i det ljusa läget ur det första `:root`,
+och i det mörka ur det ljusa `:root` med det mörka lägets `:root` ovanpå. Kvoten
+är den större av de två ordningarna. Värdet skrivs med två decimaler och
+decimalkomma och ska vara exakt det i kolumnen *Uppmätt*. Kolumnen *Rad* pekar
+på raden i `del9-kandidater.out` som gav talet för samma par av hexkoder.
+
+| # | Läge | Förgrund | Bakgrund | Krav | Uppmätt | Rad |
+|---|---|---|---|---|---|---|
+| FK01 | ljust | `--text` | `--bakgrund` | 4,5 | 16,41 | 42 |
+| FK02 | ljust | `--text` | `--yta` | 4,5 | 17,89 | 43 |
+| FK03 | ljust | `--text` | `--yta-mjuk` | 4,5 | 15,82 | 60 |
+| FK04 | ljust | `--text-svag` | `--yta` | 4,5 | 7,13 | 44 |
+| FK05 | ljust | `--text-svag` | `--bakgrund` | 4,5 | 6,54 | 45 |
+| FK06 | ljust | `--text-svag` | `--yta-mjuk` | 4,5 | 6,30 | 61 |
+| FK07 | ljust | `--lank` | `--yta` | 4,5 | 10,13 | 46 |
+| FK08 | ljust | `--lank` | `--bakgrund` | 4,5 | 9,29 | 47 |
+| FK09 | ljust | `--lank` | `--yta-mjuk` | 4,5 | 8,95 | 62 |
+| FK10 | ljust | `--lank-hover` | `--yta` | 4,5 | 7,81 | 48 |
+| FK11 | ljust | `--positiv` | `--yta` | 4,5 | 5,67 | 49 |
+| FK12 | ljust | `--positiv` | `--bakgrund` | 4,5 | 5,20 | 50 |
+| FK13 | ljust | `--negativ` | `--yta` | 4,5 | 7,43 | 53 |
+| FK14 | ljust | `--negativ` | `--bakgrund` | 4,5 | 6,81 | 54 |
+| FK15 | ljust | `--fel-text` | `--yta` | 4,5 | 7,43 | 53 |
+| FK16 | ljust | `--fel-text` | `--bakgrund` | 4,5 | 6,81 | 54 |
+| FK17 | ljust | `--knapp-fylld-text` | `--knapp-fylld-yta` | 4,5 | 10,13 | 55 |
+| FK18 | ljust | `--knapp-fylld-text` | `--knapp-fylld-yta-hover` | 4,5 | 7,81 | 56 |
+| FK19 | ljust | `--knapp-kontur-text` | `--bakgrund` | 4,5 | 9,29 | 47 |
+| FK20 | ljust | `--knapp-guld-text` | `--knapp-guld-yta` | 4,5 | 6,08 | 57 |
+| FK21 | ljust | `--knapp-guld-text` | `--knapp-guld-yta-hover` | 4,5 | 5,17 | 71 |
+| FK22 | ljust | `--ikon-grabla` | `--yta` | 4,5 | 7,13 | 44 |
+| FK23 | ljust | `--ikon-grabla` | `--yta-mjuk` | 3 | 6,30 | 61 |
+| FK24 | ljust | `--ikon-bla` | `--yta` | 3 | 10,13 | 46 |
+| FK25 | ljust | `--ikon-bla` | `--yta-mjuk` | 3 | 8,95 | 62 |
+| FK26 | ljust | `--ikon-bla` | `--kant` | 3 | 7,10 | 59 |
+| FK27 | ljust | `--guld-grafik` | `--yta` | 3 | 4,44 | 76 |
+| FK28 | ljust | `--guld-grafik` | `--bakgrund` | 3 | 4,07 | 77 |
+| FK29 | ljust | `--guld-grafik` | `--kant` | 3 | 3,11 | 78 |
+| FK30 | ljust | `--text-pa-mork` | `--morkt-block` | 4,5 | 12,39 | 90 |
+| FK31 | ljust | `--text-svag-pa-mork` | `--morkt-block` | 4,5 | 9,98 | 91 |
+| FK32 | ljust | `--guld` | `--morkt-block` | 3 | 6,08 | 92 |
+| FK33 | ljust | `--guld-ljus` | `--morkt-block` | 4,5 | 11,34 | 93 |
+| FK34 | mörkt | `--text` | `--bakgrund` | 4,5 | 12,39 | 90 |
+| FK35 | mörkt | `--text` | `--yta` | 4,5 | 9,83 | 94 |
+| FK36 | mörkt | `--text` | `--yta-upphojd` | 4,5 | 8,66 | 95 |
+| FK37 | mörkt | `--text` | `--yta-mjuk` | 4,5 | 11,05 | 96 |
+| FK38 | mörkt | `--text-svag` | `--yta` | 4,5 | 7,92 | 97 |
+| FK39 | mörkt | `--text-svag` | `--yta-upphojd` | 4,5 | 6,98 | 98 |
+| FK40 | mörkt | `--text-svag` | `--yta-mjuk` | 4,5 | 8,90 | 99 |
+| FK41 | mörkt | `--text-svag` | `--bakgrund` | 4,5 | 9,98 | 91 |
+| FK42 | mörkt | `--lank` | `--yta` | 4,5 | 5,70 | 106 |
+| FK43 | mörkt | `--lank` | `--yta-upphojd` | 4,5 | 5,02 | 107 |
+| FK44 | mörkt | `--lank` | `--yta-mjuk` | 4,5 | 6,40 | 108 |
+| FK45 | mörkt | `--lank` | `--bakgrund` | 4,5 | 7,18 | 109 |
+| FK46 | mörkt | `--positiv` | `--yta` | 4,5 | 5,53 | 111 |
+| FK47 | mörkt | `--positiv` | `--bakgrund` | 4,5 | 6,97 | 112 |
+| FK48 | mörkt | `--negativ` | `--yta` | 4,5 | 5,35 | 117 |
+| FK49 | mörkt | `--negativ` | `--bakgrund` | 4,5 | 6,75 | 118 |
+| FK50 | mörkt | `--fel-text` | `--yta` | 4,5 | 5,35 | 117 |
+| FK51 | mörkt | `--fel-text` | `--bakgrund` | 4,5 | 6,75 | 118 |
+| FK52 | mörkt | `--knapp-fylld-text` | `--knapp-fylld-yta` | 4,5 | 5,67 | 123 |
+| FK53 | mörkt | `--knapp-fylld-text` | `--knapp-fylld-yta-hover` | 4,5 | 7,81 | 124 |
+| FK54 | mörkt | `--knapp-kontur-text` | `--bakgrund` | 4,5 | 7,18 | 125 |
+| FK55 | mörkt | `--knapp-guld-text` | `--knapp-guld-yta` | 4,5 | 6,08 | 57 |
+| FK56 | mörkt | `--knapp-guld-text` | `--knapp-guld-yta-hover` | 4,5 | 5,17 | 71 |
+| FK57 | mörkt | `--ikon-grabla` | `--yta` | 4,5 | 7,11 | 100 |
+| FK58 | mörkt | `--ikon-grabla` | `--yta-upphojd` | 3 | 6,27 | 101 |
+| FK59 | mörkt | `--ikon-grabla` | `--yta-mjuk` | 3 | 8,00 | 102 |
+| FK60 | mörkt | `--ikon-bla` | `--yta` | 3 | 5,70 | 106 |
+| FK61 | mörkt | `--ikon-bla` | `--yta-upphojd` | 3 | 5,02 | 107 |
+| FK62 | mörkt | `--ikon-bla` | `--yta-mjuk` | 3 | 6,40 | 108 |
+| FK63 | mörkt | `--ikon-bla` | `--kant` | 3 | 4,35 | 110 |
+| FK64 | mörkt | `--guld-grafik` | `--yta` | 3 | 4,82 | 119 |
+| FK65 | mörkt | `--guld-grafik` | `--yta-upphojd` | 3 | 4,25 | 120 |
+| FK66 | mörkt | `--guld-grafik` | `--kant` | 3 | 3,68 | 121 |
+| FK67 | mörkt | `--ikon-guld` | `--yta` | 3 | 8,99 | 122 |
+| FK68 | mörkt | `--text-pa-mork` | `--morkt-block` | 4,5 | 12,39 | 90 |
+| FK69 | mörkt | `--text-svag-pa-mork` | `--morkt-block` | 4,5 | 9,98 | 91 |
+| FK70 | mörkt | `--guld` | `--morkt-block` | 3 | 6,08 | 92 |
+| FK71 | mörkt | `--guld-ljus` | `--morkt-block` | 4,5 | 11,34 | 93 |
+
+**Hero** prövas av (H11) och inte här. Med `--bla-marin` = `#0b2c63` gav
+körning 2: `--hero-text` mot Y, Yljus och Ymork 7,67, 8,32 och 7,04 (rad 82–84);
+`--hero-text-accent` 5,75, 6,24 och 5,28 (rad 85–87); `--hero-text` mot
+`--hero-hover` över Yljus och Ymork 10,18 och 9,28 (rad 127 och 128);
+`--hero-knapp-text` mot `--hero-knapp-yta` 13,51 och mot `--hero-knapp-yta-hover`
+10,13 (rad 88 och 89). Alla når (H11):s krav. (H11) ändras inte, utom att
+mutation (1) byter `var(--gron-primar)` mot `var(--guld)`, eftersom
+`--gron-primar` tas bort. Körning 4 gav `#e3a21a mot #a3c6f2 1.261172`,
+`#e3a21a mot #abcefa 1.369481` och `#e3a21a mot #9bbeea 1.158528`, alla med
+`guld ljusare än ytan: false`. Mutationen fälls alltså av (c), både på
+luminansen och på kvoten.
+
+**Det tabellen inte täcker.** Detta är kända gränser och inga krav:
+
+- `--ikon-guld` mot ljus yta (2,22:1, rad 58). Den bär bara detaljer i ikoner.
+- `--guld` som ram på `.pris-kort-upphojd` i det ljusa läget. Ramen är
+  dekoration, och det är badgen som bär betydelsen.
+- `--ikon-bla-pa-mork`, `--ikon-guld-pa-mork`, `--ikon-bla-ljus-pa-mork` och
+  `--ikon-mynt-text`, vars klasser ingen sida använder. De är inte gröna och
+  ligger därför utanför del 9.
+- Om sidan ser bra ut. Det avgör användaren i den manuella kontrollen.
+
+### Kravlista [del 9]
+
+Testnamnen börjar med punktens nummer. Ny testfil: `tests/tema.test.js`. Den
+startar ingen server och har inga tidsgränser, och dess första kommentar säger
+att den prövar ARKITEKTUR.md del 9.
+
+**Gemensam hjälpmodul (paket 2).** Funktionerna `stripComments`,
+`readDeclarations`, `readThemes`, `resolveToken`, `parseHex`, `over`, `shift`,
+`luminance` och `contrast` flyttas ordagrant från `tests/hero.test.js` (rad
+52–133 före del 9) till den nya filen `tests/helpers/tema.js`, där var och en
+exporteras med `export`. `tests/hero.test.js` importerar dem därifrån och
+definierar dem inte själv. `tests/tema.test.js` importerar samma funktioner. På
+så sätt räknar (H11) och (FA1) kontrast med en och samma kod (lärdomen
+2026-09-02 om `isPlainObject`: ett begrepp, en ägare). Filnamnet slutar inte på
+`.test.js`, så `npm test` kör den inte som en testfil. Hjälpmodulen får dessutom
+tre nya exporter. `hueSaturation` och `isGreen` är regeln under "Regeln för
+grönt", och kropparna nedan är bindande ordagrant:
+
+```js
+// HSL-nyans i grader [0, 360) och mättnad i [0, 1] ur en hexkod med 3, 4, 6
+// eller 8 siffror. Alfa räknas inte. Ingen avrundning.
+export function hueSaturation(hex) {
+  let h = hex.slice(1);
+  if (h.length === 3 || h.length === 4) {
+    h = [...h].map((c) => c + c).join('');
+  }
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  const l = (max + min) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let hue = 0;
+  if (d !== 0) {
+    if (max === r) {
+      hue = 60 * (((g - b) / d) % 6);
+    } else if (max === g) {
+      hue = 60 * ((b - r) / d + 2);
+    } else {
+      hue = 60 * ((r - g) / d + 4);
+    }
+  }
+  if (hue < 0) {
+    hue += 360;
+  }
+  return { hue, s };
+}
+
+// ARKITEKTUR.md del 9, "Regeln för grönt".
+export function isGreen(hex) {
+  const { hue, s } = hueSaturation(hex);
+  return hue >= 70 && hue <= 175 && s >= 0.1;
+}
+
+// Tar bort CSS-kommentarer men låter strängar stå, så att en kommentarmarkör i
+// en sträng (content: "/*") inte äter text som webbläsaren läser.
+export function stripCssComments(css) {
+  return css.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\/\*[\s\S]*?\*\//g, (m, s) => s ?? '');
+}
+
+// Attributen i en tagg, med namnen i gemener. Kaskadspärrens led 3:s mönster
+// (ARKITEKTUR.md "Kaskadspärren [hero-kaskad]"): dubbla, enkla och inga
+// citattecken.
+export function attributeMap(tag) {
+  const attributes = new Map();
+  for (const match of tag.matchAll(/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g)) {
+    attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4]);
+  }
+  return attributes;
+}
+```
+
+`attributeMap` lades till efter slutgranskningen av paket 3 (se F9-18). Kroppen
+är de fyra raderna 411–414 i `tests/hero.test.js`, som byts mot ett anrop av
+exporten, så att mönstret har en enda ägare.
+
+Formeln är densamma som i mätskripten (körning 2 och körning 5). Mätskripten
+ligger i scratchpad-katalogen och är inga projektfiler, och därför står formeln
+här. (FA2)–(FA4) och (FA8) läser CSS med `stripCssComments`. `stripComments`,
+som flyttas ordagrant från `tests/hero.test.js`, används som förut av (H11) och
+`readThemes`. `tema.css` innehåller inga strängar med kommentarmarkörer, vilket
+(FA2) kräver genom att filen bara får bestå av de två blocken.
+
+I tabellen nedan står `\|` inuti ett mönster för tecknet `|`. Det är markdowns
+skrivsätt för ett lodstreck i en tabellcell, och i testkoden skrivs det som `|`
+utan bakstreck.
+
+| # | Paket | Fall | Kräver | Mutation som ska ge `EXIT=1` med punktens egen kryssrad i utfallet |
+|---|---|---|---|---|
+| (FA1) | 2 | kontrasttabellen | Testnamn `(FA1) varje rad i kontrasttabellen når sitt krav och har det uppmätta värdet, i båda lägena`. Konstanten `CONTRAST_ROWS` är tabellen ovan, rad för rad och i samma ordning: `[id, läge, förgrund, bakgrund, krav, uppmätt]`, där uppmätt är en sträng som `'16,41'`. För varje rad löses förgrund och bakgrund upp med `resolveToken` i rätt läge, och båda ska vara ogenomskinliga (`hasAlpha === false`). Kvoten `Math.max(contrast(f, b), contrast(b, f))` ska vara minst kravet, och `kvot.toFixed(2).replace('.', ',')` ska vara exakt *uppmätt*. Meddelandet vid fel innehåller id, läge, de två tokenerna, deras hexkoder och kvoten. Varje kvot skrivs dessutom ut med `t.diagnostic`. (b) Varje förekomst av `/(\d+,\d\d):1/g` i den **råa** `tema.css`, alltså i kommentarerna, ska ha ett tal som är *uppmätt* på någon rad i `CONTRAST_ROWS` eller som står i konstanten `CONTRAST_UNTESTED = ['2,22']`. Meddelandet namnger talet. Konstanten har en kommentar som säger att 2,22 är loggans guld mot vitt ur körning 2 (rad 58) och ingen rad i tabellen | var och en för sig, i `src/web/tema.css`: (1) `--guld-grafik: #a06e0e;` → `--guld-grafik: #b07a12;` (FK29 under 3, rad 81); (2) `--ikon-grabla: #c9d3e6;` → `--ikon-grabla: #4a5875;`; (3) `--negativ: var(--fel-text);` → `--negativ: #d64545;` (FK13 under 4,5, rad 51); (4) `--guld-mork: #cf961a;` → `--guld-mork: #c98f14;`. Kvoten är 4.774372 (körning 4), så kravet 4,5 håller med marginal, och mutationen fälls bara av jämförelsen med *uppmätt* 5,17. Byggaren visar det genom att ta bort jämförelsen i en kopia: mutation (4) ska då överleva; (5) `--positiv: #7cc0ff;` → `--positiv: #0069b7;`; (6) `5,17:1` → `5,71:1` i kommentaren (fälls av (b)) |
+| (FA2) | 3 | inget grönt i temat | Testnamn `(FA2) ingen färg i tema.css är grön, i något av lägena, och varje värde har en tillåten form`. Texten är `stripCssComments(tema.css)`. (s) **Struktur:** texten matchar `/^\s*:root\s*\{([^{}]*)\}\s*@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^{}]*)\}\s*\}\s*$/`, alltså exakt ett ljust `:root` och ett mörkt `:root` och ingenting annat. I var och en av de två kropparna (grupp 1 och 2) tas deklarationerna ut med `/(--[a-z0-9-]+)\s*:\s*([^;{}]+);/g`. När de har tagits bort ur kroppen återstår bara blanktecken, och inget namn förekommer två gånger i samma kropp. Det fäller ett namn med versaler eller understreck, en sista deklaration utan semikolon och en regel utanför de två blocken; (a) varje hexkod i **hela** texten, uttagen med `/#([0-9a-f]{8}\|[0-9a-f]{6}\|[0-9a-f]{4}\|[0-9a-f]{3})\b/gi`, ger `isGreen` = `false`, med hexkod, nyans och mättnad i meddelandet; (b) varje deklarations värde, med blanktecken ihopslagna till ett mellanslag, har en av de tre formerna under "Värdenas form": `/^var\(--[a-z0-9-]+\)$/`, exakt `'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif` för `--typsnitt`, eller en lista där `värde.split(',')` ger delar vars ord (delade på mellanslag) alla matchar `/^(#[0-9a-f]{3}\|#[0-9a-f]{4}\|#[0-9a-f]{6}\|#[0-9a-f]{8}\|-?\d+(\.\d+)?(px\|rem\|em\|%)?)$/i`; (c) den kommentarfria texten matchar inte `/\b(rgba?\|hsla?\|hwb\|lab\|lch\|oklab\|oklch\|color\|color-mix\|light-dark)\s*\(/i`; (d) `isGreen` ger exakt facit för kontrollfallen i tabellen under "Regeln för grönt", så att intervallet inte kan flyttas utan att testet faller | var och en för sig, i `src/web/tema.css`, och där inget annat sägs som en ny rad direkt efter raden `  --bakgrund: #f7f5ef;`: (7) `  --x-prov: #2E8B57;`; (8) `  --x-prov: #3a5;`; (9) `  --x-prov: #22aa5580;`; (10) `--yta-mjuk: #eef1f7;` → `--yta-mjuk: #edf3ec;`; (11) raden `    --x-prov: #E3F0E0;` direkt efter `    --yta: #0a3c7e;`; (12) `  --x-prov: green;`; (13) `  --x-prov: rgb(46 139 87);`; (14) `  --x-prov: HSL(146 50% 36%);`; (15) `--skugga-header: 0 1px 0 #0218401a;` → `--skugga-header: 0 1px 0 #2e8b571a;`; (16) raden `:root { --yta-mjuk: #2e8b57; }` sist i filen; (17) raden `html { --positiv: var(--bla-ljus); }` sist i filen; (18) `  --X-prov: green;`; (19) `  --x_prov: var(--guld);`; (20) `    --skugga-header: 0 1px 0 #00102c99;` → samma rad utan semikolon; (21) raden `    --yta-mjuk: #2e8b57` utan semikolon direkt efter `    --skugga-header: 0 1px 0 #00102c99;` |
+| (FA3) | 3 | varje `var()` är definierad | Testnamn `(FA3) varje var(--namn) i src/web är deklarerad i tema.css eller i samma fil`. Varje `.css`-fil under `src/web/`, rekursivt (`fs.readdir(…, { recursive: true })`, sökvägen byggd ur `import.meta.url`), läses med `stripCssComments`. Det ljusa `:root` tas ut med (FA2)(s):s mönster och deklarationsmönster. Varje användning tas ut med `/var\(\s*(--[a-zA-Z0-9_-]+)/gi`. Namnet ska vara deklarerat i det **ljusa** `:root` i `tema.css`, eller deklarerat (`/(--[a-zA-Z0-9_-]+)\s*:/g`) i samma fil. Det mörka läget räknas inte: det skriver bara över värden och får inte vara det enda stället där ett namn finns. Testet kräver att minst tre filer lästes. Meddelandet namnger filen och namnet | var och en för sig: (22) i `style.css`: `color: var(--positiv);` → `color: var(--positiv-x);`; (23) i `tema.css`: raden `  --ikon-grabla: var(--gra-bla);` borttagen (namnet finns då bara i det mörka läget); (24) i `demo/banner.css`: `border: 1px solid var(--guld);` → `border: 1px solid var(--gulld);`; (25) i `landning.css`: `stroke: var(--ikon-grabla);` → `stroke: var( --ikon-grablaa);`; (26) i `landning.css`: `fill: var(--ikon-bla);` → `fill: VAR(--ikon-blaa);` |
+| (FA4) | 3 | ingen färg utanför `tema.css` i stilmallarna | Testnamn `(FA4) ingen stilmall i src/web utom tema.css har en egen färg`. Filerna väljs på samma sätt som i (FA3): varje `.css`-fil under `src/web/`, rekursivt med `fs.readdir(…, { recursive: true })` och sökvägen byggd ur `import.meta.url`, utom `tema.css`. Inga filnamn räknas upp. Varje fil läses med `stripCssComments`, och varje regelkropp tas ut med `/\{([^{}]*)\}/g` (selektorerna prövas inte, så ett id som `#add-budget` räknas inte som hexkod). I varje kropp gäller: (a) ingen träff på hexkodsmönstret i (FA2)(a); (b) ingen träff på färgfunktionsmönstret i (FA2)(c); (c) ingen träff på `/\b[a-z-]*(green\|lime\|olive\|teal\|mint\|honeydew\|chartreuse\|aquamarine\|turquoise)[a-z-]*\b/i`, som fångar gröna och blågröna färgnamn också i egna egenskaper (`--x: forestgreen`) och gradienter; (d) kroppen delas på `;`, och för varje deklaration `/^\s*([a-zA-Z-]+)\s*:\s*([\s\S]*)$/` vars egenskap, i gemener och utan att börja med `--`, matchar `/^(color\|background\|fill\|stroke\|border\|border-(top\|right\|bottom\|left)\|outline\|box-shadow\|text-shadow\|column-rule\|text-decoration)$\|-color$/`, delas värdet i gemener på `/[\s,]+/`. Varje ord är då `/^var\(--[a-z0-9-]+\)$/`, ett mått `/^-?\d+(\.\d+)?(px\|rem\|em\|%)?$/` eller ett av `solid`, `dashed`, `dotted`, `none`, `transparent`, `inherit`, `currentcolor`, `underline`, `initial`, `unset`. Därmed fälls varje namngiven färg i en färgegenskap, grön eller inte. Meddelandet namnger filen och ordet. Testet kräver att minst tre filer lästes | var och en för sig: (27) i `landning.css`: `fill: var(--ikon-bla);` → `fill: #014085;`; (28) i `style.css`: `color: var(--positiv);` → `color: RGB(0 105 183);`; (29) i `demo/banner.css`: `background: var(--bla-marin);` → `background: hsl(218 80% 22%);`; (30) i `style.css`: `color: var(--positiv);` → `color: seagreen;`; (31) i `landning.css`: `stroke: var(--ikon-grabla);` → `stroke: green;`; (32) i `style.css`: `color: var(--positiv);` → `color: tomato;`; (33) raden `.fordel { --x-prov: forestgreen; }` sist i `landning.css`; (34) de tre raderna `.fordel-x::after { content: "/*"; }`, `.sv-fyll-grabla { fill: #2e8b57; }` och `.fordel-y::after { content: "*/"; }` sist i `landning.css`; (45) en ny fil `src/web/demo/extra.css` med raden `.x { color: seagreen; }` (ingen ankare, filen läggs till) |
+| (FA5) | 3 | ikonklasserna har sina egna regler | Testnamn `(FA5) varje sv-klass i landning.html har en egen regel med fill eller stroke i landning.css`. HTML-kommentarerna tas bort ur `landning.html` med `/<!--[\s\S]*?-->/g`. Varje tagg tas ut med `/<([a-z]+)\b([^>]*)>/gi` och dess `class` med `/\sclass\s*=\s*"([^"]*)"/i`. Varje ord i `class` som börjar med `sv-` ska ha en regel i `stripCssComments(landning.css)`, uttagen med `/([^{}]+)\{([^{}]*)\}/g`, vars **hela** selektor, trimmad, är exakt `.` + ordet och vars kropp matchar `/(^\|[\s;])(fill\|stroke)\s*:/`. En förekomst i en gruppselektor räknas inte. Mängden sv-ord ska vara exakt `['sv-fyll-bla', 'sv-fyll-grabla', 'sv-fyll-guld', 'sv-linje-bla', 'sv-linje-grabla', 'sv-linje-guld', 'sv-linje-text']`, sorterad | var och en för sig: (35) i `landning.html`: `<rect class="sv-fyll-grabla" x="19"` → `<rect class="sv-fyll-gralba" x="19"`; (36) i `landning.css`: `.sv-linje-grabla {` → `.sv-linje-grabla-x {`. Namnet `.sv-linje-grabla` står också i gruppselektorn `.sv-linje-grabla,`, men den räknas inte enligt kravet ovan |
+| (FA6) | 3 | inga ord om grönt i `src` | Testnamn `(FA6) ingen fil i src nämner grönt`. Varje fil under `src/` som slutar på `.html`, `.css` eller `.js` läses som text **med kommentarerna kvar**, och ingen matchar `/gr[öo]n/i`. Meddelandet namnger filen, radnumret och raden. Testet kräver att minst en `.html`-fil lästes | var och en för sig: (37) raden `/* grön */` tillagd sist i `src/web/style.css`; (38) raden `<!-- GRÖN -->` tillagd direkt före `</body>` i `src/web/landning.html`; (39) raden `// Gronsaker` tillagd sist i `src/web/app.js` |
+| (FA7) | 3 | ingen färg i sidorna | Testnamn `(FA7) landning.html och index.html har ingen egen färg och laddar bara sina stilmallar`. Var och en av `landning.html` och `index.html` läses rå, med kommentarerna kvar. (a) Ingen träff på `/<style\b/i`; (b) ingen träff på `/\s(fill\|stroke\|color\|bgcolor\|stop-color\|flood-color\|lighting-color\|style)\s*=/i`; (c) ingen träff på `/(?<!&)#([0-9a-f]{8}\|[0-9a-f]{6}\|[0-9a-f]{4}\|[0-9a-f]{3})\b/gi`, där `(?<!&)` släpper förbi teckenreferensen `&#169;` i sidfoten; (d) med HTML-kommentarerna borttagna tas varje `<link …>` ut med `/<link\b[^>]*>/gi`, och dess attribut läses med `attributeMap(tag)` ur `tests/helpers/tema.js`. `rel` görs om till gemener och delas på blanktecken, `(attributes.get('rel') ?? '').toLowerCase().split(/\s+/).filter(Boolean)`, och innehåller orden `stylesheet` läggs `attributes.get('href')` till i listan. Listan ska i ordning vara exakt `['/tema.css', '/landning.css']` respektive `['/tema.css', '/style.css']`. Skiftläge, citattecken (dubbla, enkla eller inga) och blanktecken kring `=` spelar alltså ingen roll | var och en för sig: (40) i `landning.html`: `<rect class="sv-fyll-grabla" x="19"` → `<rect fill="#2e8b57" class="sv-fyll-grabla" x="19"`; (41) raden `    <p style="color: green">x</p>` direkt före `</body>` i `index.html`; (42) raden `    <link rel="stylesheet" href="/extra.css" />` direkt efter `<link rel="stylesheet" href="/style.css" />` i `index.html`; (43) raden `    <STYLE>body { color: green; }</STYLE>` direkt före `</body>` i `index.html`; (46) raden `    <link rel="Stylesheet" href="/extra.css" />`, (47) raden `    <link rel=stylesheet href=/extra.css />` och (48) raden `    <link rel='stylesheet' href='/extra.css' />`, var och en direkt efter `<link rel="stylesheet" href="/style.css" />` i `index.html` |
+| (FA8) | 3 | talen i kommentarerna i `style.css` och `landning.css` | Testnamn `(FA8) varje kontrasttal i kommentarerna i style.css och landning.css är ett tal ur kontrasttabellen`. Samma krav som (FA1)(b), med samma två konstanter, på de råa filerna `style.css` och `landning.css` | (44) i `style.css`: `--lank på --yta                      10,13:1` → `--lank på --yta                      10,31:1` |
+
+**(86) i `tests/app.test.js`** (paket 3) byter namn till
+`(86) ett nått mål visas som klart med guldstapel och sin egen text`. Rad 3788–3789
+blir, bindande ordagrant:
+
+```js
+  // Guldstapeln är klassen goal-bar-klart, som .goal-bar-klart i
+  // src/web/style.css fyller med --guld-grafik (ARKITEKTUR.md del 9).
+```
+
+Ingen assertion ändras.
+
+**Ankarkontroll.** Varje mutation som ersätter ett uttryck, eller lägger till
+en rad efter ett ankare, kontrolleras med `grep -c -F -e "<uttrycket>" <filen>`,
+och värdet ska vara exakt `1` (lärdomen 2026-10-13 om E-10). Mutationerna
+(6)–(44) kördes i paket 1 mot ett paket 3 byggt i minnet ur `src/web` (körning
+5 i posten "Förhandskontrollen kördes"). Där gav varje ankare `1` och varje
+mutation fälldes av sin utpekade kontroll. Mutation (45) kördes i körning 6 och
+fälldes av (FA4). Mutation (46)–(48) kördes i körning 7 mot den läsning som
+(FA7)(d) nu kräver, och var och en fälldes där. Byggaren kör ändå ankarkontrollen
+mot de riktiga filerna i sitt paket innan mutationerna körs. Ger något ankare
+ett annat värde än `1` lämnas paketet tillbaka till arkitekten. Varje mutation
+körs en i taget i en kopia av trädet under scratchpad-katalogen, aldrig i
+`src/`, och kryssraden klistras in. Listan är ett minimum: byggaren räknar
+dessutom upp varje `if` och varje `assert` i `tests/tema.test.js` och prövar
+dem.
+
+### Det spärren inte fångar [del 9]
+
+Kända gränser för (FA2)–(FA8). De är inga krav:
+
+- **JavaScript.** `app.js` och `src/web/demo/*.js` sätter klasser och aldrig
+  färger, men ingen kontroll prövar att en `.js`-fil saknar hexkod eller
+  `style`. (FA6) fångar bara ordet. Skälet är att en hexkodsregel i js ger falska
+  träffar på id-selektorer som `'#add-budget'` (sökning med Grep-verktyget
+  2026-10-14 i `src`: sex sådana träffar i `app.js`).
+- **Färgnamn utanför färgegenskaper som inte står i (FA4)(c):s lista.** Ett
+  blågrönt namn utan någon av orddelarna i listan, i en egen egenskap
+  (`--x: <namn>`) som sedan läses av en färgegenskap, går förbi (FA4). (FA4)(d)
+  fäller det bara om namnet står direkt i färgegenskapen.
+- **Användarens bildfiler** i `src/web/bilder/` omfattas inte (se
+  "Omfattning").
+- **Kommentarmarkörer i strängar** fångas. `stripCssComments` låter strängarna
+  stå, och mutation (34) visar det.
+- **`<meta name="theme-color" content="seagreen">`** i en sida går förbi (FA7),
+  eftersom attributet heter `content`. Det färgar webbläsarens ram och inte
+  sidan.
+- **`filter: hue-rotate(…)`** i en stilmall kan vrida en tillåten färg mot
+  grönt. `filter` är ingen färgegenskap i (FA4)(d), och ingen kontroll prövar
+  den.
+- **`@import` i en stilmall** utom `landning.css` (led 3 krav 3) och `tema.css`
+  ((FA2)(s)) kan läsa in en stilmall som ingen kontroll läser, till exempel en
+  extern adress. (FA4) läser bara filerna under `src/web`.
+- **(FA1)(b) och (FA8) prövar bara att ett tal finns i tabellen**, inte att det
+  hör till rätt färgpar. Ett tal som står vid fel par i en kommentar går förbi,
+  om talet finns någon annanstans i tabellen.
+
+### Byggarens instruktioner [del 9]
+
+**Paket 2**, i den här ordningen:
+
+1. Kopiera `src/web/tema.css` och `tests/hero.test.js` till scratchpad-katalogen
+   och klistra in `sha256sum` för båda. Kör inget `git checkout --`,
+   `git restore` eller `git reset --hard`.
+2. Skriv `tests/helpers/tema.js` och ändra `tests/hero.test.js` enligt
+   "Gemensam hjälpmodul". Kör `node --test tests/hero.test.js`, som ska ge
+   `fail 0` innan något annat ändras.
+3. Ersätt `src/web/tema.css` med blocket under "`src/web/tema.css` efter del 9"
+   och lägg in övergångsraderna.
+4. Skriv (FA1) i `tests/tema.test.js`.
+5. Kör ankarkontrollen för (FA1):s mutationer, kör sedan varje mutation och
+   klistra in kryssraden och `EXIT=`.
+6. Kör `npm test` tre gånger i rad och klistra in `ℹ tests`, `ℹ fail` och
+   `EXIT=` från var och en. Ett rött `fall 1: instans två startar inte …` eller
+   SIGKILL-testet med det kända timeoutmeddelandet räknas enligt lärdomen
+   2026-10-12.
+7. Kör `git diff HEAD -- src` och läs den rad för rad. En tillagd rad med
+   `console.log`, `INSTRUMENT`, `TODO` eller `FIXME` är ett fel.
+
+Kommentarerna i `style.css` och `landning.css` skrivs om i paket 3 och inte i
+paket 2, eftersom de namnger de tokener som användarna läser efter paket 3.
+PLAN.md:s "Klar när" säger samma sak: paket 2 ansvarar för talen i `tema.css`,
+som (FA1)(b) prövar, och paket 3 för talen i `style.css` och `landning.css`,
+som (FA8) prövar.
+
+**Paket 3**, i den här ordningen:
+
+1. Kopiera `src/web/tema.css`, `landning.css`, `landning.html`, `style.css`,
+   `app.js`, `demo/seed.js` och `tests/app.test.js` till scratchpad-katalogen
+   och klistra in `sha256sum`. Kör
+   `grep -rniE "gron|grön" src tests | cat -v` och
+   `grep -rnE "sv-(fyll|linje)-gron" src tests` och klistra in utdatan
+   (före-läget).
+2. Skriv (FA3), (FA4) och (FA7) i `tests/tema.test.js` och kör dem mot det
+   oförändrade trädet. Alla tre ska passera redan nu: övergångsraderna gör
+   varje `var()` definierad. Det här är ordningen PLAN.md kräver, och den gör att
+   en borttagen token aldrig kan lämna en `var()` utan värde. Passerar någon av
+   dem inte lämnas paketet tillbaka till arkitekten.
+3. Gör ersättningarna i "Ersättningslista för paket 3" nedan, var och en med
+   den gamla texten exakt och i listans ordning. Körning 5 visade att varje
+   gammal text finns i `src/web` exakt det antal gånger listan anger, med
+   radsluten normaliserade till LF. Steg 3–6 nedan beskriver samma ersättningar
+   i ord, och vid skillnad gäller listan.
+   `src/web/landning.css` (L1–L11):
+   - regeln `.sv-fyll-gron { fill: var(--ikon-gron); }` blir
+     `.sv-fyll-grabla {` / `  fill: var(--ikon-grabla);` / `}`;
+   - regeln `.sv-fyll-gron-ljus { … }` och tomraden efter den tas bort;
+   - `.sv-linje-gron,` i gruppselektorn blir `.sv-linje-grabla,`;
+   - regeln `.sv-linje-gron { stroke: var(--ikon-gron); }` blir
+     `.sv-linje-grabla {` / `  stroke: var(--ikon-grabla);` / `}`;
+   - reglerna `.sv-fyll-gron-pa-mork { … }` och
+     `.sv-fyll-gron-ljus-pa-mork { … }` tas bort, var och en med en av sina
+     omgivande tomrader;
+   - `border: solid var(--gron-primar);` blir `border: solid var(--ikon-bla);`;
+   - kommentarerna, bindande ordagrant:
+     - `/* Guldknappen. --bla-marin på --guld ger 4,71:1, alltså AA för brödtext.`
+       blir `/* Guldknappen. --bla-marin på --guld ger 6,08:1, alltså AA för brödtext.`;
+     - `   Bakgrunden är --bakgrund; nästa sektion tar den gröna tonen. */` blir
+       `   Bakgrunden är --bakgrund; nästa sektion tar --yta-mjuk. */`;
+     - `   Tre kolumner. Svag grön ton som bakgrund, så att varannan sektion bryter av`
+       blir `   Tre kolumner. --yta-mjuk som bakgrund, så att varannan sektion bryter av`;
+     - `   textfärg, 4,71:1, och aldrig guld som text på ljus bakgrund. */` blir
+       `   textfärg, 6,08:1, och aldrig guld som text på ljus bakgrund. */`;
+     - `   Bakgrund --bla-marin i båda lägena. Texten är off-white, 12,21:1.` blir
+       `   Bakgrund --bla-marin i båda lägena. Texten är off-white, 12,39:1.`.
+4. `src/web/landning.html`: varje `class="sv-linje-gron"` blir
+   `class="sv-linje-grabla"`, och varje `class="sv-fyll-gron"` blir
+   `class="sv-fyll-grabla"`. Kommentarraderna
+   `           Tre kolumner med ikon, rubrik och kort text. Svag grön ton som` och
+   `           bakgrund, så att sidan inte blir genomgående ljus. -->` blir
+   `           Tre kolumner med ikon, rubrik och kort text. En ljus gråblå ton` och
+   `           som bakgrund, så att sidan inte blir genomgående ljus. -->`. Ingen
+   synlig text ändras. (P18), (P19) och (P20) ska passera oförändrade.
+5. `src/web/style.css`:
+   - `color: var(--ikon-gron);` i `.item-recurring` blir
+     `color: var(--ikon-grabla);`;
+   - `fill: var(--ikon-gron);` i `.goal-bar-klart` blir
+     `fill: var(--guld-grafik);`;
+   - `border: 2px solid var(--guld);` i `.bill-paminnelse` blir
+     `border: 2px solid var(--guld-grafik);`;
+   - kommentarerna, bindande ordagrant:
+     - Raderna 13–40 (från `   Kontrast, uppmätt med WCAG-formeln` till och med
+       `   i den här filen, bara sidomenyns hårfina ram, som är grafik. */`) blir
+       blocket "style.css, kontrastkommentaren" nedan.
+     - I kommentaren ovanför `.field input,` ersätts texten från
+       `   kan hitta, och kravet 3:1 för grafik gäller då ramen.` till slutet av
+       kommentaren enligt S2. Talen 1,43:1 och 1,31:1 för `--kant` försvinner,
+       eftersom inget av dem har en rad i kontrasttabellen.
+     - I kommentaren ovanför `.sidomeny` blir `därför ramen i --guld, som` /
+       `   är den enda ton i temat som når 3:1 mot --bla-marin (uppmätt 4,71:1) och` /
+       `   samtidigt syns mot --bakgrund i det ljusa läget.` följande:
+       `därför ramen i --guld, som` /
+       `   ger 6,08:1 mot --bla-marin och samtidigt syns mot --bakgrund i det ljusa` /
+       `   läget.`
+     - Kommentaren ovanför `.left-positive` blir:
+       ```css
+       /* Noll räknas som positivt: en budget som går jämnt upp är inget problem.
+          --positiv och --negativ är temats två toner för inkomst och utgift. Båda
+          når 4,5:1 mot --yta i båda lägena (5,67:1 och 7,43:1 ljust, 5,53:1 och
+          5,35:1 mörkt), eftersom klasserna också står på tabellceller i normal
+          storlek. */
+       ```
+     - Kommentaren ovanför `.item-recurring` blir:
+       ```css
+       /* Märket på en post som kommer från en mall. Tecknet står i app.js; här är bara
+          färgen och storleken. Märket är 1,1rem, alltså brödtext, och --ikon-grabla
+          når 4,5:1 i båda lägena (7,13:1 ljust, 7,11:1 mörkt mot --yta). */
+       ```
+     - I kommentaren ovanför `.bill-forfallen` blir
+       `--fel-text och aldrig --negativ - samma val som fältfelen gör, av samma skäl`
+       följande: `--fel-text - samma val som fältfelen gör`. Resten av meningen,
+       med talen 7,43:1 och 5,35:1, är oförändrad.
+     - Kommentaren ovanför `.bill-paminnelse` blir:
+       ```css
+       /* Påminnelse: guldram. Ramen är grafik med kravet 3:1, och loggans guld når
+          bara 2,22:1 mot vitt (ARKITEKTUR.md del 9, körning 2; ingen rad i testets
+          tabell), så ramen läser --guld-grafik: 4,44:1 mot --yta i det ljusa läget och
+          4,82:1 i det mörka. Ramen ligger runt hela raden och ersätter radens undre
+          linje, så att två påminnelser intill varandra inte får en dubbel kant. */
+       ```
+     - Kommentaren ovanför `.goal-bar-klart` blir:
+       ```css
+       /* Ett nått mål: guldstapel (ARKITEKTUR.md under "Gränssnittet" och del 9).
+          --guld-grafik når 3:1 mot --kant, spåret bakom stapeln: 3,11:1 ljust och
+          3,68:1 mörkt. Den skiljer sig från .goal-bar, som är blå. */
+       ```
+     - I kommentaren ovanför `.goal-forsenat` blir
+       `   och tonen ligger på 4,38:1 mot --yta enligt mätningen vid .left-negative. */`
+       följande: `   och tonen ligger på 7,43:1 mot --yta enligt mätningen vid .left-negative. */`.
+     - I kommentaren ovanför `.chart-bar` blir
+       `--ikon-bla är stapelns` / `   och pilens ton ur loggan och ljusnar med ytan`
+       följande: `--ikon-bla är stapelns` / `   ton ur den klarare blå familjen och ljusnar med ytan`.
+       Resten är oförändrad.
+     - Kommentaren ovanför `.overview-bar-positive` blir:
+       ```css
+       /* Staplarna är grafik och inte text, så kravet är 3:1. --positiv och --negativ
+          är temats två toner för inkomst och utgift, samma par som raden Kvar att
+          leva på bär: 5,67:1 respektive 7,43:1 mot --yta i det ljusa läget och
+          5,53:1 respektive 5,35:1 i det mörka. */
+       ```
+6. `src/web/app.js` rad 1065: `// sin gröna stapel. Datalagret sållar med flit inte, och kortet svarar på frågan`
+   blir `// sin guldstapel. Datalagret sållar med flit inte, och kortet svarar på frågan`.
+   `src/web/demo/seed.js` rad 112:
+   `//    4  insättningarna överstiger målet           -> klart, grön stapel` blir
+   `//    4  insättningarna överstiger målet           -> klart, guldstapel`.
+7. `tests/app.test.js`: (86) enligt kravlistan.
+8. Ta bort övergångsraderna ur `src/web/tema.css`, alltså alla sju raderna och
+   kommentaren över dem.
+9. Skriv (FA2), (FA5), (FA6) och (FA8) i `tests/tema.test.js`.
+10. Kör ankarkontrollen och därefter varje mutation (7)–(45), en i taget, och
+    klistra in kryssraden och `EXIT=` för var och en. Kryssraden ska vara
+    punktens egen. Att andra punkter också faller är tillåtet, och listan nedan
+    är inte fullständig. Körning 5 körde inte (FA1) och visade att (16) och (17)
+    också fäller (FA3) och att (25) också fäller (FA4). I byggarens redovisning
+    av paket 3 fällde (10) och (23) dessutom (FA1), eftersom `--yta-mjuk` och
+    `--ikon-grabla` står i kontrasttabellen.
+11. Kör `grep -rniE "gron|grön" src tests | cat -v`. Utdatan ska bara innehålla
+    tre slags rader:
+    - de rader som beskriver testresultat ("grön svit", "grön körning"):
+      `tests/storage.test.js:1151`, `tests/schedule.test.js:298` och
+      `tests/report.test.js:416` (radnummer före del 9; om en fil har flyttats
+      räcker innehållet);
+    - mutationernas och regelns egna rader i `tests/tema.test.js`;
+    - kommentarraden `// ARKITEKTUR.md del 9, "Regeln för grönt".` ovanför
+      `isGreen` i `tests/helpers/tema.js`, som står ordagrant i kodblocket under
+      "Gemensam hjälpmodul".
+
+    Kommentaren står kvar, eftersom den namnger regeln den hänvisar till.
+    Klistra in utdatan. Kör också
+    `grep -rnE "var\(--(gron|ikon-gron)" src` (ska ge noll rader).
+12. `npm test` tre gånger i rad, och `git diff HEAD -- src`, som i paket 2.
+
+**Rättelse efter slutgranskningen av paket 3 [(FA7)(d)]**, i den här
+ordningen. Inget i `src/` ändras.
+
+1. Kopiera `tests/helpers/tema.js`, `tests/hero.test.js` och
+   `tests/tema.test.js` till scratchpad-katalogen och klistra in `sha256sum`
+   för var och en.
+2. Lägg till exporten `attributeMap` i `tests/helpers/tema.js`, ordagrant
+   enligt kodblocket under "Gemensam hjälpmodul".
+3. Byt i `tests/hero.test.js`, i kaskadspärrens krav 1, de fyra raderna från
+   `    const attributes = new Map();` till och med den `}` som stänger den inre
+   `for`-loopen mot `    const attributes = attributeMap(tag);`, och lägg till
+   `attributeMap` i importen från `./helpers/tema.js`. Inget annat i filen
+   ändras.
+4. Skriv om (FA7)(d) i `tests/tema.test.js` enligt (FA7)-raden: varje `<link>`
+   läses med `attributeMap`, och `rel` görs om till gemener och delas på
+   blanktecken. Importera `attributeMap` från `./helpers/tema.js`.
+5. Kör `grep -c -F -e '<link rel="stylesheet" href="/style.css" />' src/web/index.html`,
+   som ska ge `1`. Kör sedan mutation (42), (46), (47) och (48) en i taget i en
+   kopia och klistra in (FA7):s kryssrad och `EXIT=1` för var och en.
+6. Kör kaskadspärrens mutationer för led 3 krav 1 i (H12) (tabellen under
+   "Kaskadspärren [hero-kaskad]") en i taget och klistra in kryssraden och
+   `EXIT=1`. De visar att bytet i steg 3 inte försvagade krav 1.
+7. `npm test` tre gånger i rad med `ℹ fail` och `EXIT=` inklistrade. Att `src/`
+   inte ändras visas med kontrollsummor och inte med `git diff HEAD -- src`.
+   Den diffen kan inte vara tom så länge paket 2 och 3 inte är committade. Kör
+   `find src -type f | sort | xargs sha256sum > <fil>` i scratchpad-katalogen
+   före steg 2 och `sha256sum -c <fil>` efter steg 7. Varje rad ska ge `OK`.
+   Byggaren körde det i den här rättelsen, och varje fil i `src` gav `OK`
+   (41 filer enligt byggarens redovisning).
+
+#### Ersättningslista för paket 3 (bindande ordagrant)
+
+Varje ersättning byter den gamla texten mot den nya. Där inget annat står finns
+den gamla texten exakt en gång i filen. Ett **spann** ersätter allt från och med
+starttexten till och med sluttexten. Listan är densamma som körning 5 utförde
+(scratchpad `del9-kontroll5.mjs`, funktionerna `ersatt` och `spann`), och
+körningen gav för varje rad det väntade antalet:
+
+```
+ersättning S1: start finns 1 gång(er), slut finns
+ersättning S2: start finns 1 gång(er), slut finns
+ersättning S3: gamla texten finns 1 gång(er), väntat 1
+ersättning S4: start finns 1 gång(er), slut finns
+ersättning S5: gamla texten finns 1 gång(er), väntat 1
+ersättning S6: gamla texten finns 1 gång(er), väntat 1
+ersättning S7: gamla texten finns 1 gång(er), väntat 1
+ersättning S8: gamla texten finns 1 gång(er), väntat 1
+ersättning S9: gamla texten finns 1 gång(er), väntat 1
+ersättning S10: gamla texten finns 1 gång(er), väntat 1
+ersättning S11: gamla texten finns 1 gång(er), väntat 1
+ersättning S12: gamla texten finns 1 gång(er), väntat 1
+ersättning S13: gamla texten finns 1 gång(er), väntat 1
+ersättning S14: gamla texten finns 1 gång(er), väntat 1
+ersättning L1: gamla texten finns 1 gång(er), väntat 1
+ersättning L2: gamla texten finns 1 gång(er), väntat 1
+ersättning L3: gamla texten finns 1 gång(er), väntat 1
+ersättning L4: gamla texten finns 1 gång(er), väntat 1
+ersättning L5: gamla texten finns 1 gång(er), väntat 1
+ersättning L6: gamla texten finns 1 gång(er), väntat 1
+ersättning L7: gamla texten finns 1 gång(er), väntat 1
+ersättning L8: gamla texten finns 1 gång(er), väntat 1
+ersättning L9: gamla texten finns 1 gång(er), väntat 1
+ersättning L10: gamla texten finns 1 gång(er), väntat 1
+ersättning L11: gamla texten finns 1 gång(er), väntat 1
+ersättning H1: gamla texten finns 3 gång(er), väntat 3
+ersättning H2: gamla texten finns 3 gång(er), väntat 3
+ersättning H3: gamla texten finns 1 gång(er), väntat 1
+ersättning A1: gamla texten finns 1 gång(er), väntat 1
+ersättning D1: gamla texten finns 1 gång(er), väntat 1
+```
+
+**`src/web/style.css`**
+
+- **S1, spann.** Start `   Kontrast, uppmätt med WCAG-formeln`, slut
+  `som är grafik. */`. Ny text: blocket "style.css, kontrastkommentaren" nedan.
+- **S2, spann.** Start `   kan hitta, och kravet 3:1 för grafik gäller då ramen.`,
+  slut `ingen kontroll, och dess ram bär ingen information. */`. Ny text:
+
+  ```css
+     kan hitta, och kravet 3:1 för grafik gäller då ramen. Ramen läser därför
+     --text-svag, som ger 7,13:1 mot --yta i det ljusa läget och 7,92:1 i det
+     mörka. Korten behåller --kant: ett kort är ingen kontroll, och dess ram bär
+     ingen information. */
+  ```
+- **S3.** Gammal text:
+
+  ```css
+  därför ramen i --guld, som
+     är den enda ton i temat som når 3:1 mot --bla-marin (uppmätt 4,71:1) och
+     samtidigt syns mot --bakgrund i det ljusa läget.
+  ```
+  Ny text:
+
+  ```css
+  därför ramen i --guld, som
+     ger 6,08:1 mot --bla-marin och samtidigt syns mot --bakgrund i det ljusa
+     läget.
+  ```
+- **S4, spann.** Start
+  `   --positiv och --negativ är temats två valda toner för inkomst och utgift, och`,
+  slut `(uppmätt 3,45:1 respektive 4,38:1). */`. Ny text:
+
+  ```css
+     --positiv och --negativ är temats två toner för inkomst och utgift. Båda
+     når 4,5:1 mot --yta i båda lägena (5,67:1 och 7,43:1 ljust, 5,53:1 och
+     5,35:1 mörkt), eftersom klasserna också står på tabellceller i normal
+     storlek. */
+  ```
+- **S5.** Den gamla kommentaren ovanför `.item-recurring`, alla tre raderna från
+  `/* Märket på en post som kommer från en mall.` till
+  `   4,5:1 i båda lägena (6,69:1 ljust, 5,20:1 mörkt mot --yta). */`, blir
+  kommentaren under steg 5 ovan.
+- **S6.** `   --fel-text och aldrig --negativ - samma val som fältfelen gör, av samma skäl`
+  följt av radbrytning och `   (uppmätt 7,43:1` blir `   --fel-text - samma val som fältfelen gör`
+  följt av radbrytning och `   (uppmätt 7,43:1`.
+- **S7.** Den gamla kommentaren ovanför `.bill-paminnelse`, alla fyra raderna
+  från `/* Påminnelse: guldram. --guld bär ingen text i det här temat - den når 2,83:1`
+  till `   att två påminnelser intill varandra inte får en dubbel kant. */`, blir
+  kommentaren under steg 5 ovan.
+- **S8.** Den gamla kommentaren ovanför `.goal-bar-klart`, alla tre raderna från
+  `/* Ett nått mål: grön stapel` till
+  `   användning som märket för en återkommande post har. */`, blir kommentaren
+  under steg 5 ovan.
+- **S9.** `   och tonen ligger på 4,38:1 mot --yta enligt mätningen vid .left-negative. */`
+  blir `   och tonen ligger på 7,43:1 mot --yta enligt mätningen vid .left-negative. */`.
+- **S10.** `--ikon-bla är stapelns` följt av radbrytning och
+  `   och pilens ton ur loggan och ljusnar med ytan i det mörka läget (10,13:1`
+  blir `--ikon-bla är stapelns` följt av radbrytning och
+  `   ton ur den klarare blå familjen och ljusnar med ytan i det mörka läget (10,13:1`.
+- **S11.** Den gamla kommentaren ovanför `.overview-bar-positive`, alla fyra
+  raderna från `/* Staplarna är grafik och inte text, så kravet är 3:1. --positiv och --negativ`
+  till `   5,85:1 respektive 5,35:1 i det mörka. */`, blir kommentaren under steg 5
+  ovan.
+- **S12.** `  color: var(--ikon-gron);` blir `  color: var(--ikon-grabla);`.
+- **S13.** `  fill: var(--ikon-gron);` blir `  fill: var(--guld-grafik);`.
+- **S14.** `  border: 2px solid var(--guld);` blir `  border: 2px solid var(--guld-grafik);`.
+
+**`src/web/landning.css`**
+
+- **L1.** Reglerna `.sv-fyll-gron { fill: var(--ikon-gron); }` och
+  `.sv-fyll-gron-ljus { fill: var(--gron-ljus); }`, med tomraden efter var och
+  en, blir `.sv-fyll-grabla {` / `  fill: var(--ikon-grabla);` / `}` följt av en
+  tomrad.
+- **L2.** `.sv-linje-gron,` (med radbrytning) blir `.sv-linje-grabla,`.
+- **L3.** `.sv-linje-gron {` / `  stroke: var(--ikon-gron);` / `}` blir
+  `.sv-linje-grabla {` / `  stroke: var(--ikon-grabla);` / `}`.
+- **L4.** `.sv-fyll-gron-pa-mork {` / `  fill: var(--ikon-gron-pa-mork);` / `}` och
+  tomraden efter tas bort.
+- **L5.** `.sv-fyll-gron-ljus-pa-mork {` / `  fill: var(--ikon-gron-ljus-pa-mork);` / `}`
+  och tomraden efter tas bort.
+- **L6.** `  border: solid var(--gron-primar);` blir `  border: solid var(--ikon-bla);`.
+- **L7.** `--bla-marin på --guld ger 4,71:1, alltså AA` blir
+  `--bla-marin på --guld ger 6,08:1, alltså AA`.
+- **L8.** `   Bakgrunden är --bakgrund; nästa sektion tar den gröna tonen. */` blir
+  `   Bakgrunden är --bakgrund; nästa sektion tar --yta-mjuk. */`.
+- **L9.** `   Tre kolumner. Svag grön ton som bakgrund, så att varannan sektion bryter av`
+  blir `   Tre kolumner. --yta-mjuk som bakgrund, så att varannan sektion bryter av`.
+- **L10.** `   textfärg, 4,71:1, och` blir `   textfärg, 6,08:1, och`.
+- **L11.** `Texten är off-white, 12,21:1.` blir `Texten är off-white, 12,39:1.`.
+
+**`src/web/landning.html`**
+
+- **H1** (tre gånger). `class="sv-linje-gron"` blir `class="sv-linje-grabla"`.
+- **H2** (tre gånger). `class="sv-fyll-gron"` blir `class="sv-fyll-grabla"`.
+- **H3.** De två kommentarraderna enligt steg 4 ovan.
+
+**`src/web/app.js` och `src/web/demo/seed.js`**
+
+- **A1.** `// sin gröna stapel.` blir `// sin guldstapel.`.
+- **D1.** `-> klart, grön stapel` blir `-> klart, guldstapel`.
+
+#### style.css, kontrastkommentaren (bindande ordagrant)
+
+```css
+   Kontrast, uppmätt med WCAG-formeln (L = 0,2126 R + 0,7152 G + 0,0722 B på
+   linjäriserade kanaler, kvoten (Lljus + 0,05) / (Lmörk + 0,05)). Kravet är
+   4,5:1 för brödtext och 3:1 för stor text och grafik. Talen är
+   tests/tema.test.js:s, som räknar dem ur tema.css (ARKITEKTUR.md del 9):
+
+     kombination                        ljust läge   mörkt läge   krav
+     --text på --bakgrund                 16,41:1      12,39:1    4,5
+     --text på --yta                      17,89:1       9,83:1    4,5
+     --text-svag på --yta                  7,13:1       7,92:1    4,5
+     --text-svag på --bakgrund             6,54:1       9,98:1    4,5
+     --fel-text på --yta                   7,43:1       5,35:1    4,5
+     --fel-text på --bakgrund              6,81:1       6,75:1    4,5
+     --lank på --yta                      10,13:1       5,70:1    4,5
+     --lank på --yta-mjuk                  8,95:1       6,40:1    4,5
+     --ikon-grabla på --yta                7,13:1       7,11:1    4,5
+     --knapp-fylld-text på knappens yta   10,13:1       5,67:1    4,5
+     --positiv på --yta                    5,67:1       5,53:1    4,5
+     --negativ på --yta                    7,43:1       5,35:1    4,5
+     --ikon-bla på --yta                  10,13:1       5,70:1    3
+     --guld-grafik på --yta                4,44:1       4,82:1    3
+     --text-pa-mork på --bla-marin        12,39:1      12,39:1    4,5
+     --text-svag-pa-mork på --bla-marin    9,98:1       9,98:1    4,5
+     --guld på --bla-marin                 6,08:1       6,08:1    3
+
+   --positiv och --negativ når 4,5:1 i båda lägena och bär därför beloppen
+   både på raden Kvar att leva på och i tabellernas celler. --guld bär ingen
+   text i den här filen, bara sidomenyns hårfina ram, som är grafik på
+   --bla-marin. */
+```
+
+Varje tal i blocket är en rad i kontrasttabellen ovan. `--bla-marin` i blocket
+är `--morkt-block` i tabellen, med samma hexkod.
+
+### Åldrade meningar om grönt
+
+`grep -niE "grön|gröna|grönt|gron"` mot `ARKITEKTUR.md` kördes med
+Grep-verktyget den 2026-10-14, före del 9. Varje träff, med radnummer från före
+del 9, och vad som gjordes med den:
+
+| Rad | Innehåll | Åtgärd |
+|---|---|---|
+| 1342, 1585, 1655, 3018, 3313, 4763, 5402, 6895, 6964, 7113, 7519, 15879 | "grön svit", "gröna tester", "visas grönt", "tre gröna körningar" | Står kvar. Uttrycket gäller testresultat, inte färger. |
+| 8969–8971, 8985 | palettabellerna i del 3 | Står kvar som historik. Avsnittet har fått en inledning som säger att del 9 ersätter det och att tabellerna beskriver läget före del 9. |
+| 9054 | "en svag grön ton" | Omskriven: `--yta-mjuk` var grön fram till del 9. |
+| 9667 | `sv-fyll-gron` i ett kodblock i ett utfört steg | Står kvar som historik, med en mening efter blocket om bytet i del 9. |
+| 10813 | "Grön stapel" | Omskriven till guldstapel, med "före del 9 grön". |
+| 10855 | (86) "grön stapel" | Omskriven, med hänvisning till kravlistan här. |
+| 13432–13433 (del 7, `--gron-djup`) | "står kvar utan användare" | Inledd med "Upphävt av del 9" och skriven i dåtid. |
+| 14491 ((H11) mutation (1)) | `var(--gron-primar)` | Bytt mot `var(--guld)`, med det gamla värdet nämnt i dåtid. |
+| 14581–14582 (del 7, steg 12) | `grep -rn "var(--gron-djup)" src` | Står kvar som ett utfört steg, med en mening om att sökningen fortfarande ger noll rader. |
+| 14686, 14692 (del 7, beslutslogg) | `--gron-djup` står kvar | Beslutsloggen har fått tillägget "upphävt av del 9". |
+| 15975 (del 8, L-8) | lärdomens titel | Står kvar. Det är ett citat av en lärdom. |
+
+**Sökningen efter de gamla värdena.** Lärdomen 2026-10-14 om del 7:s "Färgerna,
+bindande" krävde en sökning efter de värden del 9 byter, inte bara efter orden
+för grönt. Arkitekten körde den med Grep-verktyget, utan hänsyn till skiftläge,
+med mönstret
+`022d68|4a5560|c9d8ea|d64545|1e9e5a|e28202|d16c01|edf3ec|6fd39a|0b6a3b|025b38|248038|5cc98d|8fe0b5|4,71:1|7,55:1|12,21:1|2,83:1|2,59:1|3,45:1|4,38:1|9,19:1|6,94:1|7,61:1|7,39:1`.
+Radnumren nedan är från före rättningen:
+
+| Rad | Innehåll | Åtgärd |
+|---|---|---|
+| 8975–8993 | del 3:s palettabeller | Står kvar som historik, under inledningen om del 9. |
+| 9106–9107 (del 3, "Krav") | "guld är den enda ton i temat som når 3:1 mot marinblått" | Omskriven i dåtid, med 6,08:1 och FK32 för läget efter del 9. |
+| 12750–12891, 13074 | del 6 (upphävd av del 7) och dess slöja `#022d68cc` | Står kvar. Del 6 är upphävd i sin helhet. |
+| 13417, 13421 (del 7, "Tema") | guldknappens kommentar med 4,71:1 | En mening efter kodblocket säger att del 9 ersatte talet med 6,08:1. |
+| 13862 (del 7, "Färgerna, bindande") | `--bakgrund` är `#022d68` i mörkt läge | Omskriven: `#022d68` fram till del 9, `#0b2c63` sedan del 9. |
+| 14059–14060 (del 7, förhandsbilderna) | `#022d68` som färg i ritningen | En parentes säger att värdena gällde i del 7. |
+| 14506–14507 ((H11) och (H12)) | mutationer som lägger till en rad med `#022d68cc` | Står kvar. Mutationerna lägger till ett eget värde och beror inte på temat. |
+| 14964–15179 (del 7, inklistrade körningar) | `#022d68` och 7,55:1 i utdata | Står kvar. Det är utdata från körningar i del 7. |
+| 15300 (del 7, "Kontrasten i vågen kördes") | 7,55:1 i mörkt läge | Omskriven i dåtid, med 7,67:1 för `#0b2c63` (körning 2, rad 82). |
+| del 9 själv | de gamla värdena som utgångsläge | Beskriver vad som byts. |
+
+Del 9:s egna träffar (regeln, mappningen, mutationerna och den här tabellen)
+beskriver vad som tas bort. Granskaren i paket 4 kör sökningen igen över hela
+filen och ska bara finna träffar från tabellen ovan och från del 9.
+
+### Manuell kontroll [del 9]
+
+Ingen agent kan se sidan. Efter paket 3, före commit, öppnar användaren `/` och
+`/app` i ljust och mörkt läge och ser efter:
+
+- att inget på sidorna är grönt, utom hero-fotot, som inte omfattas;
+- att ikonerna på landningssidan har gråblått, blått och guld;
+- att varannan sektion har en ljus gråblå ton;
+- att inkomster och raden *Kvar att leva på* är blå när de är positiva och
+  mörkröda när de är negativa, och att de inte går att förväxla med en länk;
+- att ett nått sparmål har en guldstapel och en påminnelse en guldram.
+
+#### Beslutslogg [del 9]
+
+- **F9-1: grönt definieras som ett nyansintervall, 70–175 grader med mättnad
+  minst 10 procent** — ett namn eller en lista över hexkoder fångar bara de
+  stavningar den skrevs för. Intervallet fångar varje grön ton, också i
+  versaler, tresiffrig form och med alfa, och (FA2)(b) och (c) stänger vägen
+  runt hexkoderna (namngivna färger och färgfunktioner). Kontrollfallen i (d)
+  gör gränserna till ett test. (påverkat av lärdom: **ja**, `2026-10-14 — test:
+  kaskadspärrens led 3 och (H9) går förbi med en annan stavning av samma sak` och
+  `2026-09-12 — dokumentation: fyra framtidspåståenden om paket 7 …` — en spärr
+  förankrad i roll och inte i stavning)
+- **F9-2: loggans fyra toner blir tokener, de klarare blå står kvar som valda**
+  — loggan har en enda mättad blå. Att ta bort `--bla-primar`, `--bla-mellan`
+  och `--bla-ljus` hade gjort länkar, knappar och hovring till en enda ton.
+  Värdena är oförändrade, så knapparnas och länkarnas kontrast är densamma.
+  (påverkat av lärdom: nej)
+- **F9-3: `--text-svag` blir loggans gråblå** — det är loggans egen undertext,
+  och den når 4,5:1 på varje yta i tabellen (FK04–FK06, FK38–FK41). (påverkat
+  av lärdom: nej)
+- **F9-4: inkomster blir `--bla-ljus`/`#7cc0ff` och kravet höjs till 4,5:1** —
+  användarens beslut om blått. Höjningen beror på att `left-positive` står på
+  tabellceller i normal storlek, vilket del 3 inte tog med. Inget plustecken,
+  med skäl under "Inkomster". (påverkat av lärdom: **ja**, `2026-10-12 —
+  dokumentation: landningssidan lovar fortfarande månadskostnad …` — ett
+  påstående ("bär bara raden Kvar att leva på") lästes mot koden)
+- **F9-5: `--negativ` läser `--fel-text` i det ljusa läget** — användarens
+  beslut om en mörkare röd. Den ton som behövdes fanns redan. En tredje röd
+  hade krävt en mätning till och hade inte gett något nytt. Skäl under
+  "Utgifter". (påverkat av lärdom: nej)
+- **F9-6: nått mål och påminnelse får `--guld-grafik`, inte gråblått** — en
+  gråblå stapel bredvid de blå pågående staplarna läses som "inaktiv". Guld är
+  loggans accent. Påminnelsens ram nådde redan före del 9 inte det 3:1 som
+  kommentaren påstod. `#a06e0e` var den enda kandidaten som nådde 3:1 också mot
+  `--kant` (rad 75, 78 och 81). (påverkat av lärdom: **ja**, `2026-09-02 —
+  dokumentation: "exakt heltalsaritmetik utan flyttal" skrevs in i koden utan
+  att köras` — påståendet om 3:1 i `style.css` hade aldrig körts)
+- **F9-7: tokener och klasser med `gron` i namnet döps om eller tas bort** — ett
+  namn som säger fel färg är ett felaktigt påstående om koden. `--ikon-gron`
+  blir `--ikon-grabla`, och `sv-*-gron` blir `sv-*-grabla`. Tre oanvända regler
+  och deras tokener tas bort i stället för att döpas om. (FA6) gör det
+  omöjligt att lämna ett sådant namn kvar. (påverkat av lärdom: **ja**,
+  `2026-09-22 — gränssnitt: radens egen klass …` — ett klassnamn är ett
+  kontrakt mellan två filer, och (FA5) prövar kontraktet)
+- **F9-8: `--yta-mjuk` behåller sitt namn** — namnet säger inget om färgen, så
+  bara värdet byts, och åtta användare står oförändrade. (påverkat av lärdom:
+  nej)
+- **F9-9: tre kontrollfunktioner delas i `tests/helpers/tema.js`** — (FA1) och
+  (H11) räknar kontrast, och två kopior av formeln hade kunnat glida isär.
+  (påverkat av lärdom: **ja**, `2026-09-02 — datamodell: cost.js har en egen,
+  svagare kopia av "är detta ett objekt"`)
+- **F9-10: (FA1) kräver det uppmätta värdet och inte bara kravet** — annars hade
+  ett byte av värde som fortfarande klarar kravet gjort kommentarerna i
+  `tema.css` falska utan att något test föll. Mutation (4), `--guld-mork` till
+  `#c98f14`, visar det. Kvoten är 4.774372 (körning 4), alltså över 4,5 med
+  marginal, så bara jämförelsen med 5,17 kan fälla den. Den första versionen av
+  mutationen använde `#c48a12` med påståendet "exakt 4,50". Granskaren mätte
+  4.496945, och den mutationen fälldes redan av kravet. (påverkat av lärdom:
+  **ja**, `2026-10-14 — test: inget skyddar (FA1):s krav på det uppmätta
+  värdet …` och `2026-10-13 — test: talet i den nya
+  fördelen "Tolv månader i en översikt" skyddas inte av något test` och
+  `2026-09-14 — dokumentation: fem antal skrevs in … utan kommandot`)
+- **F9-11: övergångsrader mellan paket 2 och 3** — PLAN.md delar bytet av värden
+  och bytet av användare i två paket. Utan övergångsraderna hade paket 2 lämnat
+  `var(--ikon-gron)` utan värde. (FA3) skrivs före borttagningen. (påverkat av
+  lärdom: **ja**, `2026-10-13 — tema: --gron-djup blev en token utan
+  användare`)
+- **F9-12: ankarkontrollen och förhandskontrollen hör till paket 1** — de ankare
+  som finns redan före del 9 kontrolleras med `grep -c -F`. Förslaget till
+  `tema.css` ovan, som också ligger som `del9-tema-slutlig.css` i
+  scratchpad-katalogen, prövades med `del9-verifiera.mjs`, och efter
+  granskningen prövades hela paket 3 med `del9-kontroll5.mjs`. Koordinatorn körde dem, eftersom
+  arkitekten saknar skal, och utdatan står i posten "Förhandskontrollen kördes"
+  nedan. Byggaren kontrollerar de ankare som uppstår först i paket 2 och 3.
+  (påverkat av lärdom: **ja**, `2026-10-13 — dokumentation: mutation E-10 är
+  skriven utan ankare` och `2026-08-18 — miljö: testkommandot i ARKITEKTUR.md
+  skrevs ned utan att köras`)
+- **Förhandskontrollen kördes (2026-10-14).** Koordinatorn körde tre kontroller
+  oförändrade och lade utdatan i scratchpad-katalogen. Raderna nedan är klistrade
+  ordagrant ur de filerna.
+
+  1. `node del9-verifiera.mjs > del9-verifiera.out`, mot
+     `del9-tema-slutlig.css`. Varje rad FK01–FK71 i sektion 1 slutar på `OK`,
+     till exempel:
+
+     ```
+     FK11 ljust --positiv på --yta 5,67:1 krav 4.5 väntat 5,67 OK
+     FK13 ljust --negativ på --yta 7,43:1 krav 4.5 väntat 7,43 OK
+     FK29 ljust --guld-grafik på --kant 3,11:1 krav 3 väntat 3,11 OK
+     FK46 mörkt --positiv på --yta 5,53:1 krav 4.5 väntat 5,53 OK
+     FK57 mörkt --ikon-grabla på --yta 7,11:1 krav 4.5 väntat 7,11 OK
+     ```
+
+     Varje hexkod i sektion 2 slutar på `ok`, alltså att den inte är grön.
+     Sektion 3 till 5 och slutet:
+
+     ```
+     --- 3. klassificeringens kontrollfall
+     #feed7e inte grön OK
+     #1aa3a3 inte grön OK
+     #9acd32 grön OK
+     #edf3ec grön OK
+     #e3f0e0 grön OK
+     #2E8B57 grön OK
+     #3a5 grön OK
+     #22aa5580 grön OK
+     #808000 inte grön OK
+     --- 4. värdenas form
+     färgfunktioner: false
+     bakstreck: false
+     ord grön/gron: true
+     --- 5. ankare i den föreslagna filen (antal förekomster)
+     "  --bakgrund: #f7f5ef;" 1
+     "    --yta: #0a3c7e;" 1
+     "--skugga-header: 0 1px 0 #0218401a;" 1
+     "--guld-grafik: #a06e0e;" 1
+     "--ikon-grabla: #c9d3e6;" 1
+     "--negativ: var(--fel-text);" 1
+     "--guld-mork: #cf961a;" 1
+     "--positiv: #7cc0ff;" 1
+     "--yta-mjuk: #eef1f7;" 1
+     "  --ikon-grabla: var(--gra-bla);" 1
+     ALLT OK
+     EXIT=0
+     ```
+
+     **Raden `ord grön/gron: true` var ett fynd.** Skriptet räknade den inte
+     som fel, och därför blev slutraden `ALLT OK` ändå. Orsaken var kommentaren
+     i förslaget, "Temat har ingen grön ton: tests/tema.test.js avvisar …",
+     som hade fällt (FA6) i paket 3. Meningen skrevs därefter om i blocket
+     "`src/web/tema.css` efter del 9" ovan och i `del9-tema-slutlig.css` till
+     "Ingen färg i filen har en nyans mellan 70 och 175 grader och en mättnad
+     på minst 10 procent; tests/tema.test.js prövar det." Ändringen gäller bara
+     en kommentar. Sektion 1 till 3 och sektion 5 räknar på den kommentarfria
+     texten eller på deklarationerna och påverkas inte. Koordinatorn körde
+     därefter om `node del9-verifiera.mjs`, och utdatan ligger i
+     `del9-verifiera-2.out`. Raderna 129–132 och sista raden ur den filen:
+
+     ```
+     --- 4. värdenas form
+     färgfunktioner: false
+     bakstreck: false
+     ord grön/gron: false
+     ALLT OK
+     ```
+
+     Koordinatorn rapporterade `EXIT=0`, och granskarens omkörning gav samma
+     utfall. Efter den körningen skrevs två kommentarer om 2,22:1 om
+     (fynd 6). Körning 5 (punkt 5 nedan) prövade den filen med (FA1)(b) och
+     (FA6), och båda passerade.
+  2. Ankarna i dagens träd, `grep -c -F -e "<ankare>" <fil>` från projektroten,
+     ur `del9-kontroll2-3.out`. Varje ankare gav `1`:
+
+     ```
+     1  src/web/tema.css  [  --bakgrund: #f7f5ef;]
+     1  src/web/tema.css  [    --yta: #0a3c7e;]
+     1  src/web/tema.css  [--skugga-header: 0 1px 0 #0218401a;]
+     1  src/web/style.css  [color: var(--positiv);]
+     1  src/web/style.css  [color: var(--ikon-gron);]
+     1  src/web/style.css  [fill: var(--ikon-gron);]
+     1  src/web/style.css  [border: 2px solid var(--guld);]
+     1  src/web/demo/banner.css  [border: 1px solid var(--guld);]
+     1  src/web/demo/banner.css  [background: var(--bla-marin);]
+     1  src/web/landning.css  [fill: var(--ikon-bla);]
+     1  src/web/landning.css  [fill: var(--ikon-gron);]
+     1  src/web/landning.css  [.sv-linje-gron {]
+     1  src/web/landning.css  [border: solid var(--gron-primar);]
+     1  src/web/landning.html  [</body>]
+     1  src/web/landning.html  [<rect class="sv-fyll-gron" x="19"]
+     ```
+  3. `grep -niE "grön|gröna|grönt|gron" ARKITEKTUR.md` (utdatan i
+     `del9-gron-traffar.out`). Arkitekten läste varje träff mot tabellen under
+     "Åldrade meningar om grönt". Varje träff utanför del 9 står i tabellen,
+     eller är en mening som del 9 skrev in i ett äldre avsnitt (inledningen
+     till del 3:s palett, meningen om `--yta-mjuk`, meningen efter kodblocket
+     om `sv-fyll-gron`, de två sparmålsraderna och tilläggen om `--gron-djup`).
+     Träffarna i del 9 beskriver vad som tas bort. Läsningen hittade en felaktig
+     hänvisning: (86)-raden i sparmålens kravlista pekade på "(FA6)", som är ett
+     annat test. Den pekar nu på stycket om (86) i del 9:s kravlista. Sökningen
+     efter framåtpekande tidsord gav en enda träff, meningen "paket 1 räknas inte
+     som klart förrän utdatan står …" i F9-12. Den är omskriven i dåtid i samma
+     ändring som den här posten.
+  4. `node del9-kontroll4.mjs > del9-kontroll4.out`, efter granskarens besked
+     TILLBAKA TILL ARKITEKTEN. Den kördes mot granskarens simulerade
+     `gr9-p3`. I det trädet var kommentarerna bara ersatta med platshållaren
+     `(omskriven kommentar)`, så (FA8) föll redan i utgångsläget på de gamla
+     talen. Körningens mutationsdel säger därför ingenting och används inte.
+     Avsnitt 3 och 4 räknar bara på hexkoder och används:
+
+     ```
+     --- 3. --guld-mork-kandidater mot --bla-marin, oavrundat
+     #cf961a 5.165418
+     #c48a12 4.496945
+     #c98f14 4.774372
+     #cb9116 4.889162
+     --- 4. #4a5875 mot #a3c6f2 +-8 (ingen användning, kontroll av mutation (1) i (H11) med var(--guld))
+     #e3a21a mot #a3c6f2 1.261172 guld ljusare än ytan: false
+     #e3a21a mot #abcefa 1.369481 guld ljusare än ytan: false
+     #e3a21a mot #9bbeea 1.158528 guld ljusare än ytan: false
+     EXIT=0
+     ```
+
+     (Rubriken i avsnitt 4 nämner `#4a5875` av misstag; raderna räknar
+     `#e3a21a`.)
+  5. `node del9-kontroll5.mjs C:/Users/qaium/source/repos/hemochekonomi > del9-kontroll5.out`.
+     Skriptet byggde paket 3 i minnet ur de riktiga filerna i `src/web`, som det
+     bara läste. Det använde `del9-tema-slutlig.css` som `tema.css` och gjorde
+     ersättningarna S1–D1 i "Ersättningslista för paket 3". Därefter körde det
+     (FA1)(b) och (FA2)–(FA8) mot utgångsläget och mot mutation (6)–(44).
+     `git status --porcelain -uall` var oförändrad före och efter körningen.
+     Ersättningsraderna står under "Ersättningslista för paket 3", och resten av
+     utdatan följer ordagrant:
+
+     ```
+     --- 1. utgångsläget: paket 3 byggt ur src/web enligt listan
+     FA1b passerar
+     FA2 passerar
+     FA3 passerar
+     FA4 passerar
+     FA5 passerar
+     FA6 passerar
+     FA7 passerar
+     FA8 passerar
+     --- 2. mutationerna
+     (6) ankare 1 utpekad FA1b FÄLLS fallerande: FA1b
+     (7) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (8) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (9) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (10) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (11) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (12) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (13) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (14) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (15) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (16) ankare - utpekad FA2 FÄLLS fallerande: FA2,FA3
+     (17) ankare - utpekad FA2 FÄLLS fallerande: FA2,FA3
+     (18) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (19) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (20) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (21) ankare 1 utpekad FA2 FÄLLS fallerande: FA2
+     (22) ankare 1 utpekad FA3 FÄLLS fallerande: FA3
+     (23) ankare 1 utpekad FA3 FÄLLS fallerande: FA3
+     (24) ankare 1 utpekad FA3 FÄLLS fallerande: FA3
+     (25) ankare 1 utpekad FA3 FÄLLS fallerande: FA3,FA4
+     (26) ankare 1 utpekad FA3 FÄLLS fallerande: FA3
+     (27) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (28) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (29) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (30) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (31) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (32) ankare 1 utpekad FA4 FÄLLS fallerande: FA4
+     (33) ankare - utpekad FA4 FÄLLS fallerande: FA4
+     (34) ankare - utpekad FA4 FÄLLS fallerande: FA4
+     (35) ankare 1 utpekad FA5 FÄLLS fallerande: FA5
+     (36) ankare 1 utpekad FA5 FÄLLS fallerande: FA5
+     (37) ankare - utpekad FA6 FÄLLS fallerande: FA6
+     (38) ankare 1 utpekad FA6 FÄLLS fallerande: FA6
+     (39) ankare - utpekad FA6 FÄLLS fallerande: FA6
+     (40) ankare 1 utpekad FA7 FÄLLS fallerande: FA7
+     (41) ankare 1 utpekad FA7 FÄLLS fallerande: FA7
+     (42) ankare 1 utpekad FA7 FÄLLS fallerande: FA7
+     (43) ankare 1 utpekad FA7 FÄLLS fallerande: FA7
+     (44) ankare 1 utpekad FA8 FÄLLS fallerande: FA8
+     EXIT=0
+     ```
+
+     `ankare -` betyder att mutationen lägger till text sist i filen och inte
+     har något ankare. Mutation (1)–(5) i (FA1) räknar kontrast och prövades av
+     granskaren i första granskningen, som fällde var och en. Mutation (4) är
+     sedan dess bytt till `#c98f14`, och att den fälls bara av jämförelsen med
+     *uppmätt* visar byggaren i paket 2, enligt (FA1)-raden.
+  6. `node del9-kontroll6.mjs C:/Users/qaium/source/repos/hemochekonomi > del9-kontroll6.out`,
+     efter granskarens andra besked. Den prövade (FA4) med det nya filurvalet,
+     alltså varje `.css` under `src/web` utom `tema.css`, rekursivt. Skriptet
+     läste de riktiga filerna och lade bara till `demo/extra.css` i minnet.
+     `git status --porcelain -uall` visade efteråt bara ARKITEKTUR.md,
+     LARDOMAR.md och PLAN.md. Utdatan ordagrant:
+
+     ```
+     lästa filer: landning.css, style.css, demo/banner.css
+     utgångsläget: FA4 passerar
+     (45) ny fil demo/extra.css: FÄLLS: demo/extra.css: grönt namn seagreen | demo/extra.css: color har seagreen
+     EXIT=0
+     ```
+  7. `node del9-kontroll7.mjs C:/Users/qaium/source/repos/hemochekonomi > del9-kontroll7.out`,
+     efter slutgranskningen av paket 3. Skriptet läste `src/web/index.html` och
+     `src/web/landning.html` och lade bara till mutationsraderna i minnet.
+     Utdatan ordagrant:
+
+     ```
+     ankare i index.html: 1
+     utgångsläget index.html, ny läsning: ["/tema.css","/style.css"] passerar
+     utgångsläget landning.html, ny läsning: ["/tema.css","/landning.css"] passerar
+     (42) ny läsning ["/tema.css","/style.css","/extra.css"] FÄLLS | gammal läsning ["/tema.css","/style.css","/extra.css"] fälls
+     (46) ny läsning ["/tema.css","/style.css","/extra.css"] FÄLLS | gammal läsning ["/tema.css","/style.css","/extra.css"] fälls
+     (47) ny läsning ["/tema.css","/style.css","/extra.css"] FÄLLS | gammal läsning ["/tema.css","/style.css"] överlever
+     (48) ny läsning ["/tema.css","/style.css","/extra.css"] FÄLLS | gammal läsning ["/tema.css","/style.css"] överlever
+     EXIT=0
+     ```
+
+     **Skriptets "gamla läsning" var inte en exakt kopia av testet.** Skriptet
+     prövade `rel` med `/\srel\s*=\s*"[^"]*stylesheet/i`, alltså utan hänsyn
+     till skiftläge i värdet. Det byggda testet, `tests/tema.test.js` rad
+     352–353, tar ut värdet med `/\srel\s*=\s*"([^"]*)"/i` och prövar det med
+     `rel[1].includes('stylesheet')`, som skiljer på skiftläge. Arkitekten läste
+     de två raderna med Read-verktyget. Värdet `Stylesheet` innehåller inte
+     `stylesheet`, så det byggda testet släpper igenom (46), vilket stämmer med
+     granskarens körning (EXIT=0). Skriptets rad för (46) med den gamla läsningen
+     beskriver alltså skriptet och inte testet. Raderna för den nya läsningen
+     gäller den kod som (FA7)(d) nu kräver.
+- **F9-18: (FA7)(d) läser `<link>` med led 3:s attributmönster** — den första
+  versionen såg bara `rel` och `href` inom dubbla citattecken och jämförde `rel`
+  med skiftläge, så en extern stilmall kom förbi med `rel="Stylesheet"`, utan
+  citattecken eller med enkla citattecken. Mönstret finns redan i kaskadspärrens
+  led 3 och blir nu en export, `attributeMap`, i `tests/helpers/tema.js`, som
+  både (FA7) och `tests/hero.test.js` använder. Mutation (46)–(48) prövar de tre
+  stavningarna. Specen för (FA7)(d) sa "vars `rel` innehåller `stylesheet`",
+  vilket inte avgjorde skiftläge eller citattecken. Byggaren valde den smalaste
+  läsningen. (påverkat av lärdom: **ja**, `2026-10-14 — test: kaskadspärrens
+  led 3 och (H9) går förbi med en annan stavning av samma sak` och granskarens
+  post om (FA7)(d) från slutgranskningen av paket 3)
+- **F9-17: (FA4) väljer filer som (FA3) och räknar inte upp dem** — en fast lista
+  med tre filnamn hade släppt igenom en ny stilmall som demon läser in från js,
+  på samma sätt som `banner.js` läser in `demo/banner.css`. Mutation (45) visar
+  att det nu fälls. PLAN.md:s "Uppgift" för paket 3 skrevs om i samma ändring
+  och nämner inget antal test. Granskarens tre gränser (`theme-color`,
+  `filter: hue-rotate`, och att talen inte prövas mot sitt färgpar) står under
+  "Det spärren inte fångar [del 9]". (påverkat av lärdom: **ja**, `2026-10-14 —
+  test: (FA4) läser en fast lista med tre filer …` och `2026-10-14 — process:
+  rättningen av PLAN.md ändrade "Klar när" för paket 3 men inte dess "Uppgift"
+  …`)
+- **F9-13: spärren mot grönt förankras i rollen "varje färgvärde som kan nå
+  sidan"** — första versionen läste bara de deklarationer som en parser hittade
+  i `tema.css`, och granskaren tog sig förbi med en andra regel, namn med
+  versaler, ett saknat semikolon, färgnamn i stilmallarna och `fill=` i sidan.
+  (FA2)(s) kräver nu att `tema.css` bara består av de två blocken. (FA4)
+  prövar varje regelkropp i de andra stilmallarna. (FA7) prövar sidorna, och
+  `stripCssComments` låter strängar stå. Det spärren inte fångar står i ett eget
+  avsnitt. (påverkat av lärdom: **ja**, `2026-10-14 — test: del 9:s spärr mot
+  grönt släpper igenom grönt i stavningar som inte står i mutationslistan`)
+- **F9-14: (FA5) kräver en egen regel med exakt selektor** — en förekomst i en
+  gruppselektor hade låtit mutation (36) överleva. (påverkat av lärdom: **ja**,
+  `2026-10-14 — test: (FA5) kan inte fälla mutation (24) …`)
+- **F9-15: talen i kommentarerna prövas av (FA1)(b) och (FA8)** — så hänger
+  kommentarerna ihop med tabellen. PLAN.md:s "Klar när" för paket 2 och 3 är
+  omskrivna så att de säger samma sak som del 9. 2,22:1 står i en egen konstant
+  och sägs i kommentaren inte vara testets. (påverkat av lärdom: **ja**,
+  `2026-10-14 — process: PLAN.md och del 9 ger olika besked om kontrasttalen i
+  style.css …`)
+- **F9-16: formeln för grönt står i ARKITEKTUR.md och de gamla värdena söktes i
+  hela filen** — formeln stod först bara i ett mätskript i scratchpad. Sökningen
+  efter åldrade meningar gällde först bara orden för grönt. Den är omgjord på de
+  gamla hexkoderna och kvoterna, och träffarna står i tabellen under "Åldrade
+  meningar om grönt". (påverkat av lärdom: **ja**, `2026-10-14 — dokumentation:
+  regeln för grönt hänvisar till en formel i en scratchpad-fil …` och
+  `2026-10-14 — dokumentation: del 7:s "Färgerna, bindande" …`)

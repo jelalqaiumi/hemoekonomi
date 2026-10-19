@@ -3772,7 +3772,7 @@ test('ett slutdatum utan månadstakt ger den korta Kvar-raden i stället för et
   assert.equal(celltext(rader[0], 'goal-left'), `Kvar ${formatSek(2160000)}`);
 });
 
-test('(86) ett nått mål visas som klart med grön stapel och sin egen text', async (t) => {
+test('(86) ett nått mål visas som klart med guldstapel och sin egen text', async (t) => {
   const { dom } = await starta(
     t,
     planInloggad(() => manadssvar([]), () => null, () => RAKNINGAR_TOM, () =>
@@ -3785,8 +3785,8 @@ test('(86) ett nått mål visas som klart med grön stapel och sin egen text', a
   // Statusen kommer ur svaret: app.js jämför inget sparat belopp med något mål.
   assert.equal(malstatusklass(rad), 'goal-klart');
   assert.equal(celltext(rad, 'goal-note'), 'Målet är nått');
-  // Den gröna stapeln är klassen goal-bar-klart, som .goal-bar-klart i
-  // src/web/style.css fyller med temats gröna ton.
+  // Guldstapeln är klassen goal-bar-klart, som .goal-bar-klart i
+  // src/web/style.css fyller med --guld-grafik (ARKITEKTUR.md del 9).
   assert.equal(stapelfyllning(rad).getAttribute('class'), 'goal-bar goal-bar-klart');
   // Hundra procent fyller hela bredden, och ett överskridet mål har noll kvar —
   // båda är klippta av src/core/goal.js och inte här.

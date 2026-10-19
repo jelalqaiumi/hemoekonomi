@@ -7,6 +7,18 @@ import fs from 'node:fs/promises';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import {
+  attributeMap,
+  contrast,
+  luminance,
+  over,
+  parseHex,
+  readThemes,
+  resolveToken,
+  shift,
+  stripComments
+} from './helpers/tema.js';
+
 const IMAGE_PATH = fileURLToPath(new URL('../src/web/bilder/hero.png', import.meta.url));
 const TEMA_PATH = fileURLToPath(new URL('../src/web/tema.css', import.meta.url));
 const LANDNING_CSS_PATH = fileURLToPath(new URL('../src/web/landning.css', import.meta.url));
@@ -48,89 +60,6 @@ test('(H10) hero-bilden är en PNG på 1920 x 1080 och högst 400 000 byte', asy
 });
 
 // --- (H11) --------------------------------------------------------------
-
-function stripComments(css) {
-  return css.replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
-// Tokenvärdena ur ett :root-block. Kommentarerna är redan borttagna.
-function readDeclarations(block) {
-  const tokens = new Map();
-  for (const match of block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
-    tokens.set(match[1], match[2].trim());
-  }
-  return tokens;
-}
-
-// Det ljusa läget är det första :root { … }; det mörka är det ljusa med
-// :root { … } inuti @media (prefers-color-scheme: dark) ovanpå. Det mörka
-// lägets egna deklarationer returneras dessutom för sig.
-function readThemes(css) {
-  const text = stripComments(css);
-  const light = /:root\s*\{([^}]*)\}/.exec(text);
-  assert.ok(light, 'tema.css har inget :root { … }');
-  const media = text.indexOf('@media (prefers-color-scheme: dark)');
-  assert.notEqual(media, -1, 'tema.css har inget @media (prefers-color-scheme: dark)');
-  const dark = /:root\s*\{([^}]*)\}/.exec(text.slice(media));
-  assert.ok(dark, 'det mörka läget har inget :root { … }');
-  const lightTokens = readDeclarations(light[1]);
-  const darkOwn = readDeclarations(dark[1]);
-  const darkTokens = new Map([...lightTokens, ...darkOwn]);
-  return { lightTokens, darkTokens, darkOwn };
-}
-
-// var(--x) löses upp tills värdet är en hexkod.
-function resolveToken(tokens, name, mode) {
-  let value = tokens.get(name);
-  const seen = new Set([name]);
-  for (;;) {
-    assert.notEqual(value, undefined, `${mode}: ${name} saknas i tema.css`);
-    const reference = /^var\((--[a-z0-9-]+)\)$/.exec(value);
-    if (reference === null) {
-      return value;
-    }
-    assert.ok(!seen.has(reference[1]), `${mode}: ${name} refererar till sig själv`);
-    seen.add(reference[1]);
-    value = tokens.get(reference[1]);
-  }
-}
-
-function parseHex(value, label) {
-  const match = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(value);
-  assert.ok(match, `${label} är ${value}, inte en hexkod med 6 eller 8 siffror`);
-  const digits = match[1];
-  return {
-    r: parseInt(digits.slice(0, 2), 16),
-    g: parseInt(digits.slice(2, 4), 16),
-    b: parseInt(digits.slice(4, 6), 16),
-    a: match[2] === undefined ? 1 : parseInt(match[2], 16) / 255,
-    hex: value.toLowerCase(),
-    hasAlpha: match[2] !== undefined
-  };
-}
-
-// c = a * s + (1 - a) * b, kanal för kanal.
-function over(top, base) {
-  const mix = (s, b) => top.a * s + (1 - top.a) * b;
-  return { r: mix(top.r, base.r), g: mix(top.g, base.g), b: mix(top.b, base.b), a: 1 };
-}
-
-function shift(color, delta) {
-  const clamp = (v) => Math.min(255, Math.max(0, v + delta));
-  return { r: clamp(color.r), g: clamp(color.g), b: clamp(color.b), a: 1 };
-}
-
-function luminance(color) {
-  const channel = (c) => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
-}
-
-function contrast(light, dark) {
-  return (luminance(light) + 0.05) / (luminance(dark) + 0.05);
-}
 
 const HERO_TOKENS = [
   '--hero-fokus',
@@ -480,10 +409,7 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   // stilmallarnas href är exakt /tema.css och /landning.css, i den ordningen.
   const stylesheets = [];
   for (const [tag] of htmlUtanKommentarer.matchAll(/<link\b[^>]*>/gi)) {
-    const attributes = new Map();
-    for (const match of tag.matchAll(/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g)) {
-      attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4]);
-    }
+    const attributes = attributeMap(tag);
     const rel = (attributes.get('rel') ?? '').toLowerCase().split(/\s+/).filter(Boolean);
     assert.ok(
       rel.length === 1 && (rel[0] === 'icon' || rel[0] === 'stylesheet'),

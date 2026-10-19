@@ -11,33 +11,33 @@
    --traffyta, --radie-kort och --radie-liten och läses därifrån.
 
    Kontrast, uppmätt med WCAG-formeln (L = 0,2126 R + 0,7152 G + 0,0722 B på
-   linjäriserade kanaler, kvoten (Lljus + 0,05) / (Lmörk + 0,05)) för varje
-   kombination filen inför. Kravet är 4,5:1 för brödtext och 3:1 för stor text
-   och grafik:
+   linjäriserade kanaler, kvoten (Lljus + 0,05) / (Lmörk + 0,05)). Kravet är
+   4,5:1 för brödtext och 3:1 för stor text och grafik. Talen är
+   tests/tema.test.js:s, som räknar dem ur tema.css (ARKITEKTUR.md del 9):
 
      kombination                        ljust läge   mörkt läge   krav
-     --text på --bakgrund                 16,41:1      12,21:1    4,5
+     --text på --bakgrund                 16,41:1      12,39:1    4,5
      --text på --yta                      17,89:1       9,83:1    4,5
-     --text-svag på --yta                  7,61:1       7,39:1    4,5
-     --text-svag på --bakgrund             6,98:1       9,19:1    4,5
+     --text-svag på --yta                  7,13:1       7,92:1    4,5
+     --text-svag på --bakgrund             6,54:1       9,98:1    4,5
      --fel-text på --yta                   7,43:1       5,35:1    4,5
-     --fel-text på --bakgrund              6,81:1       6,65:1    4,5
+     --fel-text på --bakgrund              6,81:1       6,75:1    4,5
      --lank på --yta                      10,13:1       5,70:1    4,5
-     --lank på --yta-mjuk                  8,99:1       6,40:1    4,5
-     --ikon-gron på --yta                  6,69:1       5,20:1    4,5
+     --lank på --yta-mjuk                  8,95:1       6,40:1    4,5
+     --ikon-grabla på --yta                7,13:1       7,11:1    4,5
      --knapp-fylld-text på knappens yta   10,13:1       5,67:1    4,5
-     --positiv på --yta                    3,45:1       5,85:1    3
-     --negativ på --yta                    4,38:1       5,35:1    3
+     --positiv på --yta                    5,67:1       5,53:1    4,5
+     --negativ på --yta                    7,43:1       5,35:1    4,5
      --ikon-bla på --yta                  10,13:1       5,70:1    3
-     --text-pa-mork på --bla-marin        12,21:1      12,21:1    4,5
-     --text-svag-pa-mork på --bla-marin    9,19:1       9,19:1    4,5
-     --guld på --bla-marin                 4,71:1       4,71:1    3
+     --guld-grafik på --yta                4,44:1       4,82:1    3
+     --text-pa-mork på --bla-marin        12,39:1      12,39:1    4,5
+     --text-svag-pa-mork på --bla-marin    9,98:1       9,98:1    4,5
+     --guld på --bla-marin                 6,08:1       6,08:1    3
 
-   --positiv och --negativ ligger under 4,5:1 mot --yta i det ljusa läget och
-   bär därför bara beloppet på raden Kvar att leva på, som är 1,5rem och fet,
-   alltså stor text med kravet 3:1. Feltexterna är 0,875rem, alltså brödtext,
-   och kan därför inte bära --negativ: de bär --fel-text. --guld bär ingen text
-   i den här filen, bara sidomenyns hårfina ram, som är grafik. */
+   --positiv och --negativ når 4,5:1 i båda lägena och bär därför beloppen
+   både på raden Kvar att leva på och i tabellernas celler. --guld bär ingen
+   text i den här filen, bara sidomenyns hårfina ram, som är grafik på
+   --bla-marin. */
 
 * {
   box-sizing: border-box;
@@ -145,10 +145,10 @@ main {
 /* Ramen är --text-svag och inte --kant, som korten har. Skälet är uppmätt: ett
    fält har samma yta som kortet det står i, så ramen är det enda som visar var
    fältet börjar — ett tomt fält utan synlig ram är en kontroll användaren inte
-   kan hitta, och kravet 3:1 för grafik gäller då ramen. --kant ger 1,43:1 i det
-   ljusa läget och 1,31:1 i det mörka mot --yta, alltså under gränsen, medan
-   --text-svag ger 7,61:1 respektive 7,39:1. Korten behåller --kant: ett kort är
-   ingen kontroll, och dess ram bär ingen information. */
+   kan hitta, och kravet 3:1 för grafik gäller då ramen. Ramen läser därför
+   --text-svag, som ger 7,13:1 mot --yta i det ljusa läget och 7,92:1 i det
+   mörka. Korten behåller --kant: ett kort är ingen kontroll, och dess ram bär
+   ingen information. */
 .field input,
 .field select {
   width: 100%;
@@ -297,8 +297,8 @@ button:disabled:hover {
    --morkt-block, som är --bla-marin i båda lägena: menyn ska vara mörk också när
    resten av sidan är ljus. I det mörka läget är --bakgrund samma ton som
    --bla-marin, och då skulle menyn flyta in i sidan — därför ramen i --guld, som
-   är den enda ton i temat som når 3:1 mot --bla-marin (uppmätt 4,71:1) och
-   samtidigt syns mot --bakgrund i det ljusa läget. Ramen är grafik och bär ingen
+   ger 6,08:1 mot --bla-marin och samtidigt syns mot --bakgrund i det ljusa
+   läget. Ramen är grafik och bär ingen
    text.
 
    Utgångsläget är en rad överst: symbolen och namnet till vänster, adressen
@@ -442,11 +442,10 @@ button:disabled:hover {
 }
 
 /* Noll räknas som positivt: en budget som går jämnt upp är inget problem.
-   --positiv och --negativ är temats två valda toner för inkomst och utgift, och
-   det här är deras enda användare: de ersätter de handskrivna färgerna de två
-   klasserna bar före det här steget. Båda ligger under 4,5:1 mot --yta i det
-   ljusa läget, men beloppet är 1,5rem och fet, alltså stor text med kravet 3:1
-   (uppmätt 3,45:1 respektive 4,38:1). */
+   --positiv och --negativ är temats två toner för inkomst och utgift. Båda
+   når 4,5:1 mot --yta i båda lägena (5,67:1 och 7,43:1 ljust, 5,53:1 och
+   5,35:1 mörkt), eftersom klasserna också står på tabellceller i normal
+   storlek. */
 .left-positive {
   color: var(--positiv);
 }
@@ -512,10 +511,10 @@ button:disabled:hover {
 }
 
 /* Märket på en post som kommer från en mall. Tecknet står i app.js; här är bara
-   färgen och storleken. Märket är 1,1rem, alltså brödtext, och --ikon-gron når
-   4,5:1 i båda lägena (6,69:1 ljust, 5,20:1 mörkt mot --yta). */
+   färgen och storleken. Märket är 1,1rem, alltså brödtext, och --ikon-grabla
+   når 4,5:1 i båda lägena (7,13:1 ljust, 7,11:1 mörkt mot --yta). */
 .item-recurring {
-  color: var(--ikon-gron);
+  color: var(--ikon-grabla);
   font-size: 1.1rem;
   cursor: help;
 }
@@ -577,7 +576,7 @@ button:disabled:hover {
 }
 
 /* Förfallen: röd text. Dagtexten är 0,875rem, alltså brödtext, och bär därför
-   --fel-text och aldrig --negativ - samma val som fältfelen gör, av samma skäl
+   --fel-text - samma val som fältfelen gör
    (uppmätt 7,43:1 mot --yta och 5,35:1 i det mörka läget). Hela raden färgas,
    så att namnet och beloppet läses tillsammans med dagtexten. */
 .bill-forfallen,
@@ -585,12 +584,13 @@ button:disabled:hover {
   color: var(--fel-text);
 }
 
-/* Påminnelse: guldram. --guld bär ingen text i det här temat - den når 2,83:1
-   mot vitt - men en ram är grafik med kravet 3:1, och det är just den rollen
-   den har här. Ramen ligger runt hela raden och ersätter radens undre linje, så
-   att två påminnelser intill varandra inte får en dubbel kant. */
+/* Påminnelse: guldram. Ramen är grafik med kravet 3:1, och loggans guld når
+   bara 2,22:1 mot vitt (ARKITEKTUR.md del 9, körning 2; ingen rad i testets
+   tabell), så ramen läser --guld-grafik: 4,44:1 mot --yta i det ljusa läget och
+   4,82:1 i det mörka. Ramen ligger runt hela raden och ersätter radens undre
+   linje, så att två påminnelser intill varandra inte får en dubbel kant. */
 .bill-paminnelse {
-  border: 2px solid var(--guld);
+  border: 2px solid var(--guld-grafik);
   border-radius: var(--radie-knapp);
   padding: 0.65rem 0.6rem;
 }
@@ -686,18 +686,18 @@ button.bill-paid:hover {
   fill: var(--ikon-bla);
 }
 
-/* Ett nått mål: grön stapel (ARKITEKTUR.md under "Gränssnittet"). --ikon-gron är
-   temats gröna ton för grafik och ljusnar med ytan i det mörka läget, samma
-   användning som märket för en återkommande post har. */
+/* Ett nått mål: guldstapel (ARKITEKTUR.md under "Gränssnittet" och del 9).
+   --guld-grafik når 3:1 mot --kant, spåret bakom stapeln: 3,11:1 ljust och
+   3,68:1 mörkt. Den skiljer sig från .goal-bar, som är blå. */
 .goal-bar-klart {
-  fill: var(--ikon-gron);
+  fill: var(--guld-grafik);
 }
 
 /* Ett försenat mål: röd ram runt hela raden (ARKITEKTUR.md under
    "Gränssnittet"). Samma form och samma skäl som .bill-paminnelse ovan - ramen
    ersätter radens undre linje, så att två försenade mål intill varandra inte får
    en dubbel kant. --negativ är temats röda ton; en ram är grafik med kravet 3:1,
-   och tonen ligger på 4,38:1 mot --yta enligt mätningen vid .left-negative. */
+   och tonen ligger på 7,43:1 mot --yta enligt mätningen vid .left-negative. */
 .goal-forsenat {
   border: 2px solid var(--negativ);
   border-radius: var(--radie-knapp);
@@ -820,7 +820,7 @@ button.goal-deposit:hover {
 }
 
 /* Staplarna är grafik och inte text, så kravet är 3:1. --ikon-bla är stapelns
-   och pilens ton ur loggan och ljusnar med ytan i det mörka läget (10,13:1
+   ton ur den klarare blå familjen och ljusnar med ytan i det mörka läget (10,13:1
    ljust, 5,70:1 mörkt mot --yta). */
 .chart-bar {
   fill: var(--ikon-bla);
@@ -843,9 +843,9 @@ button.goal-deposit:hover {
 }
 
 /* Staplarna är grafik och inte text, så kravet är 3:1. --positiv och --negativ
-   är temats två valda toner för inkomst och utgift, samma par som raden Kvar
-   att leva på bär: 3,45:1 respektive 4,38:1 mot --yta i det ljusa läget och
-   5,85:1 respektive 5,35:1 i det mörka. */
+   är temats två toner för inkomst och utgift, samma par som raden Kvar att
+   leva på bär: 5,67:1 respektive 7,43:1 mot --yta i det ljusa läget och
+   5,53:1 respektive 5,35:1 i det mörka. */
 .overview-bar-positive {
   fill: var(--positiv);
 }

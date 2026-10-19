@@ -109,7 +109,7 @@ const SEED_BILLS = Object.freeze([
 //
 //    8  slutdatum åtta månader bort, en bit kvar  -> pagaende, vanlig rad
 //   -2  slutdatum har passerat, en bit kvar       -> forsenat, röd ram
-//    4  insättningarna överstiger målet           -> klart, grön stapel
+//    4  insättningarna överstiger målet           -> klart, guldstapel
 //
 // null betyder inget slutdatum alls: ett sparmål utan slutdatum är giltigt, det
 // har bara ingen månadstakt och kan inte vara försenat. Pension finns för att

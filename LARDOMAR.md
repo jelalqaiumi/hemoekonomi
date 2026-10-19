@@ -4381,3 +4381,314 @@ och `<span class="markesnamn">Hem och Ekonomi</span>` två gånger i
 mutationskolumn och ge `EXIT=1`. En mening i specen som beskriver vad en ändring
 *inte* gör ska skilja på uppmärkning och det som visas: skriv "uppmärkningen
 ändras inte", aldrig "ingen synlig text ändras", när texten döljs med CSS.
+
+### 2026-10-14 — test: del 9:s spärr mot grönt släpper igenom grönt i stavningar som inte står i mutationslistan
+**Vad gick fel:** Återfall av posterna 2026-10-14 ("kaskadspärrens led 3 och
+(H9) går förbi med en annan stavning av samma sak") och 2026-10-13 ("(H12) och
+(H13) kräver att en regel innehåller en deklaration, men inte att den vinner
+kaskaden"). Granskaren byggde (FA1)–(FA6) bokstavligt efter kravlistan i
+`ARKITEKTUR.md` del 9 i en kopia under scratchpad. I kopian var paket 3 simulerat
+och `tema.css` ersatt av spec-blocket. Mot det trädet fälls alla 27 mutationer i
+kravlistan utom (24). Följande gav ändå var för sig `ℹ fail 0` och `EXIT=0` med
+`tests/hero.test.js`, `server`, `priser`, `demo`, `logga` och de simulerade
+FA-testen:
+- (G1) en andra regel `:root { --yta-mjuk: #2e8b57; }` sist i `tema.css`;
+- (G2) regeln `html { --positiv: #2e8b57; }` sist i `tema.css`;
+- (G6) `  --X-prov: #2e8b57;` och (G7) `  --x_prov: #2e8b57;` i det ljusa `:root`;
+- (G8) `    --yta-mjuk: #2e8b57` **utan semikolon** som sista rad i det mörka
+  lägets `:root`. Webbläsaren får då en grön `--yta-mjuk` i mörkt läge, medan
+  (FA1) fortsätter att räkna med `#04356f`;
+- (G3) `color: seagreen;` i `style.css` och (G4) `stroke: green;` i
+  `landning.css`, som (FA4) inte ser eftersom den bara söker hexkoder och
+  färgfunktioner;
+- (G5) attributet `fill="#2e8b57"` på en `<rect>` i `landning.html`, trots att
+  kommentaren överst i `tema.css` säger att den är "den enda stilmallen eller
+  sidan i src/web/ som får innehålla en hexkod".
+
+En kommentarmarkör i en sträng (`content: "/*"` … `"*/"`) runt
+`.sv-fyll-grabla { fill: #2e8b57; }` i `landning.css` gav också `EXIT=0`. Del 9
+nämner inte den gränsen, och användarens beslut att godta den gällde bara
+kaskadspärren.
+**Varför:** (FA2)(a) och (b) läser bara de deklarationer som `readDeclarations`
+hittar i det första `:root` och i det första mörka `:root`. Mönstret
+`/(--[a-z0-9-]+)\s*:\s*([^;]+);/g` ser varken namn med versaler eller
+understreck eller en sista deklaration utan semikolon, och text utanför de två
+blocken prövas inte alls. Regeln är skriven om färgen, men den prövas bara på
+det parsern råkar se. (FA2)(b) stänger ute namngivna färger i `tema.css`, men
+samma stavning glömdes i (FA4), och ingen punkt läser sidorna.
+**Regel framåt:** En spärr som ska garantera att något *inte finns* i en fil ska
+läsa hela filen och inte bara det en parser plockar ut. För del 9 betyder det
+följande:
+1. (FA2)(a) tar ut varje hexkod ur hela den kommentarfria `tema.css`.
+2. (FA2) kräver att den kommentarfria texten bara består av blanktecken när de
+   två `:root`-blocken och `@media (prefers-color-scheme: dark) { … }` har
+   tagits bort. Den kräver också att varje block bara består av blanktecken när
+   de lästa deklarationerna har tagits bort.
+3. (FA4) avvisar också namngivna färger, åtminstone
+   `/\b\w*(green|lime|olive|teal)\w*\b/i`.
+4. En punkt läser `landning.html` och `index.html` och avvisar `fill=`,
+   `stroke=` och `color=` med en hexkod.
+
+Mutationerna (G1)–(G8) ska stå i kravlistan och ge `EXIT=1`. Gränsen med
+kommentarmarkörer i strängar ska stå under en egen rubrik "Det spärren inte
+fångar [del 9]", annars ska kommentarborttagningen göras strängmedveten.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — test: inget skyddar (FA1):s krav på det uppmätta värdet, eftersom #c48a12 ger 4,497 och inte 4,50
+**Vad gick fel:** Återfall av posten 2026-08-23 ("gränsvärdespåstående om
+flyttal skrevs ned utan att köras"). `ARKITEKTUR.md` del 9 säger att `#c48a12`
+"gav exakt 4,50:1 (rad 70) och valdes bort, eftersom marginalen är noll".
+Mutation (4) motiveras med "(kravet håller med 4,50, rad 70, men värdet är inte
+5,17 och ska därför fälla jämförelsen)". F9-10 säger att mutation (4) visar
+varför (FA1) kräver det uppmätta värdet. Kvoten för `#0b2c63` på `#c48a12` är
+`4.496945264081082`, med samma formel som (H11), alltså **under** 4,5. Talet
+`4,50` i `del9-kandidater.out` är en avrundning, och mutation (4) fälls därför
+redan av kravet. Granskaren tog bort
+`assert.equal(kvot.toFixed(2).replace('.', ','), uppmätt)` ur den simulerade
+(FA1) och körde mutation (1)–(5). Alla fem gav `EXIT=1` ändå. Den del av testet
+som F9-10 bygger hela sitt beslut på fälls alltså inte av någon mutation.
+**Varför:** Ett tal med två decimaler lästes som exakt. Mutationen valdes för
+att ligga på gränsen, men gränsen prövades mot det avrundade talet och inte mot
+det beräknade.
+**Regel framåt:** Ett påstående om att ett värde ligger *på* en gräns ("exakt
+4,50", "marginalen är noll", "kravet håller") får skrivas först när det
+oavrundade värdet har skrivits ut med minst sex decimaler och klistrats in. En
+mutation som ska visa att ett delvillkor behövs ska ha ett värde som klarar alla
+andra villkor med marginal. Här betyder det att `--guld-mork` ska muteras till en
+ton som ger mellan 4,6:1 och 5,1:1 mot `--bla-marin`, med det oavrundade talet
+utskrivet. Kontrollen är att ta bort just det delvillkoret i en kopia, köra
+mutationen och kräva att den då överlever.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — dokumentation: del 7:s "Färgerna, bindande" säger att --bakgrund är #022d68 i mörkt läge, men del 9 ändrar värdet
+**Vad gick fel:** Återfall av posten 2026-10-13 ("del 7 beskriver fortfarande
+den tillfälliga bilden i presens efter bytet till den slutliga"). Del 9 byter
+`--bla-marin` från `#022d68` till `#0b2c63`. Ändå står det fortfarande i presens
+i `ARKITEKTUR.md`, under del 7:s "Färgerna, bindande" på rad 13861:
+"`--bakgrund` är `#f7f5ef` i ljust läge och `var(--bla-marin)`, alltså
+`#022d68`, i mörkt läge". Rad 15299–15300 säger att vågen ger 7,55:1 i mörkt
+läge. Med del 9:s värde ger samma par (`#0b2c63` mot `#a3c6f2`) `7,67` enligt
+granskarens körning. Rad 14059–14060 beskriver headerns text som `#022d68`. Del
+9:s sökning efter åldrade meningar gällde bara `grön|gröna|grönt|gron`, så ingen
+av raderna står i tabellen "Åldrade meningar om grönt".
+**Varför:** Sökningen förankrades i ordet för beslutet ("grönt") och inte i de
+värden beslutet ändrar. Värdebytena för `--bla-marin` och `--text-svag` söktes
+aldrig upp. Den allmänna meningen "Där del 3, del 7 eller del 8 säger något
+annat om färger gäller del 9" lämnar ändå två svar i samma fil.
+**Regel framåt:** När en del byter värde på en token ska den gamla hexkoden och
+varje kontrasttal som räknats med den sökas upp i hela `ARKITEKTUR.md`. Här
+betyder det `grep -niE "022d68|4a5560|c9d8ea|d64545|1e9e5a|4,71:1|7,55:1"`. Varje
+träff skrivs om i dåtid eller får en hänvisning till den nya delen. En allmän
+mening om att en senare del gäller ersätter inte den sökningen.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — dokumentation: "Omskrivningen kördes inte om" står kvar fast koordinatorn körde om den
+**Vad gick fel:** Återfall av posten 2026-10-11 ("steg 5 lämnades vidare med
+sju 'inte körd'- och 'Byggaren ska'-rader"). F9-12 i `ARKITEKTUR.md` del 9 säger
+om kommentarsrättningen i det föreslagna `tema.css`: "Omskrivningen kördes inte
+om. (FA6) och steg 11 i paket 3 prövar den." Koordinatorn körde om
+`del9-verifiera.mjs` efter att `ARKITEKTUR.md` senast sparades
+(`del9-verifiera-2.out` 19:53:51, `ARKITEKTUR.md` 19:53:35). I den körningen ger
+rad 132 `ord grön/gron: false`, och slutraden är `ALLT OK`. Granskarens
+omkörning gav samma utfall och `EXIT=0`. Utfallet står bara i scratchpad.
+**Varför:** Meningen skrevs innan körningen fanns, och ingen gick tillbaka och
+förde in utfallet när den fanns.
+**Regel framåt:** Innan ett paket lämnas vidare ska den som rättar köra
+`grep -nE "kördes inte|inte kör(t|d|da)|ingen körning"` över den egna delen. Om
+en körning finns för en träff skrivs meningen om i dåtid, med kommandot och de
+utdatarader som avgör frågan. En körning som bara står i scratchpad räknas inte
+som redovisad.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — test: (FA5) kan inte fälla mutation (24), eftersom klassen står kvar i gruppselektorn
+**Vad gick fel:** Mutation (24) i `ARKITEKTUR.md` del 9 byter
+`.sv-linje-grabla {` mot `.sv-linje-grabla-x {` i `landning.css` och ska fällas
+av (FA5). (FA5) kräver bara att `.` + klassordet, följt av ett tecken utanför
+`[a-zA-Z0-9_-]`, förekommer någonstans i den kommentarfria `landning.css`. Efter
+paket 3 står `.sv-linje-grabla,` kvar i gruppselektorn, alltså dagens rad 243
+som paket 3 steg 3 byter från `.sv-linje-gron,`. I den simulerade körningen gav
+mutationen därför `EXIT=0` och `ℹ fail 0`, medan (1)–(23) och (25)–(27) gav
+`EXIT=1` med punktens egen kryssrad. Ikonlinjen tappar sin färg utan att något
+test faller.
+**Varför:** Kravet skrevs om att klassnamnet *förekommer* i en selektor. Det som
+ska skyddas är att klassen har en regel som ger den färg. Ankaret gav exakt en
+träff, men ingen prövade om en annan förekomst av samma namn uppfyller kravet
+ändå. Det är samma form som posten 2026-10-13 om sonden `hero-ekonomi.jpeg`.
+**Regel framåt:** Ett krav på att en klass har en regel ska kräva en regel vars
+hela selektor är exakt `.klassen` och vars kropp har `fill:` eller `stroke:`. En
+förekomst i en gruppselektor räcker inte. En mutation som byter en förekomst av
+ett namn ska åtföljas av `grep -c` på namnet utan omgivning. Ger det mer än `1`
+ska det skrivas ut varför de andra förekomsterna inte uppfyller kravet. En
+mutation förs in i kravlistan först efter att den har körts mot ett träd där
+paketet är simulerat.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — process: PLAN.md och del 9 ger olika besked om kontrasttalen i style.css efter paket 2, och tema.css påstår att 2,22 är testets tal
+**Vad gick fel:** Klar-när för paket 2 i `PLAN.md` kräver att "Varje kontrasttal
+i kommentarerna i `tema.css` och `style.css` stämmer med testets uträkning".
+`ARKITEKTUR.md` del 9 säger däremot, under "Byggarens instruktioner", att
+kommentarerna i `style.css` skrivs om först i paket 3 och att "granskaren av
+paket 2 räknar inte det som ett fel". Spec-blocket för `tema.css` säger dessutom
+att "talen i kommentarerna nedan är testets". Två av kommentarerna anger `2,22:1`
+för loggans guld mot vitt, men det paret står inte i `CONTRAST_ROWS`. Det står
+under "Det tabellen inte täcker", och ingen punkt räknar det. Värdet i sig
+stämmer: granskarens körning gav `2.22`.
+**Varför:** Planen skrevs före beslutet att dela kommentarsrättningen mellan
+paket 2 och 3, och den lästes inte om när specen gjorde det. Meningen om att
+talen är testets skrevs om kontrasttabellen, men kommentarerna innehåller också
+tal från "Det tabellen inte täcker".
+**Regel framåt:** När specen ändrar vad ett paket ska leverera skrivs Klar-när i
+`PLAN.md` om i samma ändring. Ett tal i en kommentar som påstås vara "testets"
+ska ha en rad i testets tabell, annars ska kommentaren säga att just det talet
+inte prövas. Kontrollen är att plocka ut varje `[0-9]+,[0-9]{2}:1` ur
+spec-blocket och kräva en motsvarande rad i `CONTRAST_ROWS`.
+
+### 2026-10-14 — dokumentation: regeln för grönt hänvisar till en formel i en scratchpad-fil som inte är en projektfil
+**Vad gick fel:** "Regeln för grönt (bindande)" i `ARKITEKTUR.md` del 9 säger att
+"Nyans och mättnad räknas ur kanalerna R, G och B med formeln i
+`del9-kandidater.mjs` (sektion A)". `hueSaturation` i kravlistan har kroppen
+`/* formeln i del9-kandidater.mjs, sektion A */`. Samma avsnitt säger att
+skripten "finns kvar i scratchpad-katalogen men är inga projektfiler". En
+bindande regel bygger alltså på en fil som inte finns i projektet och som
+försvinner med sessionen, och var gränserna 70 och 175 hamnar beror på exakt
+formel.
+**Varför:** Mätskripten fick fungera som facit, eftersom arkitekten inte kunde
+köra dem själv och därför hänvisade till dem i stället för att skriva av
+formeln.
+**Regel framåt:** En bindande formel skrivs ut i `ARKITEKTUR.md`, i kod eller som
+matematik. Här gäller det hela HSL-omräkningen: max, min, l,
+s = d / (1 − |2l − 1|) och de tre fallen för nyansen. Ett skript i scratchpad
+får citeras som det som gav ett tal, men aldrig som det enda stället där regeln
+står.
+
+### 2026-10-14 — test: (FA4) läser en fast lista med tre filer, så en ny stilmall med grönt passerar
+**Vad gick fel:** Återfall av posten 2026-10-14 ("del 9:s spärr mot grönt släpper
+igenom grönt i stavningar som inte står i mutationslistan"). F9-13 i
+`ARKITEKTUR.md` säger att spärren nu är "förankrad i rollen 'varje färgvärde som
+kan nå sidan'". (FA4) räknar ändå upp sina filer vid namn: `landning.css`,
+`style.css` och `demo/banner.css`. Granskaren byggde paket 3 i en kopia direkt ur
+ersättningslistan och kodblocken i del 9 och skrev (FA1)–(FA8) bokstavligt. I den
+kopian lades filen `src/web/demo/extra.css` med raden
+`.x { color: seagreen; }` till. Körningen av `tests/gr9fa.test.js`, `priser`,
+`server`, `hero`, `demo` och `logga` gav `ℹ fail 0`. (FA3) läser samma fil,
+eftersom den går rekursivt genom `src/web`, men den prövar bara `var()`. Ingen
+punkt prövar färgerna i en ny stilmall. `demo/banner.css` laddas redan av
+`banner.js` och inte av en `<link>` i sidan, så (FA7):s låsta lista med
+stilmallar hindrar inte en ny fil som läses in på samma sätt. Avsnittet "Det
+spärren inte fångar [del 9]" nämner inte gränsen.
+**Varför:** Rättningen utgick från granskarens mutationer, som alla gällde de
+filer som fanns. Ingen mutation lade till en fil, och därför blev filurvalet i
+(FA4) aldrig prövat. (FA3) och (FA4) skrevs i samma ändring men väljer filer på
+två olika sätt.
+**Regel framåt:** En spärr som ska gälla "varje fil av ett slag" väljer filerna
+med samma rekursiva sökning som andra spärrar över samma katalog. Här betyder det
+varje `.css` under `src/web/` utom `tema.css`, med kravet att minst tre filer
+lästes. Den listar aldrig filnamn. Mutationslistan ska ha en rad som lägger till
+en ny fil med en grön färg, här `src/web/demo/extra.css` med
+`.x { color: seagreen; }`, och raden ska ge `EXIT=1`.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — process: rättningen av PLAN.md ändrade "Klar när" för paket 3 men inte dess "Uppgift", som fortfarande talar om två test
+**Vad gick fel:** Återfall av posterna 2026-10-14 ("PLAN.md och del 9 ger olika
+besked om kontrasttalen i style.css …") och 2026-09-07 ("rättningen av 'beskriver
+kod som inte längre ser ut så' gjordes till hälften"). Efter rättningen kräver
+"Klar när" för paket 3 i `PLAN.md` att "(FA2)–(FA8) i ARKITEKTUR.md del 9
+passerar". Kolumnen "Uppgift" på samma rad säger fortfarande "Skriv de två test
+som kravlistan anger" och beskriver bara dagens (FA2) och (FA3). Den beskriver
+dessutom (FA3) som "varje `var(--namn)` i `src/web` är definierat i `tema.css`",
+medan (FA3) också godtar en deklaration i samma fil. Paket 3 skriver sju testfall,
+(FA2)–(FA8).
+**Varför:** Lärdomens regel nämnde "Klar när", och rättningen gjordes där och
+ingen annanstans. Raden i `PLAN.md` lästes inte om i sin helhet.
+**Regel framåt:** Ändras det som ett paket ska leverera skrivs hela paketets rad
+i `PLAN.md` om, både "Uppgift" och "Klar när". Ett antal ("de två test") skrivs
+inte i `PLAN.md` när kravlistan i `ARKITEKTUR.md` bär antalet. Skriv i stället
+"de test som kravlistan i del 9 anger för paket 3". Kontrollen är att söka efter
+varje räkneord i paketets rad och jämföra det med kravlistan.
+
+### 2026-10-14 — test: (FA7)(d) ser bara `<link>` med dubbla citattecken och `rel` i gemener
+**Vad gick fel:** Återfall av posten 2026-10-14 ("kaskadspärrens led 3 och (H9)
+går förbi med en annan stavning av samma sak"). (FA7) i `tests/tema.test.js`
+läser `rel` och `href` med `/\srel\s*=\s*"([^"]*)"/i` och prövar
+`rel[1].includes('stylesheet')`. Det missar tre giltiga stavningar av samma
+stilmall. Granskaren körde var och en i en kopia av trädet, med `index.html`
+där en andra `<link>` lades in efter `<link rel="stylesheet" href="/style.css" />`:
+- `<link rel="Stylesheet" href="/extra.css" />`;
+- `<link rel=stylesheet href=/extra.css />`;
+- `<link rel='stylesheet' href='/extra.css' />`.
+
+Alla tre gav `ℹ fail 0` och `EXIT=0`. Webbläsaren läser `rel` utan hänsyn till
+skiftläge och godtar alla tre citatformerna, så alla tre laddar stilmallen.
+Ligger filen i `src/web` fälls den ändå av (FA4). En extern stilmall går däremot
+förbi alla kontroller. Mutationslistan för (FA7) i `ARKITEKTUR.md` har bara
+stavningen med dubbla citattecken och gemener (mutation (42)), och byggarens
+egna mutationer E1–E9 prövar ingen annan.
+**Varför:** Kravet säger "varje `<link` vars `rel` innehåller `stylesheet`".
+Spärren byggdes för den stavning sidorna använder i dag, och mutationen skrevs i
+samma stavning. Därför kunde den bara visa att spärren fungerar för det fall den
+redan var skriven för. `tests/hero.test.js` (led 3, krav 1) har redan en
+attributläsare som klarar alla tre citatformerna och läser `rel` i gemener, men
+den användes inte här.
+**Regel framåt:** (FA7)(d) läser attributen med led 3:s mönster
+`/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g`, gör om
+attributnamnen och `rel` till gemener och delar `rel` på blanktecken innan den
+letar efter ordet `stylesheet`. Lägg mönstret i `tests/helpers/tema.js` som en
+gemensam export i stället för att skriva en tredje kopia. Mutationslistan för
+(FA7) ska ha en rad per stavning ovan, och varje rad ska ge `EXIT=1`. Skriv
+raderna i `ARKITEKTUR.md` först.
+**⚠️ ÅTERKOMMANDE (3+):** gör om detta till ett automatiskt test.
+
+### 2026-10-14 — dokumentation: rättelsen av (FA7)(d) kräver en tom `git diff HEAD -- src`, som inte kan bli tom
+**Vad gick fel:** Steg 7 i "Rättelse efter slutgranskningen av paket 3
+[(FA7)(d)]" i `ARKITEKTUR.md` del 9 kräver `git diff HEAD -- src`, "som ska vara
+tom för den här rättelsen". Paket 2 och 3 i del 9 är inte committade, så
+kommandot visar deras ändringar i `src/web/tema.css`, `landning.css`,
+`landning.html`, `style.css`, `app.js` och `demo/seed.js` oavsett vad rättelsen
+gör. Kravet kan alltså inte uppfyllas. Koordinatorn lät byggaren jämföra
+`sha256` för alla 41 filer i `src` före och efter i stället. Granskarens
+kontrollsummor från slutgranskningen av paket 3 gav samma svar: ingen fil i
+`src` ändrades av rättelsen.
+**Varför:** Kontrollen skrevs som om rättelsen började från en commit. Den
+lånades från paket 2 och 3, där `git diff HEAD -- src` läses rad för rad och
+inte krävs vara tom, och ingen körde den mot arbetsträdets läge innan den skrevs
+in.
+**Regel framåt:** Ett krav på att ett paket "inte ändrar `src`" skrivs som en
+jämförelse av kontrollsummor, inte som ett krav på tom `git diff HEAD`, så länge
+tidigare paket i samma del inte är committade. Kontrollen är
+`find src -type f | sort | xargs sha256sum` före paketet och `sha256sum -c`
+efter. Ett kommando med ett förväntat utfall ("ska vara tom", "ska ge 1") körs i
+det aktuella arbetsträdet innan det skrivs in i `ARKITEKTUR.md` (lärdomen
+2026-08-18 om testkommandot).
+
+### 2026-10-16 — lås: en inaktuell låsfil blockerar starten när Windows har gett dess pid till ett annat program
+**Vad gick fel:** `npm start` avslutades den 2026-10-15 med `EXIT=1` och rad L1,
+`Hemochekonomi kör redan i en annan process (pid 6552) mot samma datafil:
+C:\Users\qaium\AppData\Roaming\hemochekonomi\entries.json. Stäng den först …`,
+fast ingen instans av appen körde. `tasklist //FI "IMAGENAME eq node.exe"` gav
+`No tasks are running`, och pid 6552 var `RtkAudUService64` (Realteks
+ljudtjänst). Låsfilen `entries.json.lock` innehöll `6552:0e70d671-…`, hade
+skrivits 2026-10-14 16:31 och låg kvar efter en omstart. Appen gick inte att
+starta förrän låsfilen togs bort för hand, och felmeddelandet bad användaren
+stänga en process som inte har med appen att göra.
+**Varför:** `acquireOnce` i `src/server/lock.js` (rad 186–197) avgör om låset är
+övergivet enbart med `process.kill(pid, 0)`: bara `ESRCH` räknas som "död", och
+varje levande process med samma nummer räknas som appen. Ett pid-nummer är ingen
+identitet. Windows återanvänder pid:ar, och efter en omstart är det vanligt att
+en systemtjänst får det nummer appen hade. `exit`-städningen hinner inte köras
+när datorn stängs av eller processen dödas, så det är just efter en omstart som
+en kvarlämnad låsfil finns. Valet att blockera vid tvekan står i kommentaren på
+rad 141–145, men fallet "pid:en lever men är inte appen" prövades aldrig, och
+`tests/lock.test.js` har inget fall där låsfilen bär en levande främmande pid.
+**Regel framåt:** Ett lås får inte avgöra ägarskap på pid:en ensam. Märkningen
+ska också bära maskinens starttid, `Math.round((Date.now() - os.uptime() * 1000) / 1000)`
+i sekunder, och `acquireOnce` ska räkna låset som övergivet när den lagrade
+starttiden skiljer sig från den aktuella med mer än 60 sekunder, oavsett vad
+`process.kill` svarar. Formatet och toleransen skrivs i `ARKITEKTUR.md` under
+"Låset på datafilen" innan koden ändras, och märkningar i det gamla formatet
+(`<pid>:<uuid>`) ska fortsätta läsas. Rad L1 ska dessutom namnge låsfilens
+sökväg, så att användaren kan ta bort den om kontrollen ändå tar fel.
+Testfallen är obligatoriska i `tests/lock.test.js`: (1) en låsfil med en levande
+främmande pid (testprocessens förälder, `process.ppid`) och en starttid ett dygn
+bakåt ska ge att låset tas över; (2) samma pid med dagens starttid ska ge rad L1
+som i dag. Mutationen som tar bort starttidsjämförelsen ska ge `EXIT=1` med fall
+(1):s kryssrad.

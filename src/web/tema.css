@@ -4,63 +4,66 @@
    och i allt som byggs senare, läser en token med var(). Skälet är mätbart: en
    hexkod utanför :root kan inte bytas av det mörka läget, och då går temat isär.
 
-   Loggans tio toner uppmättes ur användarens tidigare logga, en png som togs
-   bort i ARKITEKTUR.md del 8, och valdes inte:
-   ett histogram över de mättade bildpunkterna, grupperade i intervall om 24
-   nivåer per kanal, med de tio största gruppernas medelvärde. Antalet
-   bildpunkter per ton står i ARKITEKTUR.md, "Färgpaletten (bindande)".
+   Temat följer loggan, hem-ekonomi-logga.svg och hem-ekonomi-logga-vit.svg i
+   src/web/bilder/ (ARKITEKTUR.md del 9). Loggans fyra toner står först och är
+   lästa ur filernas fill-attribut. Övriga toner är valda, med skälet utskrivet
+   vid varje. Ingen färg i filen har en nyans mellan 70 och 175 grader och en
+   mättnad på minst 10 procent; tests/tema.test.js prövar det.
 
-   Kontrast: varje kombination som bär text når WCAG AA. --guld på ljus
-   bakgrund gör det INTE (uppmätt 2,83:1 mot vitt och 2,59:1 mot --bakgrund)
-   och bär därför bara ytor, ikoner, ramar och stor text. Guldtext finns på ett
-   enda sätt i det här temat: --guld-ljus på --bla-marin, uppmätt 11,17:1. */
+   Kontrast: varje kombination i kontrasttabellen i ARKITEKTUR.md del 9 räknas
+   av tests/tema.test.js ur den här filen, och talen i kommentarerna nedan är
+   testets, utom 2,22:1. Det talet, loggans guld mot vitt, kommer ur körning 2
+   i ARKITEKTUR.md del 9 och är ingen rad i testets tabell. Loggans guld bär
+   därför ingen text och ingen grafik med betydelse på en ljus yta; där läser
+   grafiken --guld-grafik. */
 
 :root {
-  /* ---------------------------------------------- loggans toner (uppmätta) */
-  --gron-primar: #0b6a3b;
-  --gron-djup: #025b38;
-  --gron-ljus: #248038;
+  /* ---------------------------------------------- loggans toner (ur svg) */
+  --bla-marin: #0b2c63;
+  --gra-bla: #4a5875;
+  --gra-bla-ljus: #d6deec;
+  --guld: #e3a21a;
+
+  /* ---------------------------------------------- valda toner */
+  /* Den klarare blå familjen. Loggan har en enda mättad blå, och länkar,
+     knappar och hovring behöver fler steg. */
   --bla-primar: #014085;
-  --bla-marin: #022d68;
   --bla-mellan: #01529c;
   --bla-ljus: #0069b7;
-  --guld: #e28202;
-  --guld-mork: #d16c01;
+  /* Guldknappens hovring: loggans guld, mörkare. --bla-marin på den ger
+     5,17:1. */
+  --guld-mork: #cf961a;
+  /* Guld för grafik med betydelse på en ljus yta: stapeln för ett nått mål och
+     påminnelsens ram. 4,44:1 mot --yta, 4,07:1 mot --bakgrund och 3,11:1 mot
+     --kant. */
+  --guld-grafik: #a06e0e;
+  /* Guldtext på mörk yta: 11,34:1 mot --bla-marin. */
   --guld-ljus: #feed7e;
-
-  /* ---------------------------------------------- valda toner (tre stycken) */
-  /* --positiv och --negativ har ingen användare i landning.css: de hör till
-     den inloggade appen. I steget som lade det här temat på appen tog de över
-     färgerna bakom left-positive och left-negative i src/web/style.css, och
-     där är deras enda användare. Båda står i ARKITEKTUR.md:s palett och ska
-     därför inte tas bort för att sökningen efter dem i landning.css ger noll
-     träffar. */
   /* Varm off-white. Rent vitt mot så mättade toner ger hård kontrast. */
   --bakgrund: #f7f5ef;
-  /* Inkomster. Ljusare än --gron-primar så att ett belopp inte läses som yta. */
-  --positiv: #1e9e5a;
-  /* Utgifter. Rött finns inte i loggan, men ett negativt belopp måste skilja
-     sig från guld. */
-  --negativ: #d64545;
-  /* Feltext. --negativ är gjord för ett belopp i stor text och ger 4,38:1 mot
-     --yta, alltså under 4,5:1 — ett felmeddelande i appen är 0,875rem och
-     därmed brödtext, och behöver en mörkare röd. Uppmätt 7,43:1 mot --yta och
-     6,81:1 mot --bakgrund. Enda användaren är src/web/style.css: fältfelen,
-     formulärfelen och texten på knappen Ta bort. */
+  /* Inkomster: den klarare blå, 5,67:1 mot --yta och 5,20:1 mot --bakgrund.
+     Beloppen står också i tabellceller i normal storlek, så kravet är 4,5:1. */
+  --positiv: var(--bla-ljus);
+  /* Utgifter och feltext har samma röda. Ett negativt belopp står i
+     tabellceller i normal storlek och behöver 4,5:1, och feltextens ton når
+     det: 7,43:1 mot --yta och 6,81:1 mot --bakgrund. */
+  --negativ: var(--fel-text);
   --fel-text: #a52020;
 
   /* ---------------------------------------------- ytor, text och ramar */
   /* De här namnen är de enda en komponent använder. Det mörka läget byter
      värdena och behåller namnen, så ingen komponent vet vilket läge som gäller. */
   --yta: #ffffff;
-  --yta-mjuk: #edf3ec;
+  /* Varannan sektion och hovring: en ljus ton av loggans gråblå. */
+  --yta-mjuk: #eef1f7;
   --yta-upphojd: var(--yta);
   --text: #101820;
-  --text-svag: #4a5560;
+  /* Loggans gråblå, samma ton som loggans undertext. 7,13:1 mot --yta. */
+  --text-svag: var(--gra-bla);
   /* Text på en yta som är mörk i båda lägena, som sidfoten. Hero har egna
      tokener, se --hero-text. */
   --text-pa-mork: #f7f5ef;
-  --text-svag-pa-mork: #c9d8ea;
+  --text-svag-pa-mork: var(--gra-bla-ljus);
   --kant: #dcd8cb;
   /* Länkar och ikonytor i brödtext. 9,29:1 mot --bakgrund. */
   --lank: var(--bla-primar);
@@ -74,7 +77,7 @@
   /* Konturknapp på ljus bakgrund. */
   --knapp-kontur-text: var(--bla-primar);
   --knapp-kontur-kant: var(--bla-primar);
-  /* Guldknappen: --bla-marin på --guld, 4,71:1. */
+  /* Guldknappen: --bla-marin på --guld, 6,08:1. */
   --knapp-guld-yta: var(--guld);
   --knapp-guld-text: var(--bla-marin);
   --knapp-guld-yta-hover: var(--guld-mork);
@@ -82,28 +85,22 @@
   /* ---------------------------------------------- ikoner
      Ikonerna ritas som inline-SVG i landning.html och får sina färger härifrån,
      aldrig ur ett fill-attribut: en hexkod i märkspråket går inte att byta i
-     det mörka läget. Ikoner är grafik och inte text, så målet är 3:1.
-     Uppmätt mot --bakgrund: grön 6,14:1, blå 9,29:1, guld 2,59:1 — guld bär
-     därför bara detaljer inuti en ikon som redan har en grön eller blå kontur,
-     aldrig en ikons enda form. */
-  --ikon-gron: var(--gron-primar);
+     det mörka läget. Ikoner är grafik och inte text, så målet är 3:1. Märket för
+     en återkommande post i appen läser --ikon-grabla och är brödtext, så där är
+     målet 4,5:1. Uppmätt mot --yta: gråblå 7,13:1 och blå 10,13:1. Guld når
+     2,22:1 (körning 2, ingen rad i testets tabell) och bär därför bara
+     detaljer inuti en ikon som redan har en gråblå eller blå kontur, aldrig en
+     ikons enda form. */
+  --ikon-grabla: var(--gra-bla);
   --ikon-bla: var(--bla-primar);
   --ikon-guld: var(--guld);
-  /* Symbolen i sidfoten står alltid på --bla-marin, i båda lägena, och byter
-     därför inte värde längre ned. Uppmätt mot --bla-marin: grön 6,46:1,
-     blå 7,08:1, guld 4,71:1. Loggans egna gröna och blå toner ligger alla
-     under 3:1 där och går inte att använda. */
-  --ikon-gron-pa-mork: #5cc98d;
+  /* Varianter för en yta som alltid är mörk. Ingen klass i landning.html läser
+     dem direkt; det mörka läget läser --ikon-bla-pa-mork genom --ikon-bla, och
+     dess tal står vid det mörka lägets ikoner. */
   --ikon-bla-pa-mork: #8fc2f2;
   --ikon-guld-pa-mork: var(--guld);
-  /* Takets och den korta stapelns ljusare toner. Uppmätt mot --bla-marin:
-     8,55:1 respektive 9,35:1. Loggans --gron-ljus ger där 2,67:1 och
-     --bla-ljus 2,35:1, alltså under gränsen 3:1 för grafik, och går därför
-     inte att använda på en mörk yta. */
-  --ikon-gron-ljus-pa-mork: #8fe0b5;
   --ikon-bla-ljus-pa-mork: #bcdcfa;
-  /* Myntets K. --bla-marin på --guld ger 4,71:1; loggans vita K ger 2,83:1 och
-     försvinner vid 32 bildpunkter. Symbolen är en förenkling, inte en kopia. */
+  /* Myntets K: --bla-marin på --guld, 6,08:1. */
   --ikon-mynt-text: var(--bla-marin);
 
   /* ---------------------------------------------- hero */
@@ -159,12 +156,13 @@
 
 /* ------------------------------------------------ mörkt läge
    Samma tokennamn, andra värden. --bakgrund blir --bla-marin, korten en ton
-   strax ljusare, texten off-white. Loggans tio toner står kvar oförändrade:
-   de är loggans och inte sidans.
+   strax ljusare, texten off-white. Loggans toner och de valda tonerna överst i
+   :root står kvar oförändrade.
 
-   Uppmätt i det mörka läget: --text på --bakgrund 12,21:1, --text på --yta
-   9,83:1, --text-svag på --yta 6,94:1, --lank på --yta 5,70:1, --positiv på
-   --yta 5,85:1, --negativ på --yta 5,35:1 och --guld-ljus på --yta 8,99:1. */
+   Uppmätt i det mörka läget, mot --yta: --text 9,83:1, --text-svag 7,92:1,
+   --lank 5,70:1, --positiv 5,53:1, --negativ 5,35:1, --ikon-grabla 7,11:1,
+   --guld-grafik 4,82:1 och --guld-ljus 8,99:1. --text mot --bakgrund ger
+   12,39:1. */
 @media (prefers-color-scheme: dark) {
   :root {
     --bakgrund: var(--bla-marin);
@@ -172,15 +170,15 @@
     --yta-mjuk: #04356f;
     --yta-upphojd: #0d4588;
     --text: #f7f5ef;
-    --text-svag: #c9d8ea;
+    --text-svag: var(--gra-bla-ljus);
     --kant: #1a4e95;
     --lank: #8fc2f2;
     --lank-hover: #bcdcfa;
-    --positiv: #6fd39a;
+    /* Inkomster: en ljus blå, 5,53:1 mot --yta och 6,97:1 mot --bakgrund. */
+    --positiv: #7cc0ff;
     --negativ: #ff9c9c;
-    /* På en mörk yta är --negativ redan ljus nog för brödtext: uppmätt 5,35:1
-       mot --yta och 6,65:1 mot --bakgrund. Feltexten behöver därför ingen egen
-       ton här och läser --negativ. */
+    /* På en mörk yta är --negativ ljus nog för brödtext: 5,35:1 mot --yta och
+       6,75:1 mot --bakgrund. Feltexten läser därför --negativ här. */
     --fel-text: var(--negativ);
 
     --knapp-fylld-yta: var(--bla-ljus);
@@ -188,12 +186,14 @@
     --knapp-kontur-text: var(--lank);
     --knapp-kontur-kant: #2a639f;
 
-    /* Ikonerna ljusnar med ytan. Uppmätt mot --yta (#0a3c7e): grön 5,20:1,
-       blå 5,70:1, guld 8,99:1. Lägsta värdet i hela det mörka läget är grön på
-       --yta-upphojd, 4,58:1. */
-    --ikon-gron: var(--ikon-gron-pa-mork);
+    /* Ikonerna ljusnar med ytan. Uppmätt mot --yta: gråblå 7,11:1, blå 5,70:1
+       och guld 8,99:1. */
+    --ikon-grabla: #c9d3e6;
     --ikon-bla: var(--ikon-bla-pa-mork);
     --ikon-guld: var(--guld-ljus);
+    /* Loggans guld når 3:1 på de mörka ytorna: 4,82:1 mot --yta, 4,25:1 mot
+       --yta-upphojd och 3,68:1 mot --kant. */
+    --guld-grafik: var(--guld);
 
     --skugga-kort: 0 1px 2px #00102c66, 0 8px 24px #00102c59;
     --skugga-upphojd: 0 2px 6px #00102c73, 0 18px 42px #00102c8c;

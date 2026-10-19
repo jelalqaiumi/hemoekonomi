@@ -1062,7 +1062,7 @@ function goalRow(goal) {
 // mål som tagits bort, och en andra hämtning skulle dubblera varje rad.
 //
 // Ingen filtrering: också ett mål som är klart får en rad, med sin egen text och
-// sin gröna stapel. Datalagret sållar med flit inte, och kortet svarar på frågan
+// sin guldstapel. Datalagret sållar med flit inte, och kortet svarar på frågan
 // vad användaren sparar till — inte bara vad som återstår.
 function renderGoals(goals) {
   GOAL_LIST.replaceChildren(...goals.map(goalRow));
