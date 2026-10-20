@@ -1,53 +1,7 @@
-/* All styling för appen på /app. Ingen inline-CSS i index.html, och ingen färg
-   satt som style-attribut i app.js — klasserna left-positive och left-negative
-   bor här.
-
-   Varje färg kommer ur src/web/tema.css, som index.html hämtar FÖRE den här
-   filen. Filen innehåller själv noll hexkoder, av samma skäl som landning.css
-   gör det: en hexkod utanför :root i tema.css kan inte bytas av det mörka läget,
-   och då går temat isär. Kontrollen är en sökning, körd i det här steget:
-   grep -oE "#[0-9a-fA-F]{3,8}" src/web/style.css | wc -l gav 13 före och ger 0
-   efter. Samma skäl gäller talen: 44px, 16px och 10px står i tema.css som
-   --traffyta, --radie-kort och --radie-liten och läses därifrån.
-
-   Kontrast, uppmätt med WCAG-formeln (L = 0,2126 R + 0,7152 G + 0,0722 B på
-   linjäriserade kanaler, kvoten (Lljus + 0,05) / (Lmörk + 0,05)). Kravet är
-   4,5:1 för brödtext och 3:1 för stor text och grafik. Talen är
-   tests/tema.test.js:s, som räknar dem ur tema.css (ARKITEKTUR.md del 9):
-
-     kombination                        ljust läge   mörkt läge   krav
-     --text på --bakgrund                 16,41:1      12,39:1    4,5
-     --text på --yta                      17,89:1       9,83:1    4,5
-     --text-svag på --yta                  7,13:1       7,92:1    4,5
-     --text-svag på --bakgrund             6,54:1       9,98:1    4,5
-     --fel-text på --yta                   7,43:1       5,35:1    4,5
-     --fel-text på --bakgrund              6,81:1       6,75:1    4,5
-     --lank på --yta                      10,13:1       5,70:1    4,5
-     --lank på --yta-mjuk                  8,95:1       6,40:1    4,5
-     --ikon-grabla på --yta                7,13:1       7,11:1    4,5
-     --knapp-fylld-text på knappens yta   10,13:1       5,67:1    4,5
-     --positiv på --yta                    5,67:1       5,53:1    4,5
-     --negativ på --yta                    7,43:1       5,35:1    4,5
-     --ikon-bla på --yta                  10,13:1       5,70:1    3
-     --guld-grafik på --yta                4,44:1       4,82:1    3
-     --text-pa-mork på --bla-marin        12,39:1      12,39:1    4,5
-     --text-svag-pa-mork på --bla-marin    9,98:1       9,98:1    4,5
-     --guld på --bla-marin                 6,08:1       6,08:1    3
-
-   --positiv och --negativ når 4,5:1 i båda lägena och bär därför beloppen
-   både på raden Kvar att leva på och i tabellernas celler. --guld bär ingen
-   text i den här filen, bara sidomenyns hårfina ram, som är grafik på
-   --bla-marin. */
-
 * {
   box-sizing: border-box;
 }
 
-/* hidden ska alltid dölja. app.js byter vy genom att sätta hidden, och
-   webbläsarens egen regel för det är [hidden] { display: none } — den har lägre
-   specificitet än id- och klasselektorerna nedan, så #month-view { display: grid }
-   skulle annars visa månadsvyn fastän hidden är satt. DOM-attrappen kan inte
-   fånga det: den har ingen CSS. */
 [hidden] {
   display: none !important;
 }
@@ -78,8 +32,6 @@ body {
   color: var(--text-svag);
 }
 
-/* En kolumn är utgångsläget. Listorna blir två kolumner först när bredden
-   räcker, längre ned. */
 main {
   max-width: 60rem;
   margin: 0 auto;
@@ -88,9 +40,6 @@ main {
   gap: 1.5rem;
 }
 
-/* Månadsvyn är sidomenyn plus innehållet. Utgångsläget är en kolumn: sidomenyn
-   blir en rad överst och innehållet ligger under den. Vid 60rem och bredare
-   lägger sig sidomenyn som en spalt till vänster. */
 #month-view {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -129,8 +78,6 @@ main {
   font-size: 1.05rem;
 }
 
-/* ------------------------------------------------------------ fält och knappar */
-
 .field {
   margin-bottom: 0.9rem;
 }
@@ -142,13 +89,6 @@ main {
   font-size: 0.9rem;
 }
 
-/* Ramen är --text-svag och inte --kant, som korten har. Skälet är uppmätt: ett
-   fält har samma yta som kortet det står i, så ramen är det enda som visar var
-   fältet börjar — ett tomt fält utan synlig ram är en kontroll användaren inte
-   kan hitta, och kravet 3:1 för grafik gäller då ramen. Ramen läser därför
-   --text-svag, som ger 7,13:1 mot --yta i det ljusa läget och 7,92:1 i det
-   mörka. Korten behåller --kant: ett kort är ingen kontroll, och dess ram bär
-   ingen information. */
 .field input,
 .field select {
   width: 100%;
@@ -180,7 +120,6 @@ main {
   font-weight: 600;
 }
 
-/* Varje knapp i appen är minst 44 pixlar hög, oavsett vilken klass den bär. */
 button {
   min-height: var(--traffyta);
   font: inherit;
@@ -214,7 +153,6 @@ button.secondary:hover {
   background: var(--yta-mjuk);
 }
 
-/* Knappen som öppnar formuläret för en ny post. */
 button.add {
   margin-bottom: 0.75rem;
   padding: 0.5rem 1rem;
@@ -254,12 +192,6 @@ button.remove:hover {
   border-color: var(--fel-text);
 }
 
-/* Månadsväljarens två knappar bär ingen klass i index.html, och utan den här
-   regeln skulle de stå kvar i webbläsarens eget utseende medan allt annat bytt
-   tema. Regeln väljer på föräldern i stället för på en ny klass, så index.html
-   får inget nytt attribut och attrappen i tests/helpers/dom.js inget nytt id.
-   Den står bland knappreglerna och före regeln för det spärrade läget, som ska
-   komma efter allt den åsidosätter. */
 .month-picker button {
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--knapp-kontur-kant);
@@ -274,12 +206,83 @@ button.remove:hover {
   background: var(--yta-mjuk);
 }
 
-/* En knapp som spärrats under ett pågående anrop ska SYNAS som spärrad. De egna
-   reglerna ovan sätter background, color och cursor, och de åsidosätter
-   webbläsarens egen gråtoning — utan den här regeln ser knappen oförändrad ut och
-   visar handpekare medan den inte går att klicka på. Regeln står sist bland
-   knappreglerna, så att den vinner på lika specificitet.
-   Ingen text mot användaren: det här är styling och ingenting annat. */
+.login-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.login-tabs button.secondary {
+  margin-left: 0;
+}
+
+.login-tabs button[aria-pressed="true"] {
+  background: var(--knapp-fylld-yta);
+  border-color: var(--knapp-fylld-yta);
+  color: var(--knapp-fylld-text);
+  font-weight: 600;
+}
+
+button.link-button {
+  margin-left: 0.5rem;
+  padding: 0.55rem 0.5rem;
+  border: none;
+  background: none;
+  color: var(--lank);
+  text-decoration: underline;
+}
+
+button.link-button:hover {
+  color: var(--lank-hover);
+}
+
+.field-hint {
+  margin: 0.35rem 0 0;
+  color: var(--text-svag);
+  font-size: 0.875rem;
+}
+
+.login-privacy {
+  margin: 1rem 0 0;
+  color: var(--text-svag);
+  font-size: 0.875rem;
+}
+
+.login-privacy a {
+  color: var(--lank);
+}
+
+a.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--traffyta);
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--knapp-kontur-kant);
+  border-radius: var(--radie-knapp);
+  background: var(--yta);
+  color: var(--knapp-kontur-text);
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+a.button-link:hover {
+  border-color: var(--lank-hover);
+  background: var(--yta-mjuk);
+}
+
+button.danger {
+  padding: 0.55rem 1.4rem;
+  border: 1px solid var(--fel-text);
+  border-radius: var(--radie-knapp);
+  background: var(--yta);
+  color: var(--fel-text);
+  font-weight: 600;
+}
+
+button.danger:hover {
+  background: var(--yta-mjuk);
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -291,19 +294,6 @@ button:disabled:hover {
   border-color: var(--kant);
 }
 
-/* --------------------------------------------------------------- sidomenyn */
-
-/* Marinblå, med loggsymbolen överst och den inloggade adressen under den. Ytan är
-   --morkt-block, som är --bla-marin i båda lägena: menyn ska vara mörk också när
-   resten av sidan är ljus. I det mörka läget är --bakgrund samma ton som
-   --bla-marin, och då skulle menyn flyta in i sidan — därför ramen i --guld, som
-   ger 6,08:1 mot --bla-marin och samtidigt syns mot --bakgrund i det ljusa
-   läget. Ramen är grafik och bär ingen
-   text.
-
-   Utgångsläget är en rad överst: symbolen och namnet till vänster, adressen
-   efter dem och Logga ut längst till höger. Raden bryts om bredden inte räcker,
-   så det finns ingen vågrät skrollning vid 320 pixlar. */
 .sidomeny {
   display: flex;
   flex-wrap: wrap;
@@ -322,10 +312,6 @@ button:disabled:hover {
   gap: 0.5rem;
 }
 
-/* Loggan är hem-ekonomi-logga.svg, med mörk text för ljus botten, och står
-   därför på en ljus platta på det marinblå. Plattan är --logga-platta, som är
-   ljus i båda lägena: --bakgrund blir marinblå i det mörka läget och skulle
-   göra loggan osynlig. 428 gånger 104 i sin egen storlek; höjden styr. */
 .sidomeny-logga {
   height: 2.5rem;
   width: auto;
@@ -335,8 +321,6 @@ button:disabled:hover {
   background: var(--logga-platta);
 }
 
-/* Namnet står redan i loggan. Texten finns kvar för en skärmläsare men visas
-   inte, så att namnet inte står två gånger. */
 .sidomeny-namn {
   position: absolute;
   width: 1px;
@@ -346,8 +330,6 @@ button:disabled:hover {
   white-space: nowrap;
 }
 
-/* Adressen får brytas var som helst: en lång e-postadress ska inte tvinga fram
-   vågrät skrollning vid 320 pixlar. */
 #user-email {
   min-width: 0;
   color: var(--text-svag-pa-mork);
@@ -355,10 +337,6 @@ button:disabled:hover {
   overflow-wrap: anywhere;
 }
 
-/* Logga ut står på en mörk yta och kan därför inte bära konturknappens egna
-   färger, som är gjorda för en ljus. Knappen behåller klassen secondary — det
-   är index.html:s namn på en konturknapp — och får sina färger bytta här.
-   margin-left: auto skjuter den längst åt höger i radläget. */
 .sidomeny button.secondary {
   margin-left: auto;
   border-color: var(--text-svag-pa-mork);
@@ -372,8 +350,6 @@ button:disabled:hover {
 }
 
 @media (min-width: 60rem) {
-  /* Spalten vid sidan. Sidomenyn följer med när sidan rullas, så att Logga ut
-     alltid är nåbar. */
   .sidomeny {
     position: sticky;
     top: 1rem;
@@ -386,10 +362,6 @@ button:disabled:hover {
   }
 }
 
-/* --------------------------------------------------------- månadsväljaren */
-
-/* Månadens namn i mitten, en knapp på var sida. Knapparna är innehållsbreda och
-   namnet tar resten, så raden ryms också vid 320 pixlar. */
 .month-picker {
   display: flex;
   align-items: center;
@@ -404,8 +376,6 @@ button:disabled:hover {
   font-size: 1.25rem;
 }
 
-/* ------------------------------------------------------------- summeringen */
-
 .summary-row {
   display: flex;
   align-items: baseline;
@@ -418,14 +388,11 @@ button:disabled:hover {
   font-weight: 600;
 }
 
-/* tabular-nums gör att de fyra beloppen står i kolumn. */
 .summary-amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* Kvar att leva på är radens poäng och står i större text, avskild med en linje
-   från de tre raderna ovanför. */
 .summary-left {
   margin: 0.75rem 0 0;
   padding-top: 0.75rem;
@@ -441,11 +408,6 @@ button:disabled:hover {
   font-weight: 700;
 }
 
-/* Noll räknas som positivt: en budget som går jämnt upp är inget problem.
-   --positiv och --negativ är temats två toner för inkomst och utgift. Båda
-   når 4,5:1 mot --yta i båda lägena (5,67:1 och 7,43:1 ljust, 5,53:1 och
-   5,35:1 mörkt), eftersom klasserna också står på tabellceller i normal
-   storlek. */
 .left-positive {
   color: var(--positiv);
 }
@@ -454,11 +416,6 @@ button:disabled:hover {
   color: var(--negativ);
 }
 
-/* ---------------------------------------------------------------- listorna */
-
-/* En kolumn i utgångsläget. Två kolumner först när bredden räcker: 52rem är
-   ungefär en liggande surfplatta, och under det blir en tvåkolumnslista smalare
-   än posternas belopp. */
 .lists {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -477,9 +434,6 @@ button:disabled:hover {
   list-style: none;
 }
 
-/* Raden radbryter i stället för att lägga barnen i fasta kolumner. Skälet är
-   bredden: vid 320 pixlar ryms namn, kategori, belopp och två knappar inte på en
-   rad, och en fast kolumnuppsättning skulle då ge vågrät skrollning. */
 .item {
   display: flex;
   flex-wrap: wrap;
@@ -510,18 +464,12 @@ button:disabled:hover {
   white-space: nowrap;
 }
 
-/* Märket på en post som kommer från en mall. Tecknet står i app.js; här är bara
-   färgen och storleken. Märket är 1,1rem, alltså brödtext, och --ikon-grabla
-   når 4,5:1 i båda lägena (7,13:1 ljust, 7,11:1 mörkt mot --yta). */
 .item-recurring {
   color: var(--ikon-grabla);
   font-size: 1.1rem;
   cursor: help;
 }
 
-/* Kryssrutan Återkommande [etapp 4]. Utan regeln ärver rutan .field input ovan
-   och blir hundra procent bred. Rutan och sin text står på samma rad, så
-   etiketten är flex och inte block som de andra fältens etiketter. */
 .field-checkbox label {
   display: flex;
   align-items: center;
@@ -535,10 +483,6 @@ button:disabled:hover {
   margin: 0;
 }
 
-/* Budgetkortets rader [steg 2]. Raden är en .item, så flexlayouten ovan gäller
-   oförändrad; här står bara de tre cellernas egna mått. Kvar-beloppet bär
-   dessutom left-positive eller left-negative, alltså summeringens två klasser —
-   ingen ny färgklass, och därmed ingen andra ägare till de två tonerna. */
 .budget-category {
   flex: 1 1 7rem;
   min-width: 0;
@@ -552,11 +496,6 @@ button:disabled:hover {
   white-space: nowrap;
 }
 
-/* Räkningskortets rader [steg 3]. Raden är en .item, så flexlayouten ovan
-   gäller oförändrad; här står cellernas egna mått och de två utseenden statusen
-   ger. Klassnamnen byggs av app.js ur bill.status, alltså ur BILL_STATUSES i
-   src/core/bill.js - ingen kopia av de fyra värdena står i den här filen utöver
-   de två som har ett eget utseende. */
 .bill-name {
   flex: 1 1 7rem;
   min-width: 0;
@@ -575,29 +514,17 @@ button:disabled:hover {
   color: var(--text-svag);
 }
 
-/* Förfallen: röd text. Dagtexten är 0,875rem, alltså brödtext, och bär därför
-   --fel-text - samma val som fältfelen gör
-   (uppmätt 7,43:1 mot --yta och 5,35:1 i det mörka läget). Hela raden färgas,
-   så att namnet och beloppet läses tillsammans med dagtexten. */
 .bill-forfallen,
 .bill-forfallen .bill-days {
   color: var(--fel-text);
 }
 
-/* Påminnelse: guldram. Ramen är grafik med kravet 3:1, och loggans guld når
-   bara 2,22:1 mot vitt (ARKITEKTUR.md del 9, körning 2; ingen rad i testets
-   tabell), så ramen läser --guld-grafik: 4,44:1 mot --yta i det ljusa läget och
-   4,82:1 i det mörka. Ramen ligger runt hela raden och ersätter radens undre
-   linje, så att två påminnelser intill varandra inte får en dubbel kant. */
 .bill-paminnelse {
   border: 2px solid var(--guld-grafik);
   border-radius: var(--radie-knapp);
   padding: 0.65rem 0.6rem;
 }
 
-/* Knappen Betald. Samma form som radens övriga knappar - padding, ram och
-   storlek kommer ur button.edit ovan, och det här blocket sätter bara den
-   avvikande färgen: en bekräftande handling, inte en borttagning. */
 button.bill-paid {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--kant);
@@ -611,17 +538,6 @@ button.bill-paid:hover {
   border-color: var(--lank);
 }
 
-/* Sparmålskortets rader [steg 4]. Raden bär item och goal, och till skillnad
-   från de övriga korten är den INTE radens flexlayout: ett sparmål har tre
-   läsrader - namn och sparat av mål, stapel och procent, och Kvar-raden - och en
-   flexrad som radbryter kan inte hålla dem i den ordningen vid varje bredd.
-   Rutnätet är därför två kolumner, och .goal ligger efter .item i filen så att
-   display: grid vinner över display: flex. Padding och radens undre linje kommer
-   fortfarande ur .item, inklusive .item:last-child som tar bort den sista.
-
-   Klassnamnen byggs av app.js ur goal.status, alltså ur GOAL_STATUSES i
-   src/core/goal.js - ingen kopia av de tre värdena står i den här filen utöver
-   de två som har ett eget utseende. */
 .goal {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -641,8 +557,6 @@ button.bill-paid:hover {
   white-space: nowrap;
 }
 
-/* Kvar-raden och statusens text löper över båda kolumnerna: de är meningar och
-   inte tal i en kolumn. */
 .goal-left,
 .goal-note {
   grid-column: 1 / -1;
@@ -650,23 +564,10 @@ button.bill-paid:hover {
   color: var(--text-svag);
 }
 
-/* En status utan egen text - pagaende, som tabellen i ARKITEKTUR.md kallar
-   "Vanlig" - ger en tom cell. Utan regeln lämnar den en tom rutnätsrad med sitt
-   gap efter sig, alltså ett mellanrum användaren inte kan förklara. Regeln
-   ligger här och inte som ett villkor i app.js: vad en tom cell tar för plats är
-   en stilfråga. */
 .goal-note:empty {
   display: none;
 }
 
-/* Stapeln är inline-SVG, byggd av app.js med samma svgElement som diagrammet
-   ovan: bredden är SVG-attributet width och färgen en klass, aldrig ett
-   style-attribut.
-
-   overflow: hidden och inte visible som .chart svg: app.js klipper med flit
-   ingen procent - clampedPercent i src/core/goal.js äger klippningen - och den
-   här raden är det som gör att en bredd utanför skalan ändå inte kan ritas
-   utanför rutan. */
 .goal-chart {
   display: block;
   width: 100%;
@@ -674,41 +575,24 @@ button.bill-paid:hover {
   overflow: hidden;
 }
 
-/* Spåret bakom fyllningen. Utan det syns bara hur långt som är gjort, aldrig
-   hur långt som återstår. --kant är temats linjeton och bär ingen text. */
 .goal-bar-track {
   fill: var(--kant);
 }
 
-/* Fyllningen. Staplar är grafik och inte text, så kravet är 3:1 - samma
-   bedömning och samma ton som .chart-bar ovan. */
 .goal-bar {
   fill: var(--ikon-bla);
 }
 
-/* Ett nått mål: guldstapel (ARKITEKTUR.md under "Gränssnittet" och del 9).
-   --guld-grafik når 3:1 mot --kant, spåret bakom stapeln: 3,11:1 ljust och
-   3,68:1 mörkt. Den skiljer sig från .goal-bar, som är blå. */
 .goal-bar-klart {
   fill: var(--guld-grafik);
 }
 
-/* Ett försenat mål: röd ram runt hela raden (ARKITEKTUR.md under
-   "Gränssnittet"). Samma form och samma skäl som .bill-paminnelse ovan - ramen
-   ersätter radens undre linje, så att två försenade mål intill varandra inte får
-   en dubbel kant. --negativ är temats röda ton; en ram är grafik med kravet 3:1,
-   och tonen ligger på 7,43:1 mot --yta enligt mätningen vid .left-negative. */
 .goal-forsenat {
   border: 2px solid var(--negativ);
   border-radius: var(--radie-knapp);
   padding: 0.65rem 0.6rem;
 }
 
-/* Knappen + Sätt in i en målrad [steg 4]. Den löper över båda kolumnerna och
-   ligger till vänster: raden är ett rutnät med 1fr auto, och utan regeln hade
-   knappen hamnat i den första kolumnen och dragits ut till hela dess bredd.
-   Formen är knappen Betald:s - en bekräftande handling och ingen borttagning -
-   och det här blocket sätter bara placeringen. */
 button.goal-deposit {
   grid-column: 1 / -1;
   justify-self: start;
@@ -724,9 +608,6 @@ button.goal-deposit:hover {
   border-color: var(--lank);
 }
 
-/* Låsraden [steg 4]: det en Bas-användare ser i stället för kortet. Kortet och
-   raden är två syskon i index.html, och app.js visar exakt ett av dem - raden är
-   bekvämlighet och aldrig spärren, som ligger i requireFeature på servern. */
 .locked-row {
   display: flex;
   align-items: center;
@@ -736,15 +617,10 @@ button.goal-deposit:hover {
   color: var(--text-svag);
 }
 
-/* Hänglåset är dekoration: det bär aria-hidden i index.html, eftersom texten
-   intill säger samma sak i ord. */
 .lock-icon {
   font-size: 1.1rem;
 }
 
-/* Enheten efter ett fält, raden Påminn mig <N> dagar innan. Fältet är smalt
-   eftersom talet är högst tvåsiffrigt, och enheten står efter det på samma rad
-   i stället för i etiketten. */
 .field-unit {
   color: var(--text-svag);
   font-size: 0.875rem;
@@ -756,9 +632,6 @@ button.goal-deposit:hover {
   display: inline-block;
 }
 
-/* Frågan en mallrad ställer [etapp 4]: texten och de två valen. Rutan är ett
-   eget barn i .item, som radbryter, och flex-basis 100 procent lägger den därför
-   på en egen rad under knapparna i stället för att tränga ihop dem. */
 .item-question {
   display: flex;
   flex: 1 1 100%;
@@ -773,8 +646,6 @@ button.goal-deposit:hover {
   font-size: 0.875rem;
 }
 
-/* Valens knappar bär varken .edit eller .remove: inget av de två valen är en
-   borttagning i sig, och färgen ska inte påstå det. */
 .item-question button {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--lank);
@@ -793,10 +664,6 @@ button.goal-deposit:hover {
   color: var(--text-svag);
 }
 
-/* --------------------------------------------------------------- diagrammet */
-
-/* SVG:n skalas till kortets bredd. Höjden följer viewBox, som app.js sätter ur
-   antalet staplar. */
 .chart svg {
   display: block;
   width: 100%;
@@ -804,8 +671,6 @@ button.goal-deposit:hover {
   overflow: visible;
 }
 
-/* Storleken anges i SVG:ns egna användarenheter, samma enheter som viewBox
-   använder: en enhet är en hundradel av diagrammets bredd. */
 .chart text {
   font-size: 4px;
   font-family: inherit;
@@ -819,17 +684,10 @@ button.goal-deposit:hover {
   fill: var(--text-svag);
 }
 
-/* Staplarna är grafik och inte text, så kravet är 3:1. --ikon-bla är stapelns
-   ton ur den klarare blå familjen och ljusnar med ytan i det mörka läget (10,13:1
-   ljust, 5,70:1 mörkt mot --yta). */
 .chart-bar {
   fill: var(--ikon-bla);
 }
 
-/* ---------------------------------------------------- översikten [etapp 5] */
-
-/* Rubriken till vänster, vägen tillbaka till höger — samma form som
-   månadsväljaren, med en knapp i stället för två. */
 .overview-head {
   display: flex;
   align-items: center;
@@ -842,10 +700,6 @@ button.goal-deposit:hover {
   font-size: 1.25rem;
 }
 
-/* Staplarna är grafik och inte text, så kravet är 3:1. --positiv och --negativ
-   är temats två toner för inkomst och utgift, samma par som raden Kvar att
-   leva på bär: 5,67:1 respektive 7,43:1 mot --yta i det ljusa läget och
-   5,53:1 respektive 5,35:1 i det mörka. */
 .overview-bar-positive {
   fill: var(--positiv);
 }
@@ -854,17 +708,11 @@ button.goal-deposit:hover {
   fill: var(--negativ);
 }
 
-/* Nollinjen ska synas: utan den går det inte att se vilka månader som gick
-   back, eftersom en nedåtstapel och en uppåtstapel annars bara skiljer sig i
-   färg. --text-svag är linjens ton, inte --kant: linjen bär betydelse och ska
-   läsas, och vid 0,5 enheter i ett viewBox på 120 blir den en hårfin linje. */
 .overview-zero-line {
   stroke: var(--text-svag);
   stroke-width: 0.5;
 }
 
-/* Tabellen bär de exakta talen. Månaden till vänster, de fyra beloppen
-   högerställda i tabular-nums, så att siffrorna står i kolumn. */
 .overview-table {
   width: 100%;
   border-collapse: collapse;
@@ -889,26 +737,16 @@ button.goal-deposit:hover {
   font-weight: 600;
 }
 
-/* Beloppet i kolumnen Kvar bär left-positive eller left-negative, samma två
-   klasser som månadsvyns summering — färgen ligger här och aldrig som ett
-   style-attribut i app.js. */
 .overview-table .overview-left {
   font-weight: 600;
 }
 
-/* Min plan [steg 1 i del 5]. De tre knapparna ligger på en rad och radbryter på
-   en smal skärm, så att ingen av dem hamnar utanför kortet vid 320 bildpunkter.
-   Knapparna bär .secondary och får sin form därifrån — det här blocket sätter
-   bara hur de ligger. */
 .plan-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-/* Rapportkortet [steg 5]. Periodknapparna står på en rad, och den valda väljs
-   på aria-pressed, samma attribut som skärmläsaren läser: inget eget klassnamn
-   och inget style-attribut i app.js. */
 .report-periods {
   display: flex;
   flex-wrap: wrap;
@@ -921,8 +759,6 @@ button.goal-deposit:hover {
   color: var(--knapp-fylld-text);
 }
 
-/* Tabellen har samma form som översiktens: slag och kategori till vänster,
-   beloppen och Över taket högerställda i tabular-nums. */
 .report-table {
   width: 100%;
   border-collapse: collapse;

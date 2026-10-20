@@ -250,11 +250,24 @@ tabeller och en månadsvy.
 | **Sessioner som rader i en tabell, med en `httpOnly`-cookie som bär ett slumpat token** | En session går att återkalla vid utloggning genom en `UPDATE`. Tokenet bär ingen information och går inte att läsa av klienten. | Signerad cookie eller JWT (går inte att återkalla före sin utgång), sessioner i processminne (försvinner vid omstart och fungerar inte med två processer). |
 | **Drift på Fly.io, en enda instans, databasfilen på en monterad volym** | Fly.io kör en vanlig långlivad Node-process, så `start()` med `listen()` är oförändrat körsätt och ingen andra ingång behövs. Certifikat på egen domän ingår, vilket är förutsättningen för `Secure` på sessionscookien. Volymen behövs därför att appens filsystem återställs vid varje driftsättning. | Serverlös drift (varje anrop får ett tomt, tillfälligt filsystem — en SQLite-fil överlever inte mellan anrop, och lagringen hade då måst bytas mot en databas över nätet, alltså asynkrona frågor genom hela datalagret), egen VPS (certifikat, brandvägg och uppdateringar blir projektets arbete). |
 
-**Runtime-beroenden: 0. Dev-beroenden: 0.** `package.json` ska inte ha något
-`dependencies`- eller `devDependencies`-fält. Nytt beroende kräver en ny rad i
-tabellen ovan innan det installeras. `node:sqlite`, `node:crypto` och globala
-`fetch` är inbyggda i Node och är därför inga beroenden — de kräver ändå var sin
-rad ovan, eftersom en rad är det enda som gör valet granskningsbart.
+Raderna nedan tillkom i **del 10** (riktig drift: gratis konto med lösenord,
+data i PostgreSQL, ingen demo och inga planer — se "Del 10"). De ersätter
+lagringsraden `node:sqlite`, raden om engångskod och raden om Fly.io ovan; de
+gamla raderna står kvar som historik.
+
+| Val | Varför | Vad vi valde bort |
+|-----|--------|-------------------|
+| **PostgreSQL** som lagring, i drift hos **Neon** (gratisnivån, region EU Frankfurt) | Appen ska bära många användare över tid, och ingenting får försvinna vid en omstart eller en ny driftsättning. En databas över nätet gör appens filsystem oviktigt, så webbtjänsten kan vara gratis och tillståndslös. Neons gratisnivå pausar beräkningen vid inaktivitet men raderar inte projektet och kräver ingen inloggning varje vecka. | `node:sqlite` med fil på en volym (kräver betald volym och en enda instans), Supabase gratis (projektet pausas efter 7 dagar utan aktivitet och måste startas för hand), egen databasserver. |
+| **`pg` 8.13.1** (node-postgres) som drivrutin mot `DATABASE_URL` | Den etablerade drivrutinen, ren JavaScript, inget byggsteg. Körd: hela `tests/`-sviten och en röktest mot en PostgreSQL-server på trådnivå (pglite-socket) gav samma utfall som PGlite. | `postgres` (porsager), Prisma/Drizzle/Knex (ett ORM eller en frågebyggare ovanpå SQL som redan är skriven för hand). |
+| **`@electric-sql/pglite` 0.2.17** för lokal körning och för testerna | PostgreSQL kompilerat till WebAssembly, i samma process. `npm start` utan `DATABASE_URL` kräver alltså ingen installerad databas, och `npm test` kör samma SQL som drift. Testerna delar en instans och får var sitt schema. | Docker med PostgreSQL (ett krav på varje utvecklarmaskin), att köra testerna mot SQLite (två SQL-dialekter, och det som testas är inte det som körs). |
+| **Lösenord** (scrypt med 16 byte salt) och **glömt lösenord via e-post** | Användaren valde lösenord. Länken för nytt lösenord gäller en timme och sparas bara som sha256. | Engångskod vid varje inloggning (användaren ville inte få en kod varje gång), OAuth (tredjepartskonto). |
+| **Drift på Render** (gratis webbtjänst), `render.yaml` i projektroten | Kör en vanlig långlivad Node-process med `npm start`, ger HTTPS och egen domän utan kostnad. Gratistjänsten somnar efter en stund utan trafik och vaknar vid nästa anrop; datan ligger i Neon och påverkas inte. | Fly.io (kräver numera kort och har ingen gratisnivå), Vercel/Netlify (serverlösa funktioner, servern hade fått skrivas om). |
+
+**Runtime-beroenden: 2 (`pg` och `@electric-sql/pglite`). Dev-beroenden: 0.**
+Nytt beroende kräver en ny rad i tabellen ovan innan det installeras.
+`node:crypto` och globala `fetch` är inbyggda i Node och är därför inga
+beroenden — de kräver ändå var sin rad ovan, eftersom en rad är det enda som gör
+valet granskningsbart.
 
 ### package.json — skrivs av byggaren exakt så här
 
@@ -265,10 +278,16 @@ rad ovan, eftersom en rad är det enda som gör valet granskningsbart.
   "private": true,
   "type": "module",
   "description": "Koll pa hemmets fasta utgifter och prenumerationer.",
-  "engines": { "node": ">=22.5.0" },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "start": "node src/server/server.js",
     "test": "node --test \"tests/**/*.test.js\""
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "pg": "^8.13.1"
   }
 }
 ```
@@ -17628,3 +17647,136 @@ Ingen agent kan se sidan. Efter paket 3, före commit, öppnar användaren `/` o
   meningar om grönt". (påverkat av lärdom: **ja**, `2026-10-14 — dokumentation:
   regeln för grönt hänvisar till en formel i en scratchpad-fil …` och
   `2026-10-14 — dokumentation: del 7:s "Färgerna, bindande" …`)
+
+---
+
+## Del 10: riktig drift — gratis konto, lösenord och PostgreSQL [användarens beslut 2026-10-17]
+
+Den här delen gäller före allt ovan där de säger emot varandra. Där del 2 till 9
+beskriver engångskod, prisplaner, behörighet, demoläge, `entries.json`,
+`node:sqlite` eller Fly.io är de beskrivningarna **historik**: de var sanna när
+de skrevs och är det inte längre.
+
+### Användarens beslut
+
+1. Appen ska vara en riktig tjänst och inte en demo. Demoläget tas bort helt.
+2. Appen är **gratis**, och alla funktioner ingår för alla. Prisplanerna (Bas,
+   Plus, Premium) och behörighetskontrollen tas bort. Ingen betalning.
+3. Man registrerar sig med **e-postadress och lösenord**, inte med en kod som
+   skickas vid varje inloggning. Glömt lösenord sköts med en länk via e-post.
+4. Varje användares ekonomi sparas på användaren i en databas, så att ingenting
+   försvinner vid en omstart eller en ny driftsättning.
+5. Databasen ska vara gratis och inte kräva att någon loggar in varje vecka för
+   att den ska hållas igång: **Neon** (PostgreSQL) och **Render** för
+   webbtjänsten.
+
+### Vad som togs bort
+
+| Borttaget | Skäl |
+|-----------|------|
+| `src/web/demo/` och demoskriptet i `index.html` | Beslut 1. |
+| `src/core/plans.js`, `src/web/priser.js`, `requireFeature`, `GET /api/plan` och alla `403` för planer | Beslut 2. Alla funktioner är öppna för en inloggad användare. |
+| `POST /api/auth/kod` och tabellen `login_codes` | Beslut 3. |
+| `src/server/storage.js` och `src/server/lock.js` (JSON-filen `entries.json` och låset på den) | Beslut 4. All data ligger i databasen, och låset behövs inte när två instanser kan dela samma databas. |
+| Kolumnen `users.plan` | Beslut 2. |
+
+Testfilerna för det borttagna togs bort i samma ändring. Lärdomarna i
+`LARDOMAR.md` om lagringsfilen och låset står kvar: de beskriver fel som
+inträffade, och reglerna i dem gäller fortfarande för den som bygger något
+liknande igen.
+
+### Datalagret
+
+`src/server/db.js` är **asynkront**. `openDatabase(target)` tar ett av tre slag
+av mål:
+
+| Mål | Vad som öppnas | När |
+|-----|----------------|-----|
+| `postgres://…` eller `postgresql://…` | En `pg.Pool` mot servern | Drift: `DATABASE_URL` är satt. |
+| `:memory:` (`MEMORY_PATH`) | Ett eget schema i en delad PGlite-instans i minnet | Testerna. |
+| En katalogsökväg | PGlite med data i katalogen | `npm start` utan `DATABASE_URL`. Sökvägen är `HEMOCHEKONOMI_DB_FILE` eller `%APPDATA%/hemochekonomi/databas`. |
+
+Regler som gäller för hela datalagret:
+
+- Frågorna skrivs med `?`, och `toPositional` numrerar om dem till `$1, $2, …`.
+- `readRows`, `exec` och `write` returnerar löften. `write` svarar `{ changes }`.
+- `transaction(db, work)` bär den pågående transaktionen i `AsyncLocalStorage`.
+  En inre `transaction` ingår i den yttre. Ett fel från `work` går ut
+  oförändrat; ett fel vid `BEGIN` eller `COMMIT` blir `writeFailed`.
+- `int8` och `numeric` tolkas till `Number`, så att `COUNT(*)` och `SUM(…)` är
+  tal och inte strängar.
+- Textkolumner har `COLLATE "C"`, så att `<=` på `ÅÅÅÅ-MM` jämförs bytevis som
+  förut i SQLite.
+- Ett fel med SQLSTATE-klass `23` (CHECK, UNIQUE, främmande nyckel) blir
+  `DatabaseError` med `DATABASE_MESSAGES.constraintFailed`. Meddelandet
+  innehåller aldrig SQL; originalet ligger i `cause`.
+- `SCHEMA_VERSION` är `2`. Tabellerna är `users`, `sessions`, `login_attempts`,
+  `password_resets`, `templates`, `month_items`, `overrides`, `budgets`, `bills`,
+  `goals`, `goal_deposits` och `schema_version`. Varje tabell med användardata
+  har `user_id … REFERENCES users(id) ON DELETE CASCADE`.
+
+### Konton och inloggning
+
+| Konstant | Värde |
+|----------|-------|
+| `PASSWORD_MIN_LENGTH` | 10 tecken |
+| `PASSWORD_MAX_LENGTH` | 200 tecken |
+| `SESSION_TTL_MS` | 30 dygn |
+| Lösenordshash | `scrypt`, 64 byte nyckel, 16 byte salt per användare |
+| Inloggningsförsök | högst 10 misslyckade per e-postadress och 50 per IP-adress på 15 minuter, sedan `429` |
+| Länk för nytt lösenord | gäller 1 timme; högst 3 per e-postadress och 10 per IP-adress och timme |
+| Rensning | rader i `login_attempts` och `password_resets` äldre än 30 dygn tas bort |
+
+Sessionstoken och återställningstoken sparas bara som sha256. Jämförelsen av
+lösenordshashen görs med `timingSafeEqual`, och en okänd e-postadress får en
+hashning av ett påhittat lösenord så att svarstiden inte avslöjar om kontot
+finns. Svaret på glömt lösenord är alltid detsamma, oavsett om adressen har ett
+konto.
+
+| Väg | Svar |
+|-----|------|
+| `POST /api/auth/registrera` `{ email, password }` | `201` och sessionscookie; `400` med `fieldErrors`; `409` när adressen redan har ett konto |
+| `POST /api/auth/logga-in` `{ email, password }` | `204` och sessionscookie; `400`; `401` med `Fel e-postadress eller lösenord.`; `429` |
+| `POST /api/auth/logga-ut` | `204` |
+| `POST /api/auth/glomt-losenord` `{ email }` | `202`; `400`; `429`; `502` när mejlet inte gick att skicka |
+| `POST /api/auth/nytt-losenord` `{ token, password }` | `204`, alla andra sessioner återkallas och en ny skapas; `400` |
+| `GET /api/mig` | `200 { email }`; `401` |
+| `DELETE /api/mig` `{ password }` | `204`, kontot och allt som hör till det tas bort; `400`; `401` |
+| `GET /api/mig/export` | `200`, en JSON-fil med användarens egna rader i varje tabell, utan hashar och token |
+
+Länken i mejlet är `${APP_URL}/app?aterstall=<token>`. I drift måste `APP_URL`
+vara satt; annars svarar glömt lösenord `500` med `MESSAGES.missingAppUrl` i
+stället för att skicka en länk till fel adress. Mejlet skickas med Resend när
+`RESEND_API_KEY` och `RESEND_FROM` är satta. Utan nyckel skrivs länken i
+serverloggen i utveckling, och i drift svarar vägen `502`.
+
+### Servern
+
+- `HOST` är `0.0.0.0` när `NODE_ENV=production`, annars `127.0.0.1`.
+- `GET /healthz` svarar `200` med `ok`, för Renders hälsokontroll.
+- Varje svar har säkerhetshuvudena `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: same-origin` och `X-Frame-Options: DENY`.
+- `SIGTERM` stänger servern och databasen innan processen avslutas.
+- `TRUST_PROXY=1` gör att klientens IP-adress läses ur `X-Forwarded-For`, vilket
+  behövs bakom Renders proxy för att gränsen per IP-adress ska fungera.
+- `/integritet` serverar integritetspolicyn.
+
+### Miljövariabler i drift
+
+| Variabel | Exempel | Krävs |
+|----------|---------|-------|
+| `DATABASE_URL` | anslutningssträngen från Neon, med `sslmode=require` | ja |
+| `APP_URL` | `https://din-doman.se` | ja |
+| `NODE_ENV` | `production` | ja |
+| `TRUST_PROXY` | `1` | ja på Render |
+| `RESEND_API_KEY` | nyckeln från Resend | ja, annars fungerar inte glömt lösenord |
+| `RESEND_FROM` | `Hem och Ekonomi <noreply@din-doman.se>` | ja, tillsammans med nyckeln |
+
+### Verifiering
+
+`npm test` gav `tests 992`, `pass 992`, `fail 0` och `EXIT=0` efter den sista
+ändringen i del 10 (körd 2026-10-17). En körning i en riktig webbläsare
+(Chromium, headless) mot en lokal server gick igenom registrering, fältfel,
+en utgift i månadsvyn, omladdning med sessionen kvar, export, utloggning,
+fel lösenord, glömt lösenord med länken ur serverloggen, nytt lösenord och
+borttagning av kontot utan fel i sidan.

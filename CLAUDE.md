@@ -1,7 +1,9 @@
 # hemochekonomi
 
-En lokal app som håller koll på hemmets fasta utgifter och prenumerationer och
-visar månadskostnad, årskostnad och vad som dras härnäst.
+Hem och Ekonomi: en gratis webbapp för hushållets månadsbudget. Användaren
+skapar ett konto med e-post och lösenord, och allt sparas per konto i
+PostgreSQL (Neon i drift, PGlite lokalt och i testerna). Se "Del 10" i
+`ARKITEKTUR.md`.
 
 ## Kör projektet
 
@@ -11,10 +13,10 @@ npm start
 npm test
 ```
 
-`npm install` hämtar inga beroenden — projektet har noll. Den skapar bara
-`package-lock.json` och kan hoppas över.
+`npm install` hämtar projektets två beroenden, `pg` och
+`@electric-sql/pglite`. Den måste köras innan `npm start` och `npm test`.
 `npm start` startar servern på http://127.0.0.1:3000 — öppna adressen i
-webbläsaren.
+webbläsaren. Utan `DATABASE_URL` sparar den i en lokal PGlite-katalog.
 `npm test` kör `node --test "tests/**/*.test.js"`. Argumentet måste vara ett
 glob-mönster inom citationstecken; `node --test tests/` misslyckas på Node 24
 med `Cannot find module ...\tests`. Verifierat på Node v24.19.0.
@@ -23,8 +25,11 @@ med `Cannot find module ...\tests`. Verifierat på Node v24.19.0.
 
 - All text mot användaren ska vara på svenska. Kod, filnamn och variabelnamn
   skrivs på engelska.
-- Inga nya beroenden. Ett nytt beroende kräver en egen rad i teknikvalstabellen
-  i `ARKITEKTUR.md` innan det installeras — annars är det ett fel.
+- Inga nya beroenden utöver `pg` och `@electric-sql/pglite`. Ett nytt beroende
+  kräver en egen rad i teknikvalstabellen i `ARKITEKTUR.md` innan det
+  installeras — annars är det ett fel.
+- Datalagret är asynkront: varje anrop till `db.js` och till funktionerna
+  ovanpå det ska ha `await`.
 - `ARKITEKTUR.md` är bindande. Fältnamn, felmeddelanden, avrundningsregel,
   datumregel och funktionssignaturer följs ordagrant. Behöver något ändras:
   ändra `ARKITEKTUR.md` först, bygg sedan.

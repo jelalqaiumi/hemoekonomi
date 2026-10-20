@@ -1,31 +1,25 @@
-// Routing och JSON-svar för /api/*. Enda stället som översätter ett HTTP-anrop
-// till ett anrop i kärnan eller i lagringen.
-//
-// Beloppet tolkas på exakt ett ställe i projektet: createEntry i src/core/entry.js.
-// Den här filen gör ingen parseFloat, ingen Number() och ingen trimning av ett
-// belopp — råvärdet ur anropets JSON skickas vidare orört.
 import { validateBillDraft } from '../core/bill.js';
 import { toCsv } from '../core/csv.js';
 import { isValidIsoDate, isValidIsoMonth, nowIso } from '../core/dates.js';
-import { createEntry } from '../core/entry.js';
 import { validateDepositDraft, validateGoalDraft } from '../core/goal.js';
 import { validateBudgetDraft, validateMonthItemDraft, validateOverrideDraft, validateTemplateDraft } from '../core/item.js';
-import { FEATURES, PLAN_LABELS, hasFeature, isPlanKey, planFor } from '../core/plans.js';
 import { reportCsvRows, reportFileName } from '../core/report-csv.js';
 import {
-  AUTH_MESSAGES,
   clearedSessionCookie,
   clientIp,
+  deleteAccount,
+  isProduction,
+  logIn,
   logOut,
   readSessionToken,
-  requestCode,
+  register,
+  requestPasswordReset,
   requireSession,
-  sessionCookie,
-  setPlan,
-  verifyCode
+  resetPassword,
+  sessionCookie
 } from './auth.js';
 import { addBill, markBillPaid, readBills, removeBill, updateBill } from './bills.js';
-import { getDatabase } from './db.js';
+import { getDatabase, readRows } from './db.js';
 import { addDeposit, addGoal, readGoals, removeGoal, updateGoal } from './goals.js';
 import {
   OVERVIEW_MAX_MONTHS,
@@ -44,139 +38,54 @@ import {
   updateMonthItem
 } from './months.js';
 import { readReport } from './reports.js';
-import { loadEntries, updateEntries } from './storage.js';
 
-// Ägs här och läses av server.js för rad S1 ("Ett trasigt anrop får inte döda
-// appen"). Texten säger "anropet", inte "kroppen", och täcker därför både en
-// kropp som inte gick att tolka och en förfrågningsrad som inte gick att tolka.
-// En handskriven kopia i server.js vore en andra text för samma sak.
 export const UNPARSABLE_MESSAGE = 'Kunde inte tolka anropet.';
 
-// Svenska strängar mot användaren. De står i ARKITEKTUR.md under "HTTP-API" och
-// skrivs bara här.
 const MESSAGES = Object.freeze({
   unknownPath: 'Okänd adress.',
   methodNotAllowed: 'Metoden stöds inte.',
-  // Samma sträng för "posten finns inte" och "posten tillhör någon annan", med
-  // flit: användaren ska inte kunna se skillnad på de två, och två olika
-  // strängar för samma svar vore två facit (ARKITEKTUR.md, "Månadens API").
   entryNotFound: 'Posten finns inte.',
   invalidMonth: 'Månaden måste anges som ÅÅÅÅ-MM.',
-  // Texten för en plan som inte står i PLANS [steg 1 i del 5]. Står under
-  // "Byta plan" i ARKITEKTUR.md och nämner de tre svenska namnen, aldrig de
-  // engelska nycklarna bas, plus och premium — användaren ser aldrig dem.
-  invalidPlan: 'Välj Bas, Plus eller Premium.',
-  // De två texterna för räkningarnas vägar [steg 3]. invalidToday gäller både
-  // dagens datum i sökvägen (GET) och i kroppen (POST .../betald): det är samma
-  // fält med samma regel, och två texter för samma fråga vore två facit.
   invalidToday: 'Dagens datum måste anges som ÅÅÅÅ-MM-DD.',
-  // Egen text och inte entryNotFound: det är en räkning som inte finns, inte en
-  // post. Samma text för "finns inte" och "tillhör någon annan", med flit —
-  // användaren ska inte kunna se skillnad på de två, och det är (R12).
   billNotFound: 'Räkningen finns inte.',
-  // Sparmålens egen text [steg 4]. Egen och inte billNotFound av samma skäl som
-  // den inte är entryNotFound: det är ett sparmål som inte finns. Samma text för
-  // "finns inte" och "tillhör någon annan", med flit — och samma text för ett
-  // okänt mål på insättningsvägen, eftersom det är samma fråga.
   goalNotFound: 'Sparmålet finns inte.',
-  // Rapportens text för ett otillåtet antal månader [steg 5], under "API-vägar"
-  // i avsnittet om diagram och rapporter i ARKITEKTUR.md. Talen interpoleras ur
-  // taket i months.js och står aldrig skrivna här, så att de inte blir en tredje
-  // kopia. Datalagrets RangeError får aldrig nå klienten: den namnger en
-  // funktion i datalagret och är inte text avsedd för användaren.
+  missingAppUrl: 'Servern saknar sin adress (APP_URL). Kontakta den som driftar appen.',
   invalidReportCount: `Antalet månader måste vara mellan ${OVERVIEW_MIN_MONTHS} och ${OVERVIEW_MAX_MONTHS}.`
 });
 
 const API_PREFIX = '/api/';
-const ENTRIES_PATH = '/api/entries';
-const ENTRY_PATH_PREFIX = '/api/entries/';
 
-// Månadens två vägar [etapp 3]. Adresserna är svenska, precis som
-// inloggningens: /api/manad/<ÅÅÅÅ-MM> och /api/poster/<id>.
 const MONTH_PATH_PREFIX = '/api/manad/';
 const ITEM_PATH_PREFIX = '/api/poster/';
 
-// Översiktens väg [etapp 5]: /api/oversikt/<ÅÅÅÅ-MM>. Adressen är svensk,
-// precis som månadens.
 const OVERVIEW_PATH_PREFIX = '/api/oversikt/';
-// Antalet månader i översikten. Står här och inte i vägen: en klient ska inte
-// kunna be om ett annat antal förrän det finns ett skäl, och ett antal i
-// adressen hade gjort taket i readOverview till det enda som skiljer tolv
-// månader från tiotusen. count är ändå ett argument i datalagret, eftersom
-// testerna behöver kortare serier.
 const OVERVIEW_MONTHS = 12;
 
-// Mallarnas vägar [etapp 4]. Adressen är svensk, precis som månadens.
 const TEMPLATE_PATH_PREFIX = '/api/mallar/';
-// Ledet mellan postens id och månaden i /api/poster/<id>/manad/<ÅÅÅÅ-MM>. Står
-// som en konstant och inte som en literal i matchningen: samma svenska ord som
-// MONTH_PATH_PREFIX bär, och två stavningar av det hade kunnat glida isär.
 const ITEM_MONTH_SEGMENT = 'manad';
 
-// Planens väg [steg 1 i del 5]. Adressen är ett ord som är detsamma på svenska
-// och engelska, så den behöver ingen översättning.
-const PLAN_PATH = '/api/plan';
-
-// Budgetens väg [steg 2]: /api/budget/<ÅÅÅÅ-MM> och
-// /api/budget/<ÅÅÅÅ-MM>/<kategori>. Ordet budget är detsamma på svenska och
-// engelska, precis som plan, så adressen behöver ingen översättning.
 const BUDGET_PATH_PREFIX = '/api/budget/';
 
-// Räkningarnas vägar [steg 3]: /api/rakningar och /api/rakningar/<led>.
-// Adressen är svensk, precis som månadens och inloggningens.
-//
-// Det enda ledet efter prefixet betyder olika saker för olika metoder, och det
-// är avsiktligt: GET läser listan och ledet är då dagens datum, medan PUT och
-// DELETE gäller en enskild räkning och ledet är dess id. De två kan inte
-// förväxlas, eftersom metoden avgör vilken av dem som gäller innan ledet läses.
 const BILLS_PATH = '/api/rakningar';
 const BILL_PATH_PREFIX = '/api/rakningar/';
-// Sista ledet i /api/rakningar/<id>/betald. Står som en konstant och inte som en
-// literal i matchningen, av samma skäl som ITEM_MONTH_SEGMENT: två stavningar av
-// samma svenska ord hade kunnat glida isär.
 const BILL_PAID_SEGMENT = 'betald';
 
-// Sparmålens vägar [steg 4]: /api/sparmal, /api/sparmal/<led> och
-// /api/sparmal/<id>/insattning. Adressen är svensk, precis som räkningarnas.
-//
-// Det enda ledet efter prefixet betyder olika saker för olika metoder, precis som
-// för räkningarna: GET läser listan och ledet är då dagens datum, medan PUT och
-// DELETE gäller ett enskilt sparmål och ledet är dess id. De två kan inte
-// förväxlas, eftersom metoden avgör vilken av dem som gäller innan ledet läses.
 const GOALS_PATH = '/api/sparmal';
 const GOAL_PATH_PREFIX = '/api/sparmal/';
-// Sista ledet i /api/sparmal/<id>/insattning. Står som en konstant och inte som en
-// literal i matchningen, av samma skäl som BILL_PAID_SEGMENT: två stavningar av
-// samma svenska ord hade kunnat glida isär.
 const GOAL_DEPOSIT_SEGMENT = 'insattning';
 
-// Rapportens två vägar [steg 5]: /api/rapport/<ÅÅÅÅ-MM>/<N> och
-// /api/rapport/<ÅÅÅÅ-MM>/<N>/csv. Adressen är svensk, precis som månadens.
-//
-// N står i sökvägen och inte i en frågesträng: projektet har ingen
-// frågeströmstolkning, och att införa en är en ny indatayta för ett tal som ryms
-// i sökvägen (ARKITEKTUR.md).
 const REPORT_PATH_PREFIX = '/api/rapport/';
-// Sista ledet i CSV-vägen. Står som en konstant och inte som en literal i
-// matchningen, av samma skäl som BILL_PAID_SEGMENT.
 const REPORT_CSV_SEGMENT = 'csv';
-// Formen för N: ett tal i kanonisk form, alltså 0 eller en siffra 1-9 följd av
-// valfria siffror. Ett led som inte matchar är ingen adress och ger 404 Okänd
-// adress, medan ett tal utanför taket är adressen med ett otillåtet antal och ger
-// 400 (ARKITEKTUR.md, "API-vägar" för rapporterna). Ingen trimning, inget tecken
-// och inga inledande nollor: 012 hade annars varit en andra adress för samma
-// rapport, och det är den normalisering segmentAfter-regeln förbjuder.
 const REPORT_COUNT_PATTERN = /^(0|[1-9][0-9]*)$/;
 
-// Inloggningens fyra vägar [etapp 2].
-const AUTH_CODE_PATH = '/api/auth/kod';
+const AUTH_REGISTER_PATH = '/api/auth/registrera';
+const AUTH_FORGOT_PATH = '/api/auth/glomt-losenord';
+const AUTH_RESET_PATH = '/api/auth/nytt-losenord';
+const EXPORT_PATH = '/api/mig/export';
 const AUTH_LOGIN_PATH = '/api/auth/logga-in';
 const AUTH_LOGOUT_PATH = '/api/auth/logga-ut';
 const ME_PATH = '/api/mig';
 
-// Ett eget värde i stället för null eller undefined: en kropp som innehåller
-// exakt "null" är giltig JSON och ska nå createEntry, inte förväxlas med en
-// kropp som inte gick att tolka.
 const UNPARSABLE = Symbol('unparsable');
 
 function sendJson(res, status, body) {
@@ -188,12 +97,6 @@ function sendJson(res, status, body) {
   res.end(text);
 }
 
-// Projektets första svar som inte är JSON [steg 5]: CSV-filen på rapportens väg.
-// Bara ett 200 går hit. Varje fel på samma väg svarar med JSON genom sendJson,
-// eftersom en 403 eller 400 som kom som CSV inte hade gått att läsa för
-// gränssnittet (ARKITEKTUR.md).
-//
-// filename skickas in som rent ASCII av anroparen och skrivs därför in okodat.
 function sendCsv(res, filename, text) {
   res.writeHead(200, {
     'Content-Type': 'text/csv; charset=utf-8',
@@ -203,9 +106,6 @@ function sendCsv(res, filename, text) {
   res.end(text);
 }
 
-// Läser hela kroppen. Avvisas strömmen (klienten bryter anropet mitt i) svarar
-// funktionen null, och POST-vägen behandlar det som en kropp som inte gick att
-// tolka — annars skulle löftet aldrig fullbordas och anropet hänga för alltid.
 function readBody(req) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -232,15 +132,6 @@ function parseBody(text) {
   }
 }
 
-// Sista ledet i sökvägen efter ett prefix, ordagrant. Ingen trimning, ingen
-// avkodning och ingen normalisering: ett värde som inte matchar exakt finns
-// inte. Ett tomt led och ett led som innehåller / är ingen väg alls utan
-// "annat /api/*", alltså Okänd adress.
-//
-// Ägaren till regeln: den stod skriven för hand i entryIdFromPath fram till
-// etapp 3, och månadens två vägar behöver exakt samma regel. Två handskrivna
-// kopior kan glida isär utan att något test märker det (LARDOMAR.md
-// 2026-09-02).
 function segmentAfter(pathname, prefix) {
   if (!pathname.startsWith(prefix)) {
     return null;
@@ -252,13 +143,6 @@ function segmentAfter(pathname, prefix) {
   return segment;
 }
 
-// De två leden i /api/poster/<id>/manad/<ÅÅÅÅ-MM>, eller null när sökvägen inte
-// har den formen. Samma regler som segmentAfter: ingen trimning, ingen
-// avkodning, och ett tomt led är ingen väg alls.
-//
-// Vägen går inte att matcha med segmentAfter, som avvisar varje led som
-// innehåller ett snedstreck — det är just det som gör att /api/poster/<id> och
-// den här vägen inte kan förväxlas med varandra.
 function itemMonthFromPath(pathname) {
   if (!pathname.startsWith(ITEM_PATH_PREFIX)) {
     return null;
@@ -273,13 +157,6 @@ function itemMonthFromPath(pathname) {
   return { itemId: parts[0], month: parts[2] };
 }
 
-// De två leden i /api/mallar/<seriesId>/<ÅÅÅÅ-MM>, eller null när sökvägen inte
-// har den formen. Samma regler som segmentAfter och itemMonthFromPath: ingen
-// trimning, ingen avkodning, och ett tomt led är ingen väg alls.
-//
-// Månaden prövas inte här utan i hanteraren, precis som för /api/manad/<månad>:
-// vägen finns, och en månad som inte är en månad ska ge 400 med månadens text
-// och inte 404 Okänd adress.
 function seriesMonthFromPath(pathname) {
   if (!pathname.startsWith(TEMPLATE_PATH_PREFIX)) {
     return null;
@@ -291,13 +168,6 @@ function seriesMonthFromPath(pathname) {
   return { seriesId: parts[0], month: parts[1] };
 }
 
-// De två leden i /api/budget/<ÅÅÅÅ-MM>/<kategori>, eller null när sökvägen inte
-// har den formen [steg 2]. Samma regler som seriesMonthFromPath: ingen trimning,
-// ingen avkodning, och ett tomt led är ingen väg alls.
-//
-// Varken månaden eller kategorin prövas här utan i hanteraren: vägen finns, och
-// en månad som inte är en månad ska ge 400 med månadens text och inte 404 Okänd
-// adress. Kategorin prövas inte alls på den här vägen — se handleDeleteBudget.
 function budgetCategoryFromPath(pathname) {
   if (!pathname.startsWith(BUDGET_PATH_PREFIX)) {
     return null;
@@ -309,13 +179,6 @@ function budgetCategoryFromPath(pathname) {
   return { month: parts[0], category: parts[1] };
 }
 
-// Id:t i /api/rakningar/<id>/betald, eller null när sökvägen inte har den formen
-// [steg 3]. Samma regler som segmentAfter och itemMonthFromPath: ingen trimning,
-// ingen avkodning, och ett tomt led är ingen väg alls.
-//
-// Vägen går inte att matcha med segmentAfter, som avvisar varje led som innehåller
-// ett snedstreck — det är just det som gör att /api/rakningar/<id> och den här
-// vägen inte kan förväxlas med varandra.
 function billPaidFromPath(pathname) {
   if (!pathname.startsWith(BILL_PATH_PREFIX)) {
     return null;
@@ -327,13 +190,6 @@ function billPaidFromPath(pathname) {
   return parts[0];
 }
 
-// Id:t i /api/sparmal/<id>/insattning, eller null när sökvägen inte har den formen
-// [steg 4]. Samma regler och samma skäl som billPaidFromPath ovan: ingen trimning,
-// ingen avkodning, och ett tomt led är ingen väg alls.
-//
-// Vägen går inte att matcha med segmentAfter, som avvisar varje led som innehåller
-// ett snedstreck — det är just det som gör att /api/sparmal/<id> och den här vägen
-// inte kan förväxlas med varandra.
 function goalDepositFromPath(pathname) {
   if (!pathname.startsWith(GOAL_PATH_PREFIX)) {
     return null;
@@ -345,15 +201,6 @@ function goalDepositFromPath(pathname) {
   return parts[0];
 }
 
-// Leden i /api/rapport/<ÅÅÅÅ-MM>/<N> och /api/rapport/<ÅÅÅÅ-MM>/<N>/csv, eller
-// null när sökvägen inte har någon av de två formerna [steg 5]. Samma regler som
-// segmentAfter: ingen trimning, ingen avkodning, och ett tomt led är ingen väg
-// alls.
-//
-// Månaden prövas inte här utan i hanteraren, precis som för /api/manad/<månad>:
-// vägen finns, och en månad som inte är en månad ska ge 400 med månadens text.
-// N prövas däremot här, mot sin form och inte mot taket: ett N som inte är
-// siffror är ingen adress, medan taket är hanterarens fråga.
 function reportFromPath(pathname) {
   if (!pathname.startsWith(REPORT_PATH_PREFIX)) {
     return null;
@@ -369,21 +216,14 @@ function reportFromPath(pathname) {
   return { month: parts[0], count: Number(parts[1]), csv };
 }
 
-// Returnerar true om anropet hanterades, false om det inte var en /api-väg.
-//
-// now är tidsstämpeln anropet ska räknas mot, injicerad av samma skäl som
-// dagens datum injiceras i src/core/schedule.js: en hanterare som läser klockan
-// själv går inte att testa. Förvalet är projektets enda tidsstämpelläsning,
-// nowIso() i src/core/dates.js, och server.js anropar funktionen med tre
-// argument och får därmed den verkliga klockan.
 export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   if (pathname !== '/api' && !pathname.startsWith(API_PREFIX)) {
     return false;
   }
 
-  if (pathname === AUTH_CODE_PATH) {
+  if (pathname === AUTH_REGISTER_PATH) {
     if (req.method === 'POST') {
-      await handleRequestCode(req, res, now);
+      await handleRegister(req, res, now);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -401,7 +241,34 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
 
   if (pathname === AUTH_LOGOUT_PATH) {
     if (req.method === 'POST') {
-      handleLogout(req, res, now);
+      await handleLogout(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === AUTH_FORGOT_PATH) {
+    if (req.method === 'POST') {
+      await handleForgotPassword(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === AUTH_RESET_PATH) {
+    if (req.method === 'POST') {
+      await handleResetPassword(req, res, now);
+      return true;
+    }
+    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
+    return true;
+  }
+
+  if (pathname === EXPORT_PATH) {
+    if (req.method === 'GET') {
+      await handleExport(req, res, now);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -410,20 +277,11 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
 
   if (pathname === ME_PATH) {
     if (req.method === 'GET') {
-      handleMe(req, res, now);
+      await handleMe(req, res, now);
       return true;
     }
-    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
-    return true;
-  }
-
-  if (pathname === PLAN_PATH) {
-    if (req.method === 'GET') {
-      handleReadPlan(req, res, now);
-      return true;
-    }
-    if (req.method === 'PUT') {
-      await handleChangePlan(req, res, now);
+    if (req.method === 'DELETE') {
+      await handleDeleteAccount(req, res, now);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -439,10 +297,6 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
-  // Prövas före den enkla /api/rakningar/<led>, fastän ordningen inte avgör
-  // något: segmentAfter svarar null för en sökväg med fler än ett led, så de två
-  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
-  // den är den mer specifika — samma ordning som för postens två vägar nedan.
   const paidBillId = billPaidFromPath(pathname);
   if (paidBillId !== null) {
     if (req.method === 'POST') {
@@ -453,12 +307,10 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
-  // Ett led, tre metoder. Ledet är dagens datum för GET och räkningens id för
-  // PUT och DELETE; se kommentaren vid BILL_PATH_PREFIX.
   const billSegment = segmentAfter(pathname, BILL_PATH_PREFIX);
   if (billSegment !== null) {
     if (req.method === 'GET') {
-      handleReadBills(req, res, now, billSegment);
+      await handleReadBills(req, res, now, billSegment);
       return true;
     }
     if (req.method === 'PUT') {
@@ -466,7 +318,7 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
       return true;
     }
     if (req.method === 'DELETE') {
-      handleDeleteBill(req, res, now, billSegment);
+      await handleDeleteBill(req, res, now, billSegment);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -482,10 +334,6 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
-  // Prövas före den enkla /api/sparmal/<led>, av samma skäl och i samma ordning
-  // som räkningarnas två vägar: segmentAfter svarar null för en sökväg med fler än
-  // ett led, så de två matchningarna kan inte båda vara sanna, och den mer
-  // specifika vägen står först.
   const depositGoalId = goalDepositFromPath(pathname);
   if (depositGoalId !== null) {
     if (req.method === 'POST') {
@@ -496,12 +344,10 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
-  // Ett led, tre metoder. Ledet är dagens datum för GET och sparmålets id för PUT
-  // och DELETE; se kommentaren vid GOAL_PATH_PREFIX.
   const goalSegment = segmentAfter(pathname, GOAL_PATH_PREFIX);
   if (goalSegment !== null) {
     if (req.method === 'GET') {
-      handleReadGoals(req, res, now, goalSegment);
+      await handleReadGoals(req, res, now, goalSegment);
       return true;
     }
     if (req.method === 'PUT') {
@@ -509,44 +355,17 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
       return true;
     }
     if (req.method === 'DELETE') {
-      handleDeleteGoal(req, res, now, goalSegment);
+      await handleDeleteGoal(req, res, now, goalSegment);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
     return true;
   }
 
-  if (pathname === ENTRIES_PATH) {
-    if (req.method === 'GET') {
-      await handleList(res);
-      return true;
-    }
-    if (req.method === 'POST') {
-      await handleCreate(req, res);
-      return true;
-    }
-    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
-    return true;
-  }
-
-  const id = segmentAfter(pathname, ENTRY_PATH_PREFIX);
-  if (id !== null) {
-    if (req.method === 'DELETE') {
-      await handleDelete(res, id);
-      return true;
-    }
-    sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
-    return true;
-  }
-
-  // Prövas före den enkla /api/budget/<månad>, fastän ordningen inte avgör något:
-  // segmentAfter svarar null för en sökväg med fler än ett led, så de två
-  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
-  // den är den mer specifika — samma ordning som för postens två vägar nedan.
   const budgetCategory = budgetCategoryFromPath(pathname);
   if (budgetCategory !== null) {
     if (req.method === 'DELETE') {
-      handleDeleteBudget(req, res, now, budgetCategory.month, budgetCategory.category);
+      await handleDeleteBudget(req, res, now, budgetCategory.month, budgetCategory.category);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -566,7 +385,7 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   const month = segmentAfter(pathname, MONTH_PATH_PREFIX);
   if (month !== null) {
     if (req.method === 'GET') {
-      handleReadMonth(req, res, now, month);
+      await handleReadMonth(req, res, now, month);
       return true;
     }
     if (req.method === 'POST') {
@@ -580,19 +399,17 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   const overviewMonth = segmentAfter(pathname, OVERVIEW_PATH_PREFIX);
   if (overviewMonth !== null) {
     if (req.method === 'GET') {
-      handleReadOverview(req, res, now, overviewMonth);
+      await handleReadOverview(req, res, now, overviewMonth);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
     return true;
   }
 
-  // Rapportens två vägar [steg 5]. Båda är GET; vilken av dem anropet gäller
-  // avgörs av sökvägens sista led.
   const report = reportFromPath(pathname);
   if (report !== null) {
     if (req.method === 'GET') {
-      handleReadReport(req, res, now, report);
+      await handleReadReport(req, res, now, report);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -609,10 +426,6 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
     return true;
   }
 
-  // De två vägar som gäller en hel serie. Vilken operation anropet gör avgörs av
-  // metoden och inte av ett fält i kroppen: PUT ändrar från och med månaden,
-  // DELETE avslutar serien från och med månaden (ARKITEKTUR.md, "Rättelse av
-  // etapp 4" — fältet omfattning utgick).
   const seriesMonth = seriesMonthFromPath(pathname);
   if (seriesMonth !== null) {
     if (req.method === 'PUT') {
@@ -620,17 +433,13 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
       return true;
     }
     if (req.method === 'DELETE') {
-      handleEndTemplate(req, res, now, seriesMonth.seriesId, seriesMonth.month);
+      await handleEndTemplate(req, res, now, seriesMonth.seriesId, seriesMonth.month);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
     return true;
   }
 
-  // Prövas före den enkla /api/poster/<id>, fastän ordningen inte avgör något:
-  // segmentAfter svarar null för en sökväg med fler än ett led, så de två
-  // matchningarna kan inte båda vara sanna. Den längre vägen står först för att
-  // den är den mer specifika.
   const itemMonth = itemMonthFromPath(pathname);
   if (itemMonth !== null) {
     if (req.method === 'PUT') {
@@ -648,7 +457,7 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
       return true;
     }
     if (req.method === 'DELETE') {
-      handleDeleteMonthItem(req, res, now, itemId);
+      await handleDeleteMonthItem(req, res, now, itemId);
       return true;
     }
     sendJson(res, 405, { error: MESSAGES.methodNotAllowed });
@@ -659,20 +468,11 @@ export async function handleApiRequest(req, res, pathname, now = nowIso()) {
   return true;
 }
 
-// Sessionsspärren, gemensam för månadens vägar. Svaret är användarens id, eller
-// null när funktionen redan har svarat klienten — anroparen returnerar då utan
-// att göra något mer.
-//
-// 401 ges av sessionsspärren innan vägen körs, inte av vägen själv
-// (ARKITEKTUR.md, "API-vägar"). user_id kommer ur sessionen och aldrig ur
-// anropet.
-function sessionOrNull(req, res, now) {
+async function sessionOrNull(req, res, now) {
   let guard;
   try {
-    guard = requireSession(getDatabase(), { token: readSessionToken(req), now });
+    guard = await requireSession(getDatabase(), { token: readSessionToken(req), now });
   } catch (error) {
-    // db.js, auth.js och months.js kastar bara DatabaseError, och dess .message
-    // är svensk text avsedd att visas för användaren.
     sendJson(res, 500, { error: error.message });
     return null;
   }
@@ -683,175 +483,33 @@ function sessionOrNull(req, res, now) {
   return guard.session;
 }
 
-// Samma spärr, för de vägar som bara behöver användarens id. Byggd på
-// sessionOrNull och inte som en andra kopia: 401-svaret och 500-svaret har en
-// enda ägare, och en kopia per form är en kopia som kan glida.
-function sessionUserId(req, res, now) {
-  const session = sessionOrNull(req, res, now);
+async function sessionUserId(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
   return session === null ? null : session.userId;
 }
 
-// Behörighetsspärren, byggd som en funktion varje skyddad väg går genom — aldrig
-// en kontroll upprepad per väg, eftersom en upprepad kontroll är en som glöms på
-// en väg (ARKITEKTUR.md under "Behörigheten på servern").
-//
-// Svaret är null när planen räcker, annars kroppen till ett 403. Anroparen
-// skickar den: funktionen tar session och feature och ingenting mer, precis som
-// signaturen i ARKITEKTUR.md, och är därmed ren — den rör aldrig res.
-//
-// feature och requiredPlan står i svaret för att gränssnittet ska kunna visa rätt
-// ruta utan att gissa ur texten. requiredPlan kommer ur planFor och PLAN_LABELS
-// ger det svenska namnet; ingen av de två skrivs av här.
-//
-// Spärren prövas efter sessionen men före allt annat. Ordningen är bindande:
-// session, behörighet, månadsspärr, validering, datalager. En utan session ska få
-// 401 och inte 403 — annars avslöjar svaret vilka funktioner som finns för den
-// som inte är inloggad.
-//
-// Grenen som ger ett 403 har en nåbar indata sedan steg 4. Fram till dess var den
-// enda skyddade vägen budgetens och räkningarnas, och båda funktionerna står i alla
-// tre planerna, så hasFeature var true för varje plan en session kan bära — mutation
-// "ta bort if-satsen" överlevde hela sviten, och ARKITEKTUR.md skrev ut skälet:
-// vägen gick ändå genom spärren "så att den dagen något ändras finns kontrollen på
-// plats".
-//
-// Den dagen är steg 4. savingsGoals står i PLANS.plus och inte i PLANS.bas, så
-// sparmålens fem vägar ger 403 för en Bas-användare och 200 för en Plus-användare.
-// Mutation: if (hasFeature(session.plan, feature)) -> if (true) ger
-// node --test "tests/goal-api.test.js" med EXIT=1, fail 3, och kryssraderna
-// ✖ (P8) Bas får 403 på varje sparmålsväg, med feature och requiredPlan i svaret
-// ✖ (P9) Plus får 200 på samma sparmålsväg där Bas fick 403
-// ✖ (S12) ett sparmål skapat på Plus är kvar efter ned- och uppgradering
-// (körd i en kopia av trädet, aldrig i src/). (P8) och (P9), som stod som
-// obyggbara i steg 1, är byggda i den filen.
-function requireFeature(session, feature) {
-  if (hasFeature(session.plan, feature)) {
-    return null;
-  }
-  const requiredPlan = planFor(feature);
-  return {
-    error: `Funktionen ingår i ${PLAN_LABELS[requiredPlan]}. Uppgradera för att låsa upp.`,
-    feature,
-    requiredPlan
-  };
-}
-
-// Svarskroppen för planens två vägar: { plan, features }. En enda ägare till
-// formen, så att GET och PUT inte kan svara olika — gränssnittet ritar om vyn
-// ur PUT:ens svar utan en andra hämtning.
-//
-// features är de funktioner planen *har*, med arvet upplöst: hasFeature i
-// src/core/plans.js äger upplösningen, och den här filen räknar inte ut den
-// själv. Ordningen är FEATURES ordning, alltså planordning.
-function planBody(plan) {
-  return { plan, features: FEATURES.filter((feature) => hasFeature(plan, feature)) };
-}
-
-// GET /api/plan [steg 1 i del 5]. 200 { plan, features }, 401 utan session,
-// 500 vid DatabaseError.
-//
-// Planen läses ur sessionen och aldrig ur anropet, av samma skäl som user_id:
-// sessionen är den enda källan till vem användaren är och vad hen har betalt
-// för. Ingen extra fråga mot databasen behövs — requireSession läser redan
-// kontots rad.
-function handleReadPlan(req, res, now) {
-  const session = sessionOrNull(req, res, now);
-  if (session === null) {
-    return;
-  }
-  sendJson(res, 200, planBody(session.plan));
-}
-
-// PUT /api/plan [steg 1 i del 5]. 200 { plan, features }, 400 vid okänd plan,
-// 401 utan session, 500 vid DatabaseError.
-//
-// Samma bindande ordning som varje annan skrivväg: sessionsspärren,
-// valideringen, sedan datalagret. Vägen har ingen månadsspärr — den gäller
-// kontot och inte en månad.
-//
-// Ingen betalning sker och ingen betalning förbereds: bytet är en UPDATE av en
-// kolumn. Att svaret kommer direkt är hela poängen med demon — gränssnittet
-// visar texten om att ingen betalning genomförs.
-async function handleChangePlan(req, res, now) {
-  const session = sessionOrNull(req, res, now);
-  if (session === null) {
-    return;
-  }
-  const body = parseBody(await readBody(req));
-  if (body === UNPARSABLE) {
-    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
-    return;
-  }
-  // isPlanKey i src/core/plans.js äger villkoret "detta är en känd plan". Det
-  // här lagret skriver ingen egen lista över plannycklar, precis som det inte
-  // skriver något eget månadsmönster. Allt som inte är en plannyckel — null, en
-  // array, ett objekt, en felstavad nyckel — ger samma 400 med samma text.
-  const plan = body?.plan;
-  if (!isPlanKey(plan)) {
-    sendJson(res, 400, { error: MESSAGES.invalidPlan });
-    return;
-  }
-  try {
-    setPlan(getDatabase(), { userId: session.userId, plan });
-  } catch (error) {
-    sendJson(res, 500, { error: error.message });
-    return;
-  }
-  // Svaret bär den nya planen och ingenting annat: en nedgradering raderar
-  // ingen rad, så ingen lista behöver skickas med och ingen ändring behöver
-  // ångras (ARKITEKTUR.md, "Nedgradering raderar ingen data").
-  sendJson(res, 200, planBody(plan));
-}
-
-// GET /api/manad/<ÅÅÅÅ-MM>. 200 med poster och summor, 400 vid fel
-// månadsformat, 401 utan session, 500 vid DatabaseError.
-function handleReadMonth(req, res, now, month) {
-  const userId = sessionUserId(req, res, now);
+async function handleReadMonth(req, res, now, month) {
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
-  // Månadsspärren prövas innan datalagret nås: en ogiltig månad ska aldrig bli
-  // en SQL-fråga. isValidIsoMonth i src/core/dates.js äger frågan, och det här
-  // lagret skriver inget eget månadsmönster.
   if (!isValidIsoMonth(month)) {
     sendJson(res, 400, { error: MESSAGES.invalidMonth });
     return;
   }
   let result;
   try {
-    result = readMonth(userId, month);
+    result = await readMonth(userId, month);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-  // budgets står med sedan steg 2: kortet Budget i månadsvyn ritas ur samma svar
-  // som listan och summorna, så vyn behöver inte en andra hämtning.
   sendJson(res, 200, { items: result.items, totals: result.totals, budgets: result.budgets });
 }
 
-// PUT /api/budget/<ÅÅÅÅ-MM> [steg 2]. 200 med månadens budgetar, 400 med
-// fieldErrors, 401 utan session, 403 utan behörighet, 500 vid DatabaseError.
-//
-// Ordningen är den bindande: sessionsspärren, behörigheten, månadsspärren,
-// valideringen, sedan datalagret. Steg fyra före steg fem betyder att ett
-// ogiltigt tak aldrig blir en SQL-fråga.
-//
-// Vägen skapar taket eller ersätter det som finns — UNIQUE i schemat gör det till
-// en operation, så kroppen behöver inget fält som säger vilket av de två som
-// avses.
-//
-// Svaret är månadens budgetar och inte den enda raden som skrevs: kortet Budget
-// visar en rad per kategori med ett tak, så gränssnittet kan rita om hela kortet
-// ur svaret utan en andra hämtning. spentOre och leftOre kommer därmed ur
-// readMonth, som är den enda ägaren till formen.
 async function handleSetBudget(req, res, now, month) {
-  const session = sessionOrNull(req, res, now);
+  const session = await sessionOrNull(req, res, now);
   if (session === null) {
-    return;
-  }
-  const denied = requireFeature(session, 'budget');
-  if (denied !== null) {
-    sendJson(res, 403, denied);
     return;
   }
   if (!isValidIsoMonth(month)) {
@@ -863,9 +521,6 @@ async function handleSetBudget(req, res, now, month) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // Kroppens två fält ägs av validateBudgetDraft i src/core/item.js. Det här
-  // lagret läser varken category eller amountSek själv, och har ingen egen lista
-  // över kategorier.
   const result = validateBudgetDraft(body);
   if (!result.ok) {
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
@@ -873,8 +528,8 @@ async function handleSetBudget(req, res, now, month) {
   }
   let budgets;
   try {
-    setBudget(session.userId, month, result.value.category, result.value.amountOre, { now });
-    budgets = readMonth(session.userId, month).budgets;
+    await setBudget(session.userId, month, result.value.category, result.value.amountOre, { now });
+    budgets = (await readMonth(session.userId, month)).budgets;
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -882,27 +537,9 @@ async function handleSetBudget(req, res, now, month) {
   sendJson(res, 200, { budgets });
 }
 
-// DELETE /api/budget/<ÅÅÅÅ-MM>/<kategori> [steg 2]. 204, 400 vid fel
-// månadsformat, 401, 403, 404 när taket inte finns eller tillhör någon annan,
-// 500.
-//
-// Vägen har ingen kropp och därför ingen 400 utöver månadsspärrens — vad som ska
-// hända står i metoden och i sökvägen. Funktionen är inte async av just det
-// skälet: den väntar inte på readBody.
-//
-// Kategorin prövas inte mot CATEGORIES. En kategori som inte finns matchar ingen
-// rad, och svaret blir då detsamma som för en kategori utan tak: 404 med samma
-// text som för en post som inte finns. Tabellen under "API-vägar" räknar upp
-// 204, 401, 404 och 500 för den här vägen och ingen 400 för kategorin, så en
-// egen spärr här hade lagt till ett svar tabellen inte har.
-function handleDeleteBudget(req, res, now, month, category) {
-  const session = sessionOrNull(req, res, now);
+async function handleDeleteBudget(req, res, now, month, category) {
+  const session = await sessionOrNull(req, res, now);
   if (session === null) {
-    return;
-  }
-  const denied = requireFeature(session, 'budget');
-  if (denied !== null) {
-    sendJson(res, 403, denied);
     return;
   }
   if (!isValidIsoMonth(month)) {
@@ -911,10 +548,7 @@ function handleDeleteBudget(req, res, now, month, category) {
   }
   let removed;
   try {
-    // Beslutet "finns taket?" fattas av SQL:s WHERE med user_id = ?, inte av en
-    // läsning före: ett tak som tillhör någon annan matchar då ingen rad, och
-    // svaret blir detsamma som för en kategori som aldrig haft ett tak.
-    removed = removeBudget(session.userId, month, category);
+    removed = await removeBudget(session.userId, month, category);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -927,15 +561,8 @@ function handleDeleteBudget(req, res, now, month, category) {
   res.end();
 }
 
-// GET /api/oversikt/<ÅÅÅÅ-MM> [etapp 5]. 200 med { months, savedThisYear },
-// 400 vid fel månadsformat, 401 utan session, 500 vid DatabaseError.
-//
-// Samma ordning som handleReadMonth ovan: sessionsspärren, månadsspärren, sedan
-// datalagret. Månaden prövas här fastän readOverview prövar den igen — en
-// ogiltig månad ska bli ett 400 med den svenska texten ur MESSAGES och aldrig
-// ett 500 med ett RangeError-meddelande som namnger en funktion i datalagret.
-function handleReadOverview(req, res, now, month) {
-  const userId = sessionUserId(req, res, now);
+async function handleReadOverview(req, res, now, month) {
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -945,7 +572,7 @@ function handleReadOverview(req, res, now, month) {
   }
   let result;
   try {
-    result = readOverview(userId, month, OVERVIEW_MONTHS);
+    result = await readOverview(userId, month, OVERVIEW_MONTHS);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -953,33 +580,11 @@ function handleReadOverview(req, res, now, month) {
   sendJson(res, 200, { months: result.months, savedThisYear: result.savedThisYear });
 }
 
-// GET /api/rapport/<ÅÅÅÅ-MM>/<N> och GET /api/rapport/<ÅÅÅÅ-MM>/<N>/csv
-// [steg 5]. 200 med rapporten respektive med CSV-filen, 400 vid fel månadsformat
-// eller ett antal utanför taket, 401 utan session, 403 utan behörighet, 500 vid
-// DatabaseError. 404 ges redan av routningen, för ett N som inte är siffror.
-//
-// En hanterare för båda vägarna: de har samma kedja fram till svaret, och två
-// kopior av den hade kunnat glida isär. Ordningen är den bindande: sessionen,
-// behörigheten, månadsspärren, antalet, sedan datalagret.
-//
-// Båda går genom requireFeature med 'reports'. Spärren sitter här på servern;
-// att gränssnittet döljer kortet för en Bas-användare är aldrig skyddet.
-//
-// Fel svarar alltid med JSON, också på CSV-vägen. Bara 200 är text/csv.
-function handleReadReport(req, res, now, report) {
-  const session = sessionOrNull(req, res, now);
+async function handleReadReport(req, res, now, report) {
+  const session = await sessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
-  const denied = requireFeature(session, 'reports');
-  if (denied !== null) {
-    sendJson(res, 403, denied);
-    return;
-  }
-  // Månaden och antalet prövas här fastän readReport prövar dem igen: en ogiltig
-  // indata ska bli ett 400 med svensk text ur MESSAGES, aldrig ett 500 med ett
-  // RangeError-meddelande som namnger en funktion i datalagret. Samma skäl som
-  // handleReadOverview.
   if (!isValidIsoMonth(report.month)) {
     sendJson(res, 400, { error: MESSAGES.invalidMonth });
     return;
@@ -990,34 +595,26 @@ function handleReadReport(req, res, now, report) {
   }
   let result;
   try {
-    result = readReport(session.userId, report.month, report.count);
+    result = await readReport(session.userId, report.month, report.count);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
   if (report.csv) {
-    // Filen byggs ur rapporten med kärnans två ägare: reportCsvRows äger
-    // layouten och toCsv formatet. Filnamnet ägs av reportFileName i samma
-    // kärnmodul, som gränssnittet sätter på nedladdningen.
     sendCsv(res, reportFileName(report.month), toCsv(reportCsvRows(result)));
     return;
   }
   sendJson(res, 200, { months: result.months, rows: result.rows, largest: result.largest });
 }
 
-// DELETE /api/poster/<id>. 204, 401, 404 om posten inte finns eller tillhör
-// någon annan, 500 vid DatabaseError.
-function handleDeleteMonthItem(req, res, now, itemId) {
-  const userId = sessionUserId(req, res, now);
+async function handleDeleteMonthItem(req, res, now, itemId) {
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
   let removed;
   try {
-    // Beslutet "finns posten?" fattas av SQL:s WHERE med user_id = ?, inte av en
-    // läsning före: en post som tillhör någon annan matchar då ingen rad, och
-    // svaret blir detsamma som för ett id som aldrig funnits.
-    removed = removeMonthItem(userId, itemId);
+    removed = await removeMonthItem(userId, itemId);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1030,12 +627,8 @@ function handleDeleteMonthItem(req, res, now, itemId) {
   res.end();
 }
 
-// POST /api/manad/<ÅÅÅÅ-MM>. 201 med posten, 400 med fieldErrors, 401, 500.
-// Ordningen är bindande: sessionsspärren, månadsspärren, valideringen, sedan
-// datalagret. Steg tre före steg fyra betyder att en ogiltig post aldrig blir en
-// SQL-fråga.
 async function handleCreateMonthItem(req, res, now, month) {
-  const userId = sessionUserId(req, res, now);
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1048,20 +641,14 @@ async function handleCreateMonthItem(req, res, now, month) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
-  // array, en sträng — hanteras av validateMonthItemDraft och ger fältfel.
   const result = validateMonthItemDraft(draft);
   if (!result.ok) {
-    // Samma form som den gamla formulärvägen: error är det första felet, och
-    // fieldErrors är listan orörd. Alla fyra fälten kan stå i listan, och alla
-    // fyra finns i formuläret — ingen post har ett field som saknar
-    // motsvarighet, till skillnad från id-felet i createEntry.
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
     return;
   }
   let item;
   try {
-    item = addMonthItem(userId, month, result.value, { now });
+    item = await addMonthItem(userId, month, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1069,10 +656,8 @@ async function handleCreateMonthItem(req, res, now, month) {
   sendJson(res, 201, { item });
 }
 
-// PUT /api/poster/<id>. 200 med posten, 400, 401, 404 om posten inte finns eller
-// tillhör någon annan, 500. Samma ordning som POST.
 async function handleUpdateMonthItem(req, res, now, itemId) {
-  const userId = sessionUserId(req, res, now);
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1088,25 +673,20 @@ async function handleUpdateMonthItem(req, res, now, itemId) {
   }
   let item;
   try {
-    item = updateMonthItem(userId, itemId, result.value);
+    item = await updateMonthItem(userId, itemId, result.value);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
   if (item === null) {
-    // Samma text och samma statuskod som för ett id som aldrig funnits.
     sendJson(res, 404, { error: MESSAGES.entryNotFound });
     return;
   }
   sendJson(res, 200, { item });
 }
 
-// POST /api/mallar/<ÅÅÅÅ-MM>. 201 med mallen, 400 med fieldErrors, 401, 500.
-// Samma bindande ordning som POST /api/manad/<ÅÅÅÅ-MM>: sessionsspärren,
-// månadsspärren, valideringen, sedan datalagret. Steg tre före steg fyra
-// betyder att en ogiltig mall aldrig blir en SQL-fråga.
 async function handleCreateTemplate(req, res, now, month) {
-  const userId = sessionUserId(req, res, now);
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1119,21 +699,14 @@ async function handleCreateTemplate(req, res, now, month) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // draft skickas orört vidare. Allt som inte är ett vanligt objekt hanteras av
-  // validateTemplateDraft och ger fältfel. Månaden är andra argumentet och inte
-  // ett fält i kroppen: slutmånaden prövas mot den månad mallen gäller från, och
-  // den står i sökvägen.
   const result = validateTemplateDraft(draft, month);
   if (!result.ok) {
-    // Samma form som månadspostens väg: error är det första felet, fieldErrors
-    // är listan orörd. Alla sex fälten finns i formuläret, så ingen post har ett
-    // field utan motsvarighet i gränssnittet.
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
     return;
   }
   let template;
   try {
-    template = addTemplate(userId, month, result.value, { now });
+    template = await addTemplate(userId, month, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1141,14 +714,8 @@ async function handleCreateTemplate(req, res, now, month) {
   sendJson(res, 201, { template });
 }
 
-// PUT /api/mallar/<seriesId>/<ÅÅÅÅ-MM>. 200 med den nya versionen, 400 med
-// fieldErrors, 401, 404 om serien inte finns eller tillhör någon annan, 500.
-//
-// Kroppen är densamma som POST:ens: mallens sex fält. Samma bindande ordning
-// som varje annan skrivväg — sessionsspärren, månadsspärren, valideringen,
-// datalagret.
 async function handleChangeTemplate(req, res, now, seriesId, month) {
-  const userId = sessionUserId(req, res, now);
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1168,28 +735,20 @@ async function handleChangeTemplate(req, res, now, seriesId, month) {
   }
   let template;
   try {
-    template = changeTemplateFrom(userId, seriesId, month, result.value, { now });
+    template = await changeTemplateFrom(userId, seriesId, month, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
   if (template === null) {
-    // Samma text och samma statuskod som för ett series_id som aldrig funnits.
-    // changeTemplateFrom svarar null både då, när serien tillhör någon annan och
-    // när ingen version gäller månaden.
     sendJson(res, 404, { error: MESSAGES.entryNotFound });
     return;
   }
   sendJson(res, 200, { template });
 }
 
-// DELETE /api/mallar/<seriesId>/<ÅÅÅÅ-MM>. 204, 401, 404, 500.
-//
-// Vägen har ingen kropp och därför ingen 400 utöver månadsspärrens — vad som
-// ska hända står i metoden och i sökvägen, ingenting läses ur anropets kropp.
-// Funktionen är inte async av just det skälet: den väntar inte på readBody.
-function handleEndTemplate(req, res, now, seriesId, month) {
-  const userId = sessionUserId(req, res, now);
+async function handleEndTemplate(req, res, now, seriesId, month) {
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1199,10 +758,7 @@ function handleEndTemplate(req, res, now, seriesId, month) {
   }
   let ended;
   try {
-    // Beslutet "finns serien?" fattas av SQL:s WHERE med user_id = ?, inte av en
-    // läsning före: en serie som tillhör någon annan matchar då ingen rad, och
-    // svaret blir detsamma som för ett id som aldrig funnits.
-    ended = endTemplate(userId, seriesId, month);
+    ended = await endTemplate(userId, seriesId, month);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1215,15 +771,8 @@ function handleEndTemplate(req, res, now, seriesId, month) {
   res.end();
 }
 
-// PUT /api/poster/<id>/manad/<ÅÅÅÅ-MM>. 200, 400, 401, 404 om mallen inte finns
-// eller tillhör någon annan, 500. Samma ordning som POST.
-//
-// Svaret är månaden efter ändringen, { items, totals }, och inte den ändrade
-// posten: en överhoppad månad har ingen post att svara med, och en väg ska ha
-// en kroppsform och inte två. Formen är densamma som GET /api/manad/<ÅÅÅÅ-MM>
-// ger, så gränssnittet kan rita om vyn ur svaret utan en andra hämtning.
 async function handleSetMonthOverride(req, res, now, templateId, month) {
-  const userId = sessionUserId(req, res, now);
+  const userId = await sessionUserId(req, res, now);
   if (userId === null) {
     return;
   }
@@ -1236,8 +785,6 @@ async function handleSetMonthOverride(req, res, now, templateId, month) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // Kroppens två former ägs av validateOverrideDraft i src/core/item.js. Det här
-  // lagret läser varken skipped eller amountSek själv.
   const result = validateOverrideDraft(body);
   if (!result.ok) {
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
@@ -1245,12 +792,9 @@ async function handleSetMonthOverride(req, res, now, templateId, month) {
   }
   let changed;
   try {
-    // Beslutet "finns mallen?" fattas av SQL:s WHERE med user_id = ?, inte av en
-    // läsning före: en mall som tillhör någon annan matchar då ingen rad, och
-    // svaret blir detsamma som för ett id som aldrig funnits.
     changed = result.value.skipped
-      ? skipMonth(userId, templateId, month, { now })
-      : setOverride(userId, templateId, month, result.value.amountOre, { now });
+      ? await skipMonth(userId, templateId, month, { now })
+      : await setOverride(userId, templateId, month, result.value.amountOre, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1261,71 +805,24 @@ async function handleSetMonthOverride(req, res, now, templateId, month) {
   }
   let result2;
   try {
-    result2 = readMonth(userId, month);
+    result2 = await readMonth(userId, month);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-  // Samma tre fält som GET /api/manad/<ÅÅÅÅ-MM> ger. Formen ska vara densamma,
-  // så att gränssnittet kan rita om hela vyn ur svaret utan en andra hämtning —
-  // och en avvikelse ändrar månadens utgifter, alltså också spentOre och leftOre
-  // i varje tak.
   sendJson(res, 200, { items: result2.items, totals: result2.totals, budgets: result2.budgets });
 }
 
-// 401 med rensad cookie. En session som saknas, är återkallad eller har gått ut
-// ska inte skickas tillbaka vid nästa anrop. Ägaren till svaret: det stod
-// skrivet för hand i handleMe fram till etapp 3, och månadens vägar behöver
-// samma svar.
-// ---------------------------------------------------------------------------
-// Räkningarnas fem vägar [steg 3]. Tabellen under "API-vägar" i ARKITEKTUR.md är
-// facit för statuskoderna.
-//
-// Alla fem går genom requireFeature med 'billReminders'. Funktionen står i alla
-// tre planerna, så 403-grenen har ingen nåbar indata — precis som för budgetens
-// vägar, och av samma skäl skriven ändå: vägen går genom spärren så att den dagen
-// något ändras finns kontrollen på plats. Se kommentaren vid requireFeature.
-//
-// Ordningen är den bindande: sessionsspärren, behörigheten, datumspärren,
-// valideringen, sedan datalagret. En utan session ska få 401 och inte 403, och
-// ett ogiltigt datum ska aldrig bli en SQL-fråga.
-//
-// Dagens datum står i sökvägen respektive i kroppen och läses aldrig på servern,
-// av samma skäl som månaden gör det: en funktion som läser klockan går inte att
-// testa. now är sessionens tidsstämpel och inte dagens datum — de två hålls isär.
-// ---------------------------------------------------------------------------
-
-// Sessions- och behörighetsspärren, gemensam för räkningarnas fem vägar. Svaret är
-// sessionen, eller null när funktionen redan har svarat klienten.
-//
-// Byggd som en funktion varje väg går genom och aldrig som en kontroll upprepad
-// per väg: en upprepad kontroll är en som glöms på en väg (ARKITEKTUR.md under
-// "Behörigheten på servern").
-function billSessionOrNull(req, res, now) {
-  const session = sessionOrNull(req, res, now);
+async function billSessionOrNull(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
   if (session === null) {
-    return null;
-  }
-  const denied = requireFeature(session, 'billReminders');
-  if (denied !== null) {
-    sendJson(res, 403, denied);
     return null;
   }
   return session;
 }
 
-// GET /api/rakningar/<ÅÅÅÅ-MM-DD>. 200 med listan, 400 vid fel datumformat, 401
-// utan session, 403 utan behörighet, 500 vid DatabaseError.
-//
-// Datumet prövas här fastän readBills prövar det igen — ett ogiltigt datum ska bli
-// ett 400 med den svenska texten ur MESSAGES och aldrig ett 500 med ett
-// RangeError-meddelande som namnger en funktion i datalagret. Samma förhållande
-// som mellan handleReadOverview och readOverview.
-//
-// isValidIsoDate i src/core/dates.js äger frågan, och det här lagret skriver inget
-// eget datummönster.
-function handleReadBills(req, res, now, today) {
-  const session = billSessionOrNull(req, res, now);
+async function handleReadBills(req, res, now, today) {
+  const session = await billSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1335,7 +832,7 @@ function handleReadBills(req, res, now, today) {
   }
   let bills;
   try {
-    bills = readBills(session.userId, today);
+    bills = await readBills(session.userId, today);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1343,17 +840,8 @@ function handleReadBills(req, res, now, today) {
   sendJson(res, 200, { bills });
 }
 
-// POST /api/rakningar. 201 med räkningen, 400 med fieldErrors, 401, 403, 500.
-//
-// Kroppens fem fält ägs av validateBillDraft i src/core/bill.js. Det här lagret
-// läser varken beloppet, förfallodagen eller intervallet självt, och har ingen
-// egen lista över intervall.
-//
-// Svaret bär ingen status och inget daysUntil: de två kräver ett dagens datum, och
-// kroppen har inget. Gränssnittet hämtar listan om efter en sparning, precis som
-// det gör för en månadspost.
 async function handleCreateBill(req, res, now) {
-  const session = billSessionOrNull(req, res, now);
+  const session = await billSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1362,8 +850,6 @@ async function handleCreateBill(req, res, now) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
-  // array, en sträng — hanteras av validateBillDraft och ger fältfel.
   const result = validateBillDraft(draft);
   if (!result.ok) {
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
@@ -1371,7 +857,7 @@ async function handleCreateBill(req, res, now) {
   }
   let bill;
   try {
-    bill = addBill(session.userId, result.value, { now });
+    bill = await addBill(session.userId, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1379,11 +865,8 @@ async function handleCreateBill(req, res, now) {
   sendJson(res, 201, { bill });
 }
 
-// PUT /api/rakningar/<id>. 200 med räkningen, 400 med fieldErrors, 401, 403,
-// 404 när räkningen inte finns eller tillhör någon annan, 500. Samma kropp och
-// samma ordning som POST.
 async function handleUpdateBill(req, res, now, billId) {
-  const session = billSessionOrNull(req, res, now);
+  const session = await billSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1399,7 +882,7 @@ async function handleUpdateBill(req, res, now, billId) {
   }
   let bill;
   try {
-    bill = updateBill(session.userId, billId, result.value);
+    bill = await updateBill(session.userId, billId, result.value);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1411,19 +894,8 @@ async function handleUpdateBill(req, res, now, billId) {
   sendJson(res, 200, { bill });
 }
 
-// POST /api/rakningar/<id>/betald. 200 med räkningen efter flytten, 400 vid en
-// kropp som inte går att tolka eller ett today som inte är ett datum, 401, 403,
-// 404, 500.
-//
-// Dagens datum står i kroppen och läses aldrig på servern. Det behövs för att en
-// återkommande räkning som betalas sent ska flyttas till den första dragningen
-// framåt i stället för till en som redan har passerat.
-//
-// Svaret bär räkningen efter flytten: för en återkommande den nya förfallodagen
-// med paidAt = null, för en engångsräkning samma förfallodag med en tidsstämpel.
-// Användaren ska se att en återkommande räkning kommer igen.
 async function handleMarkBillPaid(req, res, now, billId) {
-  const session = billSessionOrNull(req, res, now);
+  const session = await billSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1432,10 +904,6 @@ async function handleMarkBillPaid(req, res, now, billId) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // Samma spärr och samma text som för datumet i GET:ens sökväg: det är samma
-  // fält med samma regel. Valfri kedjning och inte en objektkontroll — en kropp
-  // som är null, en sträng eller en array ger undefined, och undefined är inget
-  // datum.
   const today = body?.today;
   if (!isValidIsoDate(today)) {
     sendJson(res, 400, { error: MESSAGES.invalidToday });
@@ -1443,36 +911,26 @@ async function handleMarkBillPaid(req, res, now, billId) {
   }
   let bill;
   try {
-    bill = markBillPaid(session.userId, billId, today, { now });
+    bill = await markBillPaid(session.userId, billId, today, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
   if (bill === null) {
-    // (R12): samma statuskod och samma text som för ett id som aldrig funnits.
     sendJson(res, 404, { error: MESSAGES.billNotFound });
     return;
   }
   sendJson(res, 200, { bill });
 }
 
-// DELETE /api/rakningar/<id>. 204, 401, 403, 404 när räkningen inte finns eller
-// tillhör någon annan, 500.
-//
-// Vägen har ingen kropp och därför ingen 400 — vad som ska hända står i metoden
-// och i sökvägen. Funktionen är inte async av just det skälet: den väntar inte på
-// readBody.
-function handleDeleteBill(req, res, now, billId) {
-  const session = billSessionOrNull(req, res, now);
+async function handleDeleteBill(req, res, now, billId) {
+  const session = await billSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
   let removed;
   try {
-    // Beslutet "finns räkningen?" fattas av SQL:s WHERE med user_id = ?, inte av
-    // en läsning före: en räkning som tillhör någon annan matchar då ingen rad,
-    // och svaret blir detsamma som för ett id som aldrig funnits.
-    removed = removeBill(session.userId, billId);
+    removed = await removeBill(session.userId, billId);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1485,61 +943,16 @@ function handleDeleteBill(req, res, now, billId) {
   res.end();
 }
 
-// ---------------------------------------------------------------------------
-// Sparmålens fem vägar [steg 4]. Tabellen under "API-vägar" i ARKITEKTUR.md är
-// facit för statuskoderna.
-//
-// Alla fem går genom requireFeature med 'savingsGoals'. Till skillnad från varje
-// tidigare skyddad väg är 403-grenen NÅBAR här: savingsGoals står i PLANS.plus och
-// inte i PLANS.bas, så en Bas-användare får 403 och en Plus-användare 200. Det är
-// (P8) och (P9) i ARKITEKTUR.md, som lämnades som obyggbara i steg 1 just därför
-// att ingen väg då skyddades av en funktion Bas saknar.
-//
-// Ordningen är den bindande: sessionsspärren, behörigheten, datumspärren,
-// valideringen, sedan datalagret. En utan session ska få 401 och inte 403 — annars
-// avslöjar svaret vilka funktioner som finns för den som inte är inloggad — och
-// ett ogiltigt datum ska aldrig bli en SQL-fråga.
-//
-// Dagens datum står i sökvägen och läses aldrig på servern, av samma skäl som
-// månaden och räkningarnas datum gör det: en funktion som läser klockan går inte
-// att testa. now är sessionens tidsstämpel och inte dagens datum — de två hålls
-// isär.
-// ---------------------------------------------------------------------------
-
-// Sessions- och behörighetsspärren, gemensam för sparmålens fem vägar. Svaret är
-// sessionen, eller null när funktionen redan har svarat klienten.
-//
-// Byggd som en funktion varje väg går genom och aldrig som en kontroll upprepad
-// per väg: en upprepad kontroll är en som glöms på en väg (ARKITEKTUR.md under
-// "Behörigheten på servern"). Samma form som billSessionOrNull, med en annan
-// funktionsnyckel.
-function goalSessionOrNull(req, res, now) {
-  const session = sessionOrNull(req, res, now);
+async function goalSessionOrNull(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
   if (session === null) {
-    return null;
-  }
-  const denied = requireFeature(session, 'savingsGoals');
-  if (denied !== null) {
-    // Kroppen bär feature och requiredPlan utöver texten, så att gränssnittet kan
-    // visa rätt låsruta utan att gissa ur strängen. requireFeature äger formen.
-    sendJson(res, 403, denied);
     return null;
   }
   return session;
 }
 
-// GET /api/sparmal/<ÅÅÅÅ-MM-DD>. 200 med listan, 400 vid fel datumformat, 401 utan
-// session, 403 utan behörighet, 500 vid DatabaseError.
-//
-// Datumet prövas här fastän goalProgress prövar det igen — ett ogiltigt datum ska
-// bli ett 400 med den svenska texten ur MESSAGES och aldrig ett 500 med ett
-// RangeError-meddelande som namnger en funktion i kärnan. Samma förhållande som
-// mellan handleReadBills och readBills.
-//
-// isValidIsoDate i src/core/dates.js äger frågan, och det här lagret skriver inget
-// eget datummönster.
-function handleReadGoals(req, res, now, today) {
-  const session = goalSessionOrNull(req, res, now);
+async function handleReadGoals(req, res, now, today) {
+  const session = await goalSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1549,7 +962,7 @@ function handleReadGoals(req, res, now, today) {
   }
   let goals;
   try {
-    goals = readGoals(session.userId, today);
+    goals = await readGoals(session.userId, today);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1557,16 +970,8 @@ function handleReadGoals(req, res, now, today) {
   sendJson(res, 200, { goals });
 }
 
-// POST /api/sparmal. 201 med sparmålet, 400 med fieldErrors, 401, 403, 500.
-//
-// Kroppens tre fält ägs av validateGoalDraft i src/core/goal.js. Det här lagret
-// läser varken målbeloppet eller slutdatumet självt.
-//
-// Svaret bär de fyra fälten ur goals-raden och ingen av de sex räknade: de kräver
-// ett dagens datum, och kroppen har inget. Gränssnittet hämtar listan om efter en
-// sparning, precis som det gör för en räkning.
 async function handleCreateGoal(req, res, now) {
-  const session = goalSessionOrNull(req, res, now);
+  const session = await goalSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1575,8 +980,6 @@ async function handleCreateGoal(req, res, now) {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
-  // array, en sträng — hanteras av validateGoalDraft och ger fältfel.
   const result = validateGoalDraft(draft);
   if (!result.ok) {
     sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
@@ -1584,7 +987,7 @@ async function handleCreateGoal(req, res, now) {
   }
   let goal;
   try {
-    goal = addGoal(session.userId, result.value, { now });
+    goal = await addGoal(session.userId, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1592,11 +995,8 @@ async function handleCreateGoal(req, res, now) {
   sendJson(res, 201, { goal });
 }
 
-// PUT /api/sparmal/<id>. 200 med sparmålet, 400 med fieldErrors, 401, 403, 404 när
-// målet inte finns eller tillhör någon annan, 500. Samma kropp och samma ordning
-// som POST.
 async function handleUpdateGoal(req, res, now, goalId) {
-  const session = goalSessionOrNull(req, res, now);
+  const session = await goalSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1612,7 +1012,7 @@ async function handleUpdateGoal(req, res, now, goalId) {
   }
   let goal;
   try {
-    goal = updateGoal(session.userId, goalId, result.value);
+    goal = await updateGoal(session.userId, goalId, result.value);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1624,26 +1024,14 @@ async function handleUpdateGoal(req, res, now, goalId) {
   sendJson(res, 200, { goal });
 }
 
-// DELETE /api/sparmal/<id>. 204, 401, 403, 404 när målet inte finns eller tillhör
-// någon annan, 500.
-//
-// Vägen har ingen kropp och därför ingen 400 — vad som ska hända står i metoden och
-// i sökvägen. Funktionen är inte async av just det skälet: den väntar inte på
-// readBody.
-//
-// Insättningarna försvinner med målet genom ON DELETE CASCADE i schemat, och ingen
-// rad här tar bort dem.
-function handleDeleteGoal(req, res, now, goalId) {
-  const session = goalSessionOrNull(req, res, now);
+async function handleDeleteGoal(req, res, now, goalId) {
+  const session = await goalSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
   let removed;
   try {
-    // Beslutet "finns målet?" fattas av SQL:s WHERE med user_id = ?, inte av en
-    // läsning före: ett mål som tillhör någon annan matchar då ingen rad, och
-    // svaret blir detsamma som för ett id som aldrig funnits.
-    removed = removeGoal(session.userId, goalId);
+    removed = await removeGoal(session.userId, goalId);
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1656,18 +1044,8 @@ function handleDeleteGoal(req, res, now, goalId) {
   res.end();
 }
 
-// POST /api/sparmal/<id>/insattning. 201 med insättningen, 400 med fieldErrors,
-// 401, 403, 404 när målet inte finns eller tillhör någon annan, 500.
-//
-// Kroppens två fält ägs av validateDepositDraft i src/core/goal.js. Beloppet får
-// vara negativt — ett uttag — och får inte vara noll; båda reglerna står där och
-// inte här.
-//
-// Svaret bär insättningen och inte målet efteråt: ett 201 beskriver det som
-// skapades. Gränssnittet hämtar listan om för att se det nya savedOre, precis som
-// efter en sparad räkning.
 async function handleCreateDeposit(req, res, now, goalId) {
-  const session = goalSessionOrNull(req, res, now);
+  const session = await goalSessionOrNull(req, res, now);
   if (session === null) {
     return;
   }
@@ -1683,14 +1061,12 @@ async function handleCreateDeposit(req, res, now, goalId) {
   }
   let deposit;
   try {
-    deposit = addDeposit(session.userId, goalId, result.value, { now });
+    deposit = await addDeposit(session.userId, goalId, result.value, { now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
   if (deposit === null) {
-    // Samma statuskod och samma text som för ett id som aldrig funnits: ett mål som
-    // tillhör någon annan ska bete sig som om det inte finns.
     sendJson(res, 404, { error: MESSAGES.goalNotFound });
     return;
   }
@@ -1707,155 +1083,65 @@ function sendUnauthorized(res, message) {
   res.end(text);
 }
 
-async function handleList(res) {
-  let entries;
-  try {
-    // GET läser bara och använder loadEntries; updateEntries är för de två
-    // vägar som ändrar filen.
-    entries = await loadEntries();
-  } catch (error) {
-    // storage.js kastar bara StorageError, och dess .message är svensk text
-    // avsedd att visas för användaren.
-    sendJson(res, 500, { error: error.message });
-    return;
+
+function sendAuthError(res, result) {
+  const body = { error: result.message };
+  if (typeof result.field === 'string') {
+    body.fieldErrors = [{ field: result.field, message: result.message }];
   }
-  sendJson(res, 200, { entries });
+  sendJson(res, result.status, body);
 }
 
-async function handleCreate(req, res) {
-  const draft = parseBody(await readBody(req));
-  if (draft === UNPARSABLE) {
+async function handleRegister(req, res, now) {
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE || body === null || typeof body !== 'object') {
     sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-
-  // draft skickas orört vidare. Allt som inte är ett vanligt objekt — null, en
-  // array, en sträng — hanteras av validateEntryDraft och ger fältfel.
-  //
-  // createEntry anropas före updateEntries, aldrig inuti mutera: ett
-  // valideringsfel ska ge 400 utan att någon köplats tas i anspråk, precis som
-  // skrivvägens rad 1-3 avvisar utan att röra disken.
-  const result = createEntry(draft);
-  if (!result.ok) {
-    // Statuskoden avgörs av felets ursprung, inte av returtypen. Ett fel med
-    // field: 'id' kan bara orsakas av ett programmeringsmisstag i appen, aldrig
-    // av användarens anrop: 500, och utan fieldErrors — 'id' finns inte i
-    // formuläret och skulle bli osynligt som fältfel. fieldErrors bär därmed
-    // alltid bara de fem formulärfälten, vilket app.js showErrors bygger på.
-    const internal = result.errors.find((error) => error.field === 'id');
-    if (internal !== undefined) {
-      sendJson(res, 500, { error: internal.message });
-      return;
-    }
-    sendJson(res, 400, { error: result.errors[0].message, fieldErrors: result.errors });
-    return;
-  }
-
-  try {
-    // Ett enda anrop, aldrig loadEntries följt av saveEntries: läsningen och
-    // skrivningen ska ligga i samma köplats, annars tappar två överlappande
-    // POST varandras post.
-    await updateEntries((entries) => [...entries, result.value]);
-  } catch (error) {
-    sendJson(res, 500, { error: error.message });
-    return;
-  }
-  sendJson(res, 201, { entry: result.value });
-}
-
-async function handleDelete(res, id) {
-  let remaining;
-  try {
-    // Beslutet "finns posten?" fattas inuti köplatsen, av mutera, och inte av
-    // en läsning före den: två samtidiga DELETE av samma id ger då exakt ett
-    // 204 och exakt ett 404. mutera kastar aldrig och svarar null för
-    // "skriv inte".
-    remaining = await updateEntries((entries) => {
-      const kept = entries.filter((entry) => entry.id !== id);
-      return kept.length === entries.length ? null : kept;
-    });
-  } catch (error) {
-    sendJson(res, 500, { error: error.message });
-    return;
-  }
-
-  if (remaining === null) {
-    sendJson(res, 404, { error: MESSAGES.entryNotFound });
-    return;
-  }
-
-  res.writeHead(204);
-  res.end();
-}
-
-// POST /api/auth/kod. Svarar alltid 202 när ingen spärr slår till, oavsett om
-// adressen har ett konto: att begära en kod får inte avslöja om kontot finns.
-// Statuskoderna är de fyra på vägens rad i HTTP-API-tabellen och inga andra —
-// 202, 400 rad 1, 429 rad 8 eller 9, och 500 rad 10 om utskicket misslyckas.
-async function handleRequestCode(req, res, now) {
-  const body = parseBody(await readBody(req));
-  if (body === UNPARSABLE) {
-    sendJson(res, 400, { error: AUTH_MESSAGES.invalidEmail });
-    return;
-  }
-
   let result;
   try {
-    result = await requestCode(getDatabase(), {
-      email: body?.email,
-      ip: clientIp(req),
-      now
-    });
+    result = await register(getDatabase(), { email: body.email, password: body.password, ip: clientIp(req), now });
   } catch (error) {
-    // db.js och auth.js kastar bara DatabaseError, och dess .message är svensk
-    // text avsedd att visas för användaren — samma väg som StorageError.
     sendJson(res, 500, { error: error.message });
     return;
   }
-
-  if (result.status === 202) {
-    res.writeHead(202);
-    res.end();
+  if (result.status !== 201) {
+    sendAuthError(res, result);
     return;
   }
-  sendJson(res, result.status, { error: result.message });
+  const text = JSON.stringify({ ok: true });
+  res.writeHead(201, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    'Set-Cookie': sessionCookie(result.token)
+  });
+  res.end(text);
 }
 
-// POST /api/auth/logga-in. 204 med sessionscookie, 400 rad 1, 2, 3, 5, 6 eller
-// 7, och 429 rad 4.
 async function handleLogin(req, res, now) {
   const body = parseBody(await readBody(req));
-  if (body === UNPARSABLE) {
-    sendJson(res, 400, { error: AUTH_MESSAGES.invalidEmail });
+  if (body === UNPARSABLE || body === null || typeof body !== 'object') {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
     return;
   }
-
   let result;
   try {
-    result = verifyCode(getDatabase(), {
-      email: body?.email,
-      code: body?.code,
-      now
-    });
+    result = await logIn(getDatabase(), { email: body.email, password: body.password, ip: clientIp(req), now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-
   if (result.status !== 204) {
     sendJson(res, result.status, { error: result.message });
     return;
   }
-
   res.writeHead(204, { 'Set-Cookie': sessionCookie(result.token) });
   res.end();
 }
 
-// POST /api/auth/logga-ut. Svarar 204 även utan giltig session: utloggning ska
-// aldrig misslyckas. Cookien rensas i samma svar.
-function handleLogout(req, res, now) {
+async function handleLogout(req, res, now) {
   try {
-    logOut(getDatabase(), { token: readSessionToken(req), now });
+    await logOut(getDatabase(), { token: readSessionToken(req), now });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
@@ -1864,23 +1150,127 @@ function handleLogout(req, res, now) {
   res.end();
 }
 
-// GET /api/mig. 200 med e-postadressen, 401 om inte inloggad. Vägen går genom
-// requireSession, som är den enda spärren — user_id kommer ur sessionen och
-// aldrig ur anropet.
-function handleMe(req, res, now) {
-  let guard;
+function appUrl(req) {
+  const configured = process.env.APP_URL;
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    return configured.trim().replace(/\/+$/, '');
+  }
+  if (isProduction()) {
+    return null;
+  }
+  const host = typeof req?.headers?.host === 'string' ? req.headers.host : '127.0.0.1:3000';
+  return `http://${host}`;
+}
+
+async function handleForgotPassword(req, res, now) {
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE || body === null || typeof body !== 'object') {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  const url = appUrl(req);
+  if (url === null) {
+    sendJson(res, 500, { error: MESSAGES.missingAppUrl });
+    return;
+  }
+  let result;
   try {
-    guard = requireSession(getDatabase(), { token: readSessionToken(req), now });
+    result = await requestPasswordReset(getDatabase(), { email: body.email, ip: clientIp(req), now, appUrl: url });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
     return;
   }
-
-  if (guard.unauthorized === true) {
-    // Cookien rensas i samma svar, av ägaren till 401-svaret nedan.
-    sendUnauthorized(res, guard.message);
+  if (result.status !== 202) {
+    sendJson(res, result.status, { error: result.message });
     return;
   }
+  res.writeHead(202);
+  res.end();
+}
 
-  sendJson(res, 200, { email: guard.session.email });
+async function handleResetPassword(req, res, now) {
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE || body === null || typeof body !== 'object') {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  let result;
+  try {
+    result = await resetPassword(getDatabase(), { token: body.token, password: body.password, now });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (result.status !== 204) {
+    sendAuthError(res, result);
+    return;
+  }
+  res.writeHead(204, { 'Set-Cookie': sessionCookie(result.token) });
+  res.end();
+}
+
+async function handleMe(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  sendJson(res, 200, { email: session.email });
+}
+
+async function handleDeleteAccount(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const body = parseBody(await readBody(req));
+  if (body === UNPARSABLE || body === null || typeof body !== 'object') {
+    sendJson(res, 400, { error: UNPARSABLE_MESSAGE });
+    return;
+  }
+  let result;
+  try {
+    result = await deleteAccount(getDatabase(), { userId: session.userId, password: body.password });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  if (result.status !== 204) {
+    sendJson(res, result.status, { error: result.message });
+    return;
+  }
+  res.writeHead(204, { 'Set-Cookie': clearedSessionCookie() });
+  res.end();
+}
+
+const EXPORT_TABLES = Object.freeze([
+  ['templates', 'id, series_id, kind, name, amount_ore, category, interval, start_date, from_month, to_month, created_at'],
+  ['month_items', 'id, month, kind, name, amount_ore, category, occurred_on, note, created_at'],
+  ['overrides', 'id, template_id, month, amount_ore, skipped, created_at'],
+  ['budgets', 'id, month, category, amount_ore, created_at'],
+  ['bills', 'id, name, amount_ore, due_date, anchor_date, interval, remind_days, paid_at, created_at'],
+  ['goals', 'id, name, target_ore, target_date, created_at'],
+  ['goal_deposits', 'id, goal_id, amount_ore, made_on, created_at']
+]);
+
+async function handleExport(req, res, now) {
+  const session = await sessionOrNull(req, res, now);
+  if (session === null) {
+    return;
+  }
+  const data = { exportedAt: now, email: session.email };
+  try {
+    for (const [table, columns] of EXPORT_TABLES) {
+      data[table] = await readRows(getDatabase(), `SELECT ${columns} FROM ${table} WHERE user_id = ? ORDER BY created_at, id`, [session.userId]);
+    }
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
+  }
+  const text = JSON.stringify(data, null, 2);
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    'Content-Disposition': 'attachment; filename="hem-och-ekonomi.json"'
+  });
+  res.end(text);
 }

@@ -3,66 +3,49 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hemochekonomi</title>
-    <!-- tema.css först: style.css läser dess tokens och innehåller själv ingen
-         hexkod. Ordningen är inte likgiltig — en regel i style.css som läser
-         var(--bakgrund) behöver tokenen deklarerad, och det mörka läget bor i
-         tema.css. -->
+    <title>Hem och Ekonomi</title>
+    <link rel="icon" href="/bilder/hem-ekonomi-ikon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/tema.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <header class="page-header">
-      <h1>Hemochekonomi</h1>
+      <h1>Hem och Ekonomi</h1>
       <p class="lead">Månadens inkomster, utgifter och sparande.</p>
     </header>
 
     <main>
-      <!-- Sidan har två tillstånd och ingen router: app.js frågar GET /api/mig
-           vid laddningen och visar inloggningsvyn vid 401, månadsvyn vid 200.
-           Inget annat avgör vilken vy som syns. Båda vyerna står i samma fil och
-           döljs med hidden, som app.js sätter. -->
       <section class="card" id="login-view">
-        <h2>Logga in</h2>
+        <h2 id="login-title">Logga in</h2>
 
-        <!-- Steg ett: e-postadressen. Steg två ersätter det när koden är
-             skickad; app.js sätter hidden på de två blocken. -->
-        <div id="login-step-email">
-          <div class="field">
+        <div class="login-tabs" id="login-tabs">
+          <button type="button" class="secondary" id="tab-login" aria-pressed="true">Logga in</button>
+          <button type="button" class="secondary" id="tab-register" aria-pressed="false">Skapa konto</button>
+        </div>
+
+        <form id="login-form" novalidate>
+          <div class="field" id="login-email-field">
             <label for="login-email">E-postadress</label>
             <input id="login-email" name="email" type="email" inputmode="email" autocomplete="email" />
+            <p class="field-error" id="error-email" role="alert"></p>
           </div>
-          <button type="button" class="primary" id="send-code">Skicka kod</button>
-        </div>
-
-        <!-- Steg två: koden. inputmode="numeric" ger sifferbord på mobilen och
-             autocomplete="one-time-code" låter telefonen fylla i koden. -->
-        <div id="login-step-code" hidden>
-          <p class="lead" id="code-sent"></p>
-          <div class="field">
-            <label for="login-code">Kod</label>
-            <input id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" />
+          <div class="field" id="login-password-field">
+            <label for="login-password" id="login-password-label">Lösenord</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" />
+            <p class="field-hint" id="password-hint" hidden>Minst 10 tecken. En mening med flera ord är lätt att minnas och svår att gissa.</p>
+            <p class="field-error" id="error-password" role="alert"></p>
           </div>
-          <button type="button" class="primary" id="log-in">Logga in</button>
-          <button type="button" class="secondary" id="use-other-email">Använd en annan adress</button>
-        </div>
+          <button type="submit" class="primary" id="login-submit">Logga in</button>
+          <button type="button" class="link-button" id="forgot-link">Glömt lösenordet?</button>
+          <button type="button" class="link-button" id="back-to-login" hidden>Tillbaka till inloggningen</button>
+        </form>
 
-        <!-- Serverns text ordagrant vid 400 och 429 — aldrig en egen. -->
+        <p class="lead" id="login-note" role="status"></p>
         <p class="form-error" id="login-error" role="alert"></p>
+        <p class="login-privacy">Genom att skapa ett konto godkänner du att dina uppgifter sparas enligt vår <a href="/integritet">integritetspolicy</a>.</p>
       </section>
 
       <section id="month-view" hidden>
-        <!-- Sidomenyn: loggan överst, vem som är inloggad och vägen ut.
-             Adressen står bredvid knappen: två som delar dator ska kunna se vems
-             budget som visas. Texten skrivs av app.js ur GET /api/mig.
-             Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
-             height står i bildens egen storlek, 428 gånger 104, så att raden
-             inte hoppar medan bilden laddas; visningsstorleken sätts i
-             style.css. alt är tomt därför att namnet står som text intill.
-             Texten är visuellt dold, eftersom namnet redan står i loggan, men en
-             skärmläsare läser den.
-             På mobil är menyn en rad överst, vid 60rem en spalt till vänster;
-             vilket av dem som gäller är style.css:s sak. -->
         <aside class="sidomeny">
           <div class="sidomeny-marke">
             <img
@@ -76,40 +59,18 @@
             <span class="sidomeny-namn">Hem och Ekonomi</span>
           </div>
           <span id="user-email"></span>
-          <!-- Vägen till tolvmånadersöversikten [etapp 5]. Ingen router och
-               ingen egen sida: knappen byter vilken av sektionerna som bär
-               hidden, samma mönster som inloggningsvyn och månadsvyn redan
-               använder. -->
           <button type="button" class="secondary" id="show-overview">Översikt</button>
-          <!-- Vägen till Min plan [steg 1 i del 5]. Samma mönster som Översikt:
-               knappen byter vilken sektion som bär hidden, ingen router och
-               ingen egen sida.
-
-               Ingen låsikon står i menyn. En låst funktion visas med en låsrad
-               på sin egen plats i månadsvyn, med texten om vilken plan som
-               krävs och knappen Se planer (ARKITEKTUR.md, "Sparmål" i steg 4
-               och "Gränssnittet" i steg 5). Kommentaren räknar medvetet inte
-               upp vilka funktioner som är byggda: en sådan lista blir falsk
-               när nästa funktion byggs (LARDOMAR.md 2026-10-11). -->
-          <button type="button" class="secondary" id="show-plan">Min plan</button>
+          <button type="button" class="secondary" id="show-account">Mitt konto</button>
           <button type="button" class="secondary" id="log-out">Logga ut</button>
         </aside>
 
-        <!-- Allt utom sidomenyn ligger i en egen kolumn, så att sidomenyn kan bli
-             en spalt vid sidan utan att varje kort blir ett eget rutnätsbarn. -->
         <div class="month-content">
-          <!-- Månadsväljaren ligger överst: bakåt, månadens namn, framåt. Namnet
-               skrivs av app.js ur monthLabel i src/core/dates.js. -->
           <div class="card month-picker">
             <button type="button" id="month-prev">Föregående</button>
             <h2 id="month-label"></h2>
             <button type="button" id="month-next">Nästa</button>
           </div>
 
-          <!-- Summeringen står direkt under månadsväljaren, före listorna, så att
-               den syns utan att man skrollar. Etiketterna är statisk text; app.js
-               sätter bara textContent på de fyra beloppselementen, och talen
-               kommer alltid ur svarets totals. -->
           <div class="card summary">
             <p class="summary-row">
               <span class="summary-label">Inkomster</span>
@@ -129,20 +90,10 @@
             </p>
           </div>
 
-          <!-- Formuläret öppnas av knapparna nedan och är inte alltid synligt.
-               Samma formulär för ny post och för ändring. Slaget kommer från
-               vilken lista knappen satt i och är därför inget fält. -->
           <section class="card" id="item-form-card" hidden>
             <form id="item-form" novalidate>
-              <!-- Raden som säger vad som gäller i läget Bara <månad>. app.js
-                   skriver texten och döljer raden i de andra lägena: i det här
-                   läget bär kroppen bara amountSek, eftersom overrides varken
-                   har en kolumn för namn eller för kategori. -->
               <p class="lead" id="month-only-note" hidden></p>
 
-              <!-- Namn och kategori har ett eget id på sitt fältblock, så att
-                   app.js kan dölja dem i läget Bara <månad>. Att dölja och inte
-                   spärra: ett utgråat fält ser ut som något som kan låsas upp. -->
               <div class="field" id="name-field">
                 <label for="item-name">Namn</label>
                 <input id="item-name" name="name" type="text" autocomplete="off" />
@@ -157,43 +108,24 @@
 
               <div class="field" id="category-field">
                 <label for="item-category">Kategori</label>
-                <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
-                     svensk kategorietikett skrivs för hand här. -->
                 <select id="item-category" name="category"></select>
                 <p class="field-error" id="error-category" role="alert"></p>
               </div>
 
-              <!-- Datum och Kommentar [steg 2], båda valfria. De ligger i ett
-                   eget block med eget id, därför att app.js döljer dem när
-                   kryssrutan Återkommande är ikryssad: en mall har varken en
-                   enskild dag eller en enskild kommentar, och de två fälten
-                   finns inte på en mall. Samma skäl som i läget Bara <månad> —
-                   ett fält vars ändring försvinner tyst är sämre än inget
-                   fält. -->
               <div id="single-fields">
                 <div class="field">
                   <label for="item-occurred-on">Datum</label>
-                  <!-- Valfritt: tomt betyder att ingen dag är angiven. Formen
-                       prövas av checkOccurredOn i src/core/item.js, som äger
-                       texten — inget mönster skrivs här. -->
                   <input id="item-occurred-on" name="occurredOn" type="text" inputmode="numeric" autocomplete="off" />
                   <p class="field-error" id="error-occurredOn" role="alert"></p>
                 </div>
 
                 <div class="field">
                   <label for="item-note">Kommentar</label>
-                  <!-- Valfritt. Längden ägs av checkNote i src/core/item.js —
-                       ingen maxlength här, som vore en andra kopia av gränsen. -->
                   <input id="item-note" name="note" type="text" autocomplete="off" />
                   <p class="field-error" id="error-note" role="alert"></p>
                 </div>
               </div>
 
-              <!-- Återkommande [etapp 4]. Kryssrutan hör till DET HÄR formuläret
-                   och inte till ett andra: samma formulär gäller en engångspost,
-                   en mall och en ändring av en enda månad. De två fälten är
-                   dolda tills rutan kryssas; app.js sätter hidden på
-                   #recurring-fields och läser .checked. -->
               <div class="field field-checkbox" id="recurring-field">
                 <label for="item-recurring">
                   <input id="item-recurring" name="recurring" type="checkbox" />
@@ -204,17 +136,12 @@
               <div id="recurring-fields" hidden>
                 <div class="field">
                   <label for="item-interval">Intervall</label>
-                  <!-- Alternativen fylls i av app.js ur INTERVAL_LABELS. Ingen
-                       svensk intervalletikett skrivs för hand här. -->
                   <select id="item-interval" name="interval"></select>
                   <p class="field-error" id="error-interval" role="alert"></p>
                 </div>
 
                 <div class="field">
                   <label for="item-to-month">Till och med</label>
-                  <!-- Valfritt: tomt betyder tills vidare. Formen prövas av
-                       checkToMonth i src/core/item.js, som äger de två
-                       texterna — inget mönster skrivs här. -->
                   <input id="item-to-month" name="toMonth" type="text" inputmode="numeric" autocomplete="off" />
                   <p class="field-error" id="error-toMonth" role="alert"></p>
                 </div>
@@ -223,9 +150,6 @@
               <p class="form-error" id="item-form-error" role="alert"></p>
 
               <button type="submit" class="primary" id="item-submit">Spara</button>
-              <!-- Avbryt skickar inget anrop: den stänger formuläret, tömmer fälten
-                   och rensar fältfelen. Utan den kan ett öppnat formulär bara
-                   stängas genom att spara. -->
               <button type="button" class="secondary" id="item-cancel">Avbryt</button>
             </form>
           </section>
@@ -253,23 +177,10 @@
             </section>
           </div>
 
-          <!-- Räkningar [steg 3]: en rad per obetald räkning, över budgetkortet.
-               Raderna kommer ur GET /api/rakningar/<ÅÅÅÅ-MM-DD>, där varje rad
-               bär status och daysUntil färdigräknade - app.js räknar ingenting
-               av det själv, och dagtexten kommer ur billDaysText i
-               src/core/bill.js. En betald engångsräkning har ingen rad: kortet
-               svarar på frågan vad som ska betalas.
-               En tom lista ger ett kort med bara knappen, samma regel som
-               budgetkortet: en räkning som inte finns har ingen rad. -->
           <section class="card" id="bill-card">
             <h3>Räkningar</h3>
             <button type="button" class="add" id="add-bill">+ Ny räkning</button>
 
-            <!-- Formuläret knappen öppnar: namn, belopp, förfallodag, intervall
-                 eller Engångs, och hur många dagar innan påminnelsen visas.
-                 Dolt från början; app.js sätter hidden. Fältfelen från
-                 POST /api/rakningar visas i den enda felrutan - svarets error är
-                 det första felets text, precis som i budgetformuläret. -->
             <form id="bill-form" novalidate hidden>
               <div class="field">
                 <label for="bill-name">Namn</label>
@@ -287,18 +198,10 @@
               </div>
 
               <div class="field">
-                <!-- Alternativen fylls i av app.js: Engångs först, därefter de
-                     fyra intervallen ur INTERVAL_LABELS i src/core/entry.js.
-                     Ingen intervalletikett skrivs för hand här. -->
                 <label for="bill-interval">Intervall</label>
                 <select id="bill-interval" name="interval"></select>
               </div>
 
-              <!-- Påminn mig <N> dagar innan. Etiketten står före fältet och
-                   enheten efter det, så att raden läses som den mening
-                   ARKITEKTUR.md skriver. min, max och värdet sätts av app.js ur
-                   REMIND_DAYS_MIN, REMIND_DAYS_MAX och REMIND_DAYS_DEFAULT i
-                   src/core/bill.js - ingen gräns står som en siffra här. -->
               <div class="field">
                 <label for="bill-remind-days">Påminn mig</label>
                 <input id="bill-remind-days" name="remindDays" type="number" step="1" autocomplete="off" />
@@ -314,26 +217,13 @@
             <ul id="bill-list" class="item-list"></ul>
           </section>
 
-          <!-- Budget [steg 2]: en rad per kategori som har ett tak, under
-               utgiftslistan. Raderna kommer ur fältet budgets i
-               GET /api/manad/<ÅÅÅÅ-MM>, där varje rad bär category, amountOre,
-               spentOre och leftOre — app.js räknar ingenting av det själv.
-               En kategori utan tak har ingen rad: den har ingenting att vara
-               kvar av. -->
           <section class="card" id="budget-card">
             <h3>Budget</h3>
             <button type="button" class="add" id="add-budget">+ Sätt tak</button>
 
-            <!-- Det lilla formuläret knappen öppnar: kategori och belopp.
-                 Dolt från början; app.js sätter hidden. Fältfelen från
-                 PUT /api/budget/<ÅÅÅÅ-MM> visas i den enda felrutan — svarets
-                 error är det första felets text, och de två fälten står bredvid
-                 varandra. -->
             <form id="budget-form" novalidate hidden>
               <div class="field">
                 <label for="budget-category">Kategori</label>
-                <!-- Alternativen fylls i av app.js ur CATEGORY_LABELS. Ingen
-                     svensk kategorietikett skrivs för hand här. -->
                 <select id="budget-category" name="category"></select>
               </div>
 
@@ -351,24 +241,10 @@
             <ul id="budget-list" class="item-list"></ul>
           </section>
 
-          <!-- Sparmål [steg 4]: en rad per mål, under budgetkortet. Raderna
-               kommer ur GET /api/sparmal/<ÅÅÅÅ-MM-DD>, där varje rad bär
-               savedOre, leftOre, percent, monthsLeft, perMonthOre och status
-               FÄRDIGRÄKNADE av goalProgress i src/core/goal.js - app.js räknar
-               ingenting av det själv och klipper ingen procent.
-               Kortet är dolt från början och visas först när hämtningen gav
-               200: vilken av kortet och låsraden nedan som syns avgörs av
-               svaret och aldrig av en gissning om användarens plan. -->
           <section class="card" id="goal-card" hidden>
             <h3>Sparmål</h3>
             <button type="button" class="add" id="add-goal">+ Nytt sparmål</button>
 
-            <!-- Formuläret knappen öppnar: namn, målbelopp och ett valfritt
-                 slutdatum. Dolt från början; app.js sätter hidden. Fältfelen
-                 från POST /api/sparmal visas i den enda felrutan - svarets
-                 error är det första felets text, precis som i räknings- och
-                 budgetformuläret. Egna felrutor går inte: error-name är
-                 postformulärets id. -->
             <form id="goal-form" novalidate hidden>
               <div class="field">
                 <label for="goal-name">Namn</label>
@@ -380,11 +256,6 @@
                 <input id="goal-target" name="targetSek" type="text" inputmode="decimal" autocomplete="off" />
               </div>
 
-              <!-- Slutdatumet är valfritt: ett sparmål utan slutdatum är ett
-                   giltigt sparmål, det har bara ingen månadstakt och kan inte
-                   vara försenat (checkTargetDate i src/core/goal.js läser tomt
-                   som null). Att fältet är valfritt står i etiketten, så att
-                   det syns utan att användaren behöver prova. -->
               <div class="field">
                 <label for="goal-target-date">Slutdatum (valfritt)</label>
                 <input id="goal-target-date" name="targetDate" type="date" autocomplete="off" />
@@ -396,21 +267,6 @@
               <button type="button" class="secondary" id="goal-cancel">Avbryt</button>
             </form>
 
-            <!-- Insättningsformuläret [steg 4]: det + Sätt in i en målrad
-                 öppnar. Belopp och datum, inget mer. Dolt från början; app.js
-                 sätter hidden och håller vilket mål knappen gällde.
-                 Formuläret hör till kortet och inte till raden, av samma skäl
-                 som de tre andra formulären står här och inte byggs i
-                 JavaScript: ett formulär per rad hade betytt inmatningsfält och
-                 etiketter skrivna i app.js.
-                 Beloppet är type="text" med inputmode="decimal" och har INGET
-                 min: ett negativt belopp är ett uttag ur sparandet och är
-                 giltigt - checkDepositAmountSek i src/core/goal.js tillåter det
-                 med flit och avvisar bara noll. Ett min="0" hade gjort uttag
-                 omöjliga från gränssnittet trots att datalagret stöder dem.
-                 Datumet är obligatoriskt, till skillnad från sparmålets
-                 slutdatum: en insättning utan dag går inte att placera i tiden
-                 (checkMadeOn i src/core/goal.js). -->
             <form id="deposit-form" novalidate hidden>
               <div class="field">
                 <label for="deposit-amount">Belopp (kr)</label>
@@ -431,30 +287,6 @@
             <ul id="goal-list" class="item-list"></ul>
           </section>
 
-          <!-- Låsraden [steg 4]: det en Bas-användare ser i stället för kortet
-               ovan. Sparmål är den första funktionen Bas saknar, så 403-grenen
-               i requireFeature är nåbar här för första gången.
-               Raden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på
-               var och en av sparmålens fem vägar, och det är den spärren som
-               håller. Texten skrivs av app.js ur svarets feature och
-               requiredPlan, så att ingen funktions- eller planetikett står
-               skriven här. -->
-          <section class="card" id="goal-locked" hidden>
-            <h3>Sparmål</h3>
-            <p class="locked-row">
-              <span class="lock-icon" aria-hidden="true">&#x1F512;</span>
-              <span id="goal-locked-text"></span>
-              <button type="button" class="secondary" id="show-plans">Se planer</button>
-            </p>
-          </section>
-
-          <!-- Rapportkortet [steg 5]: uppdelningen bakom månadssummorna över en
-               period, med samma diagram som månaden och en tabellrad per slag och
-               kategori. Kortet och låsraden nedan bär hidden från början, av samma
-               skäl som sparmålens: vilket av de två som syns avgörs av svaret på
-               GET /api/rapport, aldrig av en gissning om planen.
-               Låsraden är BEKVÄMLIGHET och aldrig spärren: servern svarar 403 på
-               båda rapportvägarna, och det är den spärren som håller. -->
           <section class="card" id="report-card" hidden>
             <h3>Rapport</h3>
             <div class="report-periods">
@@ -475,47 +307,23 @@
             <p class="empty-state" id="report-empty"></p>
             <button type="button" class="secondary" id="report-download">Hämta som CSV</button>
           </section>
-          <section class="card" id="report-locked" hidden>
-            <h3>Rapport</h3>
-            <p class="locked-row">
-              <span class="lock-icon" aria-hidden="true">&#x1F512;</span>
-              <span id="report-locked-text"></span>
-              <button type="button" class="secondary" id="report-show-plans">Se planer</button>
-            </p>
-          </section>
-          <!-- Rapportens felrad [steg 5 del 3]: utanför både kortet och låsraden,
-               så att ett fel vid sidladdningen syns fast båda är dolda.
-               #month-error rörs aldrig av rapporten. -->
           <p class="form-error" id="report-error" role="alert"></p>
 
-          <!-- Diagrammet: inline-SVG som app.js bygger, en stapel per kategori med
-               utgift. Ingen bildfil, inget bibliotek, inget canvas. SVG:n bär
-               role="img" och en title, så att den går att läsa med skärmläsare. -->
           <div class="card">
             <div id="chart" class="chart"></div>
             <p class="empty-state" id="chart-empty"></p>
           </div>
 
-          <!-- Allmänna fel i månadsvyn: ett misslyckat GET och ett misslyckat
-               DELETE. Formulärets egna svar skrivs i #item-form-error och vid
-               fälten. -->
           <p class="form-error" id="month-error" role="alert"></p>
         </div>
       </section>
 
-      <!-- Översikten [etapp 5]: tolv månader bredvid varandra. Dold från början,
-           precis som månadsvyn; knappen Översikt i sidomenyn visar den och
-           Tillbaka till månaden visar månadsvyn igen. Talen kommer ur
-           GET /api/oversikt/<ÅÅÅÅ-MM> och räknas aldrig här — med ett undantag,
-           snittet, som app.js avrundar med divideRoundHalfUp i money.js. -->
       <section id="overview-view" hidden>
         <div class="card overview-head">
           <h2 id="overview-label"></h2>
           <button type="button" id="back-to-month">Tillbaka till månaden</button>
         </div>
 
-        <!-- De tre talen. Etiketterna är statisk text; app.js sätter bara
-             textContent på de tre beloppselementen. -->
         <div class="card summary">
           <p class="summary-row">
             <span class="summary-label">Sparat hittills i år</span>
@@ -531,18 +339,10 @@
           </p>
         </div>
 
-        <!-- Stapeldiagrammet: inline-SVG som app.js bygger, en stapel per månad.
-             En månad med negativt kvar ritas nedåt från nollinjen, en positiv
-             uppåt. Nollinjen ritas som en egen linje och syns alltid — utan den
-             går det inte att se vilka månader som gick back. -->
         <div class="card">
           <div id="overview-chart" class="chart"></div>
         </div>
 
-        <!-- Tabellen med de exakta talen. Diagrammet visar formen, tabellen
-             siffrorna: den som vill läsa ett belopp ska inte behöva tolka en
-             stapel. En tom månad står med, med fyra nollor — annars ser
-             tidslinjen ut att hoppa över tid. -->
         <div class="card">
           <table class="overview-table">
             <thead>
@@ -558,54 +358,43 @@
           </table>
         </div>
 
-        <!-- Ingen egen felruta: översikten hämtas FÖRE vyn byts, så ett
-             misslyckat anrop lämnar användaren i månadsvyn och skriver sin text
-             i #month-error. En vy som visas utan data skulle annars ha tre tomma
-             rutor och en tom tabell (LARDOMAR.md 2026-09-10). -->
       </section>
 
-      <!-- Min plan [steg 1 i del 5]. Dold från början, precis som översikten.
-           Planen och funktionslistan kommer ur GET /api/plan och räknas aldrig
-           här; de tre knapparna ritas av app.js ur PLANS, så att en knapp inte
-           kan erbjuda en plan som inte finns.
-
-           Ingen betalning sker och ingen betalning antyds: bytet sparas direkt,
-           och bekräftelsen säger att ingen betalning genomförs. -->
-      <section id="plan-view" hidden>
+      <section id="account-view" hidden>
         <div class="card overview-head">
-          <h2>Min plan</h2>
-          <button type="button" id="back-from-plan">Tillbaka till månaden</button>
+          <h2>Mitt konto</h2>
+          <button type="button" id="back-from-account">Tillbaka till månaden</button>
         </div>
 
         <div class="card">
           <p class="summary-row">
-            <span class="summary-label">Nuvarande plan</span>
-            <span class="summary-amount" id="plan-current"></span>
+            <span class="summary-label">Inloggad som</span>
+            <span class="summary-amount" id="account-email"></span>
           </p>
-          <!-- Funktionerna planen har, i planordning. Listan kommer ur
-               features i svaret: samma lista servern räknar behörigheten ur,
-               så vyn och spärren kan inte säga olika saker. -->
-          <p class="summary-label">Det här ingår:</p>
-          <ul id="plan-features" class="item-list"></ul>
+          <p class="lead">Hem och Ekonomi är gratis, och alla funktioner ingår.</p>
         </div>
 
         <div class="card">
-          <h3>Byt plan</h3>
-          <!-- De tre knapparna ritas av app.js. -->
-          <div id="plan-buttons" class="plan-buttons"></div>
-          <p class="lead" id="plan-note"></p>
-          <p class="form-error" id="plan-error" role="alert"></p>
+          <h3>Dina uppgifter</h3>
+          <p class="lead">Ladda ner allt du har sparat som en fil.</p>
+          <a class="button-link" id="account-export" href="/api/mig/export" download="hem-och-ekonomi.json">Ladda ner mina uppgifter</a>
+        </div>
+
+        <div class="card">
+          <h3>Ta bort kontot</h3>
+          <p class="lead">Kontot och allt du har sparat tas bort för gott. Det går inte att ångra.</p>
+          <form id="delete-form" novalidate>
+            <div class="field">
+              <label for="delete-password">Ditt lösenord</label>
+              <input id="delete-password" name="password" type="password" autocomplete="current-password" />
+            </div>
+            <p class="form-error" id="delete-error" role="alert"></p>
+            <button type="submit" class="danger" id="delete-submit">Ta bort kontot</button>
+          </form>
         </div>
       </section>
     </main>
 
-    <!-- Demoläget. Filen laddas alltid och gör ingenting när DEMO i
-         /demo/demolage.js är falsk — ingen annan fil under /demo/ hämtas då, och
-         globalThis.fetch rörs inte. Är flaggan sann ersätter den fetch och ritar
-         bannern, och den står därför FÖRE /app.js: ett modulskript med await på
-         översta nivån fördröjer nästa modulskript, så app.js hinner inte anropa
-         fetch innan attrappen är på plats. -->
-    <script type="module" src="/demo/demo-fetch.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

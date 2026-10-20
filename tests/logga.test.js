@@ -1,7 +1,3 @@
-// Loggan och faviconen (ARKITEKTUR.md del 8, kravlista [logga]). Ingen server
-// och inga tidsgränser: filen läser filer från disk. Punkterna som kräver en
-// server, (H6) till (H8), står i tests/server.test.js.
-
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -16,14 +12,11 @@ const LANDNING_CSS_PATH = fileURLToPath(new URL('../src/web/landning.css', impor
 const STYLE_CSS_PATH = fileURLToPath(new URL('../src/web/style.css', import.meta.url));
 const TEMA_CSS_PATH = fileURLToPath(new URL('../src/web/tema.css', import.meta.url));
 
-// Led 3:s attributmönster (ARKITEKTUR.md, "Kaskadspärren [hero-kaskad]").
 const ATTRIBUTE_PATTERN = /([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g;
 
 function attributeValue(match) {
   return match[2] ?? match[3] ?? match[4];
 }
-
-// --- (L1) ---------------------------------------------------------------
 
 const SVG_FILES = [
   {
@@ -58,7 +51,6 @@ test('(L1) loggorna i src/web/bilder är användarens svg-filer utan skript elle
   for (const file of SVG_FILES) {
     const buffer = await fs.readFile(path.join(IMAGE_DIR, file.name));
 
-    // (a) Bara ASCII: fäller en BOM och varje tecken utanför ASCII.
     const firstNonAscii = buffer.findIndex((byte) => byte >= 0x80);
     assert.equal(
       firstNonAscii,
@@ -67,21 +59,17 @@ test('(L1) loggorna i src/web/bilder är användarens svg-filer utan skript elle
     );
     const text = buffer.toString('latin1');
 
-    // (b) Den öppnande taggen.
     assert.ok(
       text.startsWith(file.openingTag),
       `${file.name} börjar inte med ${file.openingTag}`
     );
 
-    // (c) Slutet.
     assert.match(text, /<\/svg>(\r?\n)?$/, `${file.name} slutar inte med </svg>`);
 
-    // (d) Inga deklarationer, instruktioner eller entiteter.
     for (const forbidden of ['<!', '<?', '&']) {
       assert.equal(text.includes(forbidden), false, `${file.name} innehåller ${forbidden}`);
     }
 
-    // (e) Taggarna.
     const tags = [...text.matchAll(/<(\/?)([^\s>\/]+)([^>]*)>/g)].map((match) => ({
       tag: match[1] + match[2],
       name: match[2],
@@ -97,11 +85,9 @@ test('(L1) loggorna i src/web/bilder är användarens svg-filer utan skript elle
       );
     }
 
-    // (f) Ingen text utanför taggarna.
     const outside = text.replace(/<(\/?)([^\s>\/]+)([^>]*)>/g, '');
     assert.equal(outside.trim(), '', `${file.name} har text utanför taggarna`);
 
-    // (g) och (h) Attributen.
     const fills = new Set();
     for (const tag of tags) {
       const matches = [...tag.attributes.matchAll(ATTRIBUTE_PATTERN)];
@@ -125,12 +111,9 @@ test('(L1) loggorna i src/web/bilder är användarens svg-filer utan skript elle
       }
     }
 
-    // (i) Färgerna.
     assert.deepEqual([...fills].sort(), file.fills, `${file.name} har fel fill-värden`);
   }
 });
-
-// --- (L2) ---------------------------------------------------------------
 
 function stripHtmlComments(html) {
   return html.replace(/<!--[\s\S]*?-->/g, '');
@@ -156,7 +139,6 @@ test('(L2) sidorna pekar ut rätt logga, med bildens egen storlek, och faviconen
   const landning = await fs.readFile(LANDNING_HTML_PATH, 'utf8');
   const index = await fs.readFile(INDEX_HTML_PATH, 'utf8');
 
-  // (a)
   assert.deepEqual(readTags(landning, /<img\b[^>]*>/gi), [
     {
       class: 'markessymbol',
@@ -176,7 +158,6 @@ test('(L2) sidorna pekar ut rätt logga, med bildens egen storlek, och faviconen
     }
   ]);
 
-  // (b)
   assert.deepEqual(readTags(index, /<img\b[^>]*>/gi), [
     {
       class: 'sidomeny-logga',
@@ -188,14 +169,13 @@ test('(L2) sidorna pekar ut rätt logga, med bildens egen storlek, och faviconen
     }
   ]);
 
-  // (c)
   assert.deepEqual(readTags(landning, /<link\b[^>]*>/gi).filter(isIcon), [
     { rel: 'icon', href: '/bilder/hem-ekonomi-ikon.svg', type: 'image/svg+xml' }
   ]);
-  assert.deepEqual(readTags(index, /<link\b[^>]*>/gi).filter(isIcon), []);
+  assert.deepEqual(readTags(index, /<link\b[^>]*>/gi).filter(isIcon), [
+    { rel: 'icon', href: '/bilder/hem-ekonomi-ikon.svg', type: 'image/svg+xml' }
+  ]);
 });
-
-// --- (L3) ---------------------------------------------------------------
 
 function normalizeCss(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
@@ -206,7 +186,6 @@ function readRules(css) {
 }
 
 test('(L3) loggornas stilregler och plattans token', async () => {
-  // (a)
   const landning = normalizeCss(await fs.readFile(LANDNING_CSS_PATH, 'utf8'));
   assert.deepEqual(
     readRules(landning).filter(([selector]) => selector.includes('markes')),
@@ -233,7 +212,6 @@ test('(L3) loggornas stilregler och plattans token', async () => {
     'landning.css har inte plattan i det mörka läget exakt en gång'
   );
 
-  // (b)
   const style = normalizeCss(await fs.readFile(STYLE_CSS_PATH, 'utf8'));
   assert.deepEqual(
     readRules(style).filter(
@@ -251,7 +229,6 @@ test('(L3) loggornas stilregler och plattans token', async () => {
     ]
   );
 
-  // (c)
   const tema = normalizeCss(await fs.readFile(TEMA_CSS_PATH, 'utf8'));
   assert.equal(tema.split('--logga-platta:').length - 1, 1, 'tema.css har inte --logga-platta exakt en gång');
   const declaration = tema.indexOf('--logga-platta: #f7f5ef;');
@@ -260,8 +237,6 @@ test('(L3) loggornas stilregler och plattans token', async () => {
   assert.notEqual(dark, -1, 'tema.css har inget mörkt läge');
   assert.ok(declaration < dark, '--logga-platta står inte före det mörka läget');
 });
-
-// --- (L4) ---------------------------------------------------------------
 
 const REMOVED_LOGOS = ['logga.png', 'logga-liten', 'logga-beskuren'];
 
@@ -273,8 +248,6 @@ test('(L4) ingen fil i src nämner de borttagna png-loggorna', async () => {
     `ingen .html-fil lästes under ${SRC_DIR}`
   );
   for (const file of files) {
-    // Kommentarerna står kvar: en kommentar som nämner en borttagen fil är en
-    // osann uppgift om vad sidan hämtar.
     const text = await fs.readFile(path.join(SRC_DIR, file), 'utf8');
     for (const removed of REMOVED_LOGOS) {
       assert.equal(text.includes(removed), false, `${file} nämner ${removed}`);

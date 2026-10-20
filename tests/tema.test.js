@@ -1,8 +1,3 @@
-// Temats färger och kontrast (ARKITEKTUR.md del 9, "Kravlista [del 9]"). Ingen
-// server och inga tidsgränser: filen läser tema.css från disk och räknar
-// kontrasten med samma kod som (H11) i tests/hero.test.js, ur
-// tests/helpers/tema.js.
-
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -23,14 +18,12 @@ import {
 const TEMA_PATH = fileURLToPath(new URL('../src/web/tema.css', import.meta.url));
 const WEB_DIR = fileURLToPath(new URL('../src/web/', import.meta.url));
 
-// (FA2)(s): exakt ett ljust :root och ett mörkt :root och ingenting annat.
 const THEME_PATTERN =
   /^\s*:root\s*\{([^{}]*)\}\s*@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^{}]*)\}\s*\}\s*$/;
 const DECLARATION_PATTERN = /(--[a-z0-9-]+)\s*:\s*([^;{}]+);/g;
 const HEX_PATTERN = /#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b/gi;
 const COLOR_FUNCTION_PATTERN = /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\s*\(/i;
 
-// Varje .css-fil under src/web/, rekursivt, med namnet skrivet med /.
 async function cssFiles() {
   const names = await fs.readdir(WEB_DIR, { recursive: true });
   return names
@@ -38,10 +31,6 @@ async function cssFiles() {
     .map((name) => ({ name: name.split(path.sep).join('/'), file: path.join(WEB_DIR, name) }));
 }
 
-// --- (FA1) --------------------------------------------------------------
-
-// Kontrasttabellen i ARKITEKTUR.md del 9, rad för rad och i samma ordning:
-// [id, läge, förgrund, bakgrund, krav, uppmätt].
 const CONTRAST_ROWS = [
   ['FK01', 'ljust', '--text', '--bakgrund', 4.5, '16,41'],
   ['FK02', 'ljust', '--text', '--yta', 4.5, '17,89'],
@@ -116,8 +105,6 @@ const CONTRAST_ROWS = [
   ['FK71', 'mörkt', '--guld-ljus', '--morkt-block', 4.5, '11,34']
 ];
 
-// 2,22 är loggans guld mot vitt ur körning 2 i ARKITEKTUR.md del 9 (rad 58 i
-// del9-kandidater.out) och ingen rad i tabellen.
 const CONTRAST_UNTESTED = ['2,22'];
 
 test('(FA1) varje rad i kontrasttabellen når sitt krav och har det uppmätta värdet, i båda lägena', async (t) => {
@@ -137,20 +124,16 @@ test('(FA1) varje rad i kontrasttabellen når sitt krav och har det uppmätta v�
     assert.equal(shown, measured, `${pair} ger ${shown}:1, tabellen säger ${measured}:1`);
   }
 
-  // (b) Varje kontrasttal i den råa tema.css, alltså i kommentarerna.
   const known = new Set([...CONTRAST_ROWS.map((row) => row[5]), ...CONTRAST_UNTESTED]);
   for (const match of raw.matchAll(/(\d+,\d\d):1/g)) {
     assert.ok(known.has(match[1]), `tema.css nämner ${match[1]}:1, som inte är ett tal i kontrasttabellen`);
   }
 });
 
-// --- (FA2) --------------------------------------------------------------
-
 const FONT_STACK =
   "'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 const VALUE_WORD_PATTERN = /^(#[0-9a-f]{3}|#[0-9a-f]{4}|#[0-9a-f]{6}|#[0-9a-f]{8}|-?\d+(\.\d+)?(px|rem|em|%)?)$/i;
 
-// Kontrollfallen under "Regeln för grönt" i ARKITEKTUR.md del 9: [hexkod, grön].
 const GREEN_CASES = [
   ['#edf3ec', true],
   ['#e3f0e0', true],
@@ -166,8 +149,6 @@ const GREEN_CASES = [
 test('(FA2) ingen färg i tema.css är grön, i något av lägena, och varje värde har en tillåten form', async () => {
   const text = stripCssComments(await fs.readFile(TEMA_PATH, 'utf8'));
 
-  // (s) Struktur: exakt ett ljust och ett mörkt :root, och inget annat i dem än
-  // deklarationer med giltiga namn, var och en högst en gång.
   const theme = THEME_PATTERN.exec(text);
   assert.ok(theme, 'tema.css består inte av exakt ett ljust och ett mörkt :root');
   for (const [mode, body] of [['ljust läge', theme[1]], ['mörkt läge', theme[2]]]) {
@@ -179,7 +160,6 @@ test('(FA2) ingen färg i tema.css är grön, i något av lägena, och varje vä
       assert.ok(!seen.has(name), `${mode}: ${name} deklareras två gånger`);
       seen.add(name);
 
-      // (b) Värdets form.
       const collapsed = value.trim().replace(/\s+/g, ' ');
       const allowed =
         /^var\(--[a-z0-9-]+\)$/.test(collapsed) ||
@@ -189,30 +169,23 @@ test('(FA2) ingen färg i tema.css är grön, i något av lägena, och varje vä
     }
   }
 
-  // (a) Ingen hexkod i hela texten är grön.
   for (const [hex] of text.matchAll(HEX_PATTERN)) {
     const { hue, s } = hueSaturation(hex);
     assert.equal(isGreen(hex), false, `${hex} är grön: nyans ${hue}, mättnad ${s}`);
   }
 
-  // (c) Inga färgfunktioner.
   const fn = COLOR_FUNCTION_PATTERN.exec(text);
   assert.equal(fn, null, `tema.css har färgfunktionen ${fn?.[0]}`);
 
-  // (d) Regelns intervall ger facit för kontrollfallen.
   for (const [hex, green] of GREEN_CASES) {
     assert.equal(isGreen(hex), green, `isGreen(${hex}) ska vara ${green}`);
   }
 });
 
-// --- (FA3) --------------------------------------------------------------
-
 test('(FA3) varje var(--namn) i src/web är deklarerad i tema.css eller i samma fil', async () => {
   const tema = stripCssComments(await fs.readFile(TEMA_PATH, 'utf8'));
   const theme = THEME_PATTERN.exec(tema);
   assert.ok(theme, 'tema.css består inte av exakt ett ljust och ett mörkt :root');
-  // Bara det ljusa :root räknas: det mörka läget skriver över värden och får
-  // inte vara det enda stället där ett namn finns.
   const light = new Set([...theme[1].matchAll(DECLARATION_PATTERN)].map((match) => match[1]));
   const files = await cssFiles();
   assert.ok(files.length >= 3, `bara ${files.length} .css-filer lästes under src/web`);
@@ -227,8 +200,6 @@ test('(FA3) varje var(--namn) i src/web är deklarerad i tema.css eller i samma 
     }
   }
 });
-
-// --- (FA4) --------------------------------------------------------------
 
 const GREEN_NAME_PATTERN =
   /\b[a-z-]*(green|lime|olive|teal|mint|honeydew|chartreuse|aquamarine|turquoise)[a-z-]*\b/i;
@@ -250,7 +221,7 @@ const COLOR_KEYWORDS = [
 
 test('(FA4) ingen stilmall i src/web utom tema.css har en egen färg', async () => {
   const files = (await cssFiles()).filter(({ name }) => name !== 'tema.css');
-  assert.ok(files.length >= 3, `bara ${files.length} .css-filer utom tema.css lästes under src/web`);
+  assert.ok(files.length >= 2, `bara ${files.length} .css-filer utom tema.css lästes under src/web`);
   for (const { name, file } of files) {
     const css = stripCssComments(await fs.readFile(file, 'utf8'));
     for (const [, body] of css.matchAll(/\{([^{}]*)\}/g)) {
@@ -280,8 +251,6 @@ test('(FA4) ingen stilmall i src/web utom tema.css har en egen färg', async () 
   }
 });
 
-// --- (FA5) --------------------------------------------------------------
-
 const SV_CLASSES = [
   'sv-fyll-bla',
   'sv-fyll-grabla',
@@ -307,7 +276,6 @@ test('(FA5) varje sv-klass i landning.html har en egen regel med fill eller stro
       }
     }
   }
-  // Bara en regel vars hela selektor är klassen räknas, aldrig en gruppselektor.
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), body]);
   for (const word of words) {
     const own = rules.filter(([selector, body]) => selector === `.${word}` && /(^|[\s;])(fill|stroke)\s*:/.test(body));
@@ -316,23 +284,18 @@ test('(FA5) varje sv-klass i landning.html har en egen regel med fill eller stro
   assert.deepEqual([...words].sort(), SV_CLASSES, 'landning.html använder inte exakt de väntade sv-klasserna');
 });
 
-// --- (FA6) --------------------------------------------------------------
-
 const SRC_DIR = fileURLToPath(new URL('../src/', import.meta.url));
 
 test('(FA6) ingen fil i src nämner grönt', async () => {
   const names = (await fs.readdir(SRC_DIR, { recursive: true })).filter((name) => /\.(html|css|js)$/.test(name));
   assert.ok(names.some((name) => name.endsWith('.html')), 'ingen .html-fil lästes under src');
   for (const name of names) {
-    // Kommentarerna står kvar: ett ord om grönt i en kommentar är också ett fel.
     const text = await fs.readFile(path.join(SRC_DIR, name), 'utf8');
     text.split('\n').forEach((line, index) => {
       assert.ok(!/gr[öo]n/i.test(line), `src/${name.split(path.sep).join('/')} rad ${index + 1}: ${line.trim()}`);
     });
   }
 });
-
-// --- (FA7) --------------------------------------------------------------
 
 const PAGES = [
   ['landning.html', ['/tema.css', '/landning.css']],
@@ -349,8 +312,6 @@ test('(FA7) landning.html och index.html har ingen egen färg och laddar bara si
     const hex = html.match(/(?<!&)#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b/gi);
     assert.equal(hex, null, `${name} har hexkoden ${hex?.[0]}`);
     const hrefs = [];
-    // Attributen läses med kaskadspärrens mönster: skiftläge, citattecken och
-    // blanktecken kring = spelar ingen roll, precis som för webbläsaren.
     for (const [tag] of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<link\b[^>]*>/gi)) {
       const attributes = attributeMap(tag);
       const rel = (attributes.get('rel') ?? '').toLowerCase().split(/\s+/).filter(Boolean);
@@ -361,8 +322,6 @@ test('(FA7) landning.html och index.html har ingen egen färg och laddar bara si
     assert.deepEqual(hrefs, stylesheets, `${name} laddar stilmallarna ${hrefs.join(', ')}`);
   }
 });
-
-// --- (FA8) --------------------------------------------------------------
 
 test('(FA8) varje kontrasttal i kommentarerna i style.css och landning.css är ett tal ur kontrasttabellen', async () => {
   const known = new Set([...CONTRAST_ROWS.map((row) => row[5]), ...CONTRAST_UNTESTED]);

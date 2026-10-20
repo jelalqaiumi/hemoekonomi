@@ -1,15 +1,9 @@
-// Temats färgräkning, gemensam för tests/hero.test.js (H11) och
-// tests/tema.test.js (FA1) (ARKITEKTUR.md del 9, "Gemensam hjälpmodul"): ett
-// begrepp, en ägare. Filnamnet slutar inte på .test.js, så npm test kör den
-// inte som en testfil.
-
 import assert from 'node:assert/strict';
 
 export function stripComments(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-// Tokenvärdena ur ett :root-block. Kommentarerna är redan borttagna.
 export function readDeclarations(block) {
   const tokens = new Map();
   for (const match of block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
@@ -18,9 +12,6 @@ export function readDeclarations(block) {
   return tokens;
 }
 
-// Det ljusa läget är det första :root { … }; det mörka är det ljusa med
-// :root { … } inuti @media (prefers-color-scheme: dark) ovanpå. Det mörka
-// lägets egna deklarationer returneras dessutom för sig.
 export function readThemes(css) {
   const text = stripComments(css);
   const light = /:root\s*\{([^}]*)\}/.exec(text);
@@ -35,7 +26,6 @@ export function readThemes(css) {
   return { lightTokens, darkTokens, darkOwn };
 }
 
-// var(--x) löses upp tills värdet är en hexkod.
 export function resolveToken(tokens, name, mode) {
   let value = tokens.get(name);
   const seen = new Set([name]);
@@ -65,7 +55,6 @@ export function parseHex(value, label) {
   };
 }
 
-// c = a * s + (1 - a) * b, kanal för kanal.
 export function over(top, base) {
   const mix = (s, b) => top.a * s + (1 - top.a) * b;
   return { r: mix(top.r, base.r), g: mix(top.g, base.g), b: mix(top.b, base.b), a: 1 };
@@ -88,8 +77,6 @@ export function contrast(light, dark) {
   return (luminance(light) + 0.05) / (luminance(dark) + 0.05);
 }
 
-// HSL-nyans i grader [0, 360) och mättnad i [0, 1] ur en hexkod med 3, 4, 6
-// eller 8 siffror. Alfa räknas inte. Ingen avrundning.
 export function hueSaturation(hex) {
   let h = hex.slice(1);
   if (h.length === 3 || h.length === 4) {
@@ -119,21 +106,15 @@ export function hueSaturation(hex) {
   return { hue, s };
 }
 
-// ARKITEKTUR.md del 9, "Regeln för grönt".
 export function isGreen(hex) {
   const { hue, s } = hueSaturation(hex);
   return hue >= 70 && hue <= 175 && s >= 0.1;
 }
 
-// Tar bort CSS-kommentarer men låter strängar stå, så att en kommentarmarkör i
-// en sträng (content: "/*") inte äter text som webbläsaren läser.
 export function stripCssComments(css) {
   return css.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\/\*[\s\S]*?\*\//g, (m, s) => s ?? '');
 }
 
-// Attributen i en tagg, med namnen i gemener. Kaskadspärrens led 3:s mönster
-// (ARKITEKTUR.md "Kaskadspärren [hero-kaskad]"): dubbla, enkla och inga
-// citattecken.
 export function attributeMap(tag) {
   const attributes = new Map();
   for (const match of tag.matchAll(/([^\s=\/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g)) {

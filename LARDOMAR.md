@@ -4692,3 +4692,22 @@ främmande pid (testprocessens förälder, `process.ppid`) och en starttid ett d
 bakåt ska ge att låset tas över; (2) samma pid med dagens starttid ska ge rad L1
 som i dag. Mutationen som tar bort starttidsjämförelsen ska ge `EXIT=1` med fall
 (1):s kryssrad.
+
+### 2026-10-17 — gränssnitt: ?registrera stod kvar i adressen och öppnade Skapa konto efter nästa utloggning
+**Vad gick fel:** En körning i en riktig webbläsare (Chromium) av flödet
+landningssidan → **Skapa konto** (`/app?registrera`) → registrering → omladdning
+→ **Logga ut** visade inloggningsvyn i läget Skapa konto i stället för Logga in.
+Det felaktiga lösenordet som sedan skrevs in skickades därför till
+`/api/auth/registrera`, felraden `#login-error` blev tom, och länken
+`#forgot-link` var dold. Orsaken var att `?registrera` stod kvar i adressen
+efter registreringen, så omladdningen läste parametern igen och satte
+`startInRegister`, som först utloggningen förbrukade.
+**Varför:** Flaggan lästes ur adressen vid varje sidladdning men nollställdes
+bara när inloggningsvyn visades, och ingen kod tog bort parametern när användaren
+väl var inloggad. Testerna i `tests/login.test.js` laddade appen en gång och
+loggade aldrig ut efter en start med `?registrera`.
+**Regel framåt:** En parameter i adressen som bara gäller första visningen ska
+tas bort med `history.replaceState` så snart den har gjort sitt, och flaggan den
+satte ska nollställas i samma steg. Varje sådan parameter ska ha ett testfall som
+startar med parametern, går igenom en lyckad inloggning och därefter loggar ut,
+och som asserterar läget i vyn efter utloggningen.

@@ -1,32 +1,13 @@
-// Databasen: anslutningen, pragman, schemat och PRAGMA user_version.
-// Ligger i src/server/ och får därför importera node:-moduler.
-//
-// DatabaseSync är synkron. Ingen funktion i den här filen är async och ingen
-// anropare ska await:a den — ett await på ett värde som inte är ett löfte gömmer
-// bara att arbetet redan är klart.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
 import { getDatabaseFilePath } from './paths.js';
 
-// Schemaversionen står i PRAGMA user_version, inte i en egen tabell. Etapp 1
-// sätter 1; ett senare schema höjer talet och kör sitt steg när det lästa talet
-// är lägre.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
-// Den sökväg DatabaseSync tolkar som "ingen fil, bara minne". Testerna öppnar en
-// egen sådan databas per testfall.
 export const MEMORY_PATH = ':memory:';
 
-// .message är alltid svensk text: den skickas rakt ut till användaren av api.js
-// (500 { error }), på samma sätt som StorageError i src/server/storage.js.
-// Skillnaden mot StorageError är medveten och står i ARKITEKTUR.md under
-// "Databasens fel når aldrig användaren på engelska": StorageError skriver ut
-// datafilens sökväg, eftersom den appen kördes lokalt av den som äger filen. Den
-// här appen nås över internet, så varken sökväg eller SQL-text får stå i
-// .message — en sökväg avslöjar serverns filsystem och SQL-texten avslöjar
-// schemat. Originalfelet finns kvar i .cause.
 export class DatabaseError extends Error {
   constructor(message, options) {
     super(message, options);
@@ -34,17 +15,6 @@ export class DatabaseError extends Error {
   }
 }
 
-// De fyra texterna i tabellen "Felen — ordagrant" i ARKITEKTUR.md, skrivna bara
-// här. openFailed används av den här filen; readFailed, writeFailed och
-// constraintFailed fick sina första anropare i src/server/auth.js [etapp 2], som
-// är den första filen som kör frågor — ingen exporterad funktion här kör någon
-// annan fråga än schemat och pragman. Strängarna har därmed en enda ägare, och
-// varje anropare läser dem härifrån.
-//
-// constraintFailed är ett programmeringsfel och inte ett användarfel: all indata
-// valideras i src/core/ innan den når datalagret, så ett brutet CHECK betyder
-// att valideringen har ett hål. Texten är därför medvetet allmän, och .cause
-// bär originalet så att felet går att hitta på servern.
 export const DATABASE_MESSAGES = Object.freeze({
   openFailed: 'Databasen kunde inte öppnas. Kontakta den som driftar appen.',
   readFailed: 'Det gick inte att läsa dina uppgifter. Försök igen.',
@@ -52,59 +22,60 @@ export const DATABASE_MESSAGES = Object.freeze({
   constraintFailed: 'Uppgifterna kunde inte sparas: något värde är ogiltigt.'
 });
 
-// Pragman sätts på varje anslutning, direkt efter att den öppnats.
-// PRAGMA foreign_keys är per anslutning: utan raden är varje REFERENCES i
-// schemat nedan bara en kommentar. journal_mode är en egenskap hos filen och
-// behöver bara sättas en gång, men raden är idempotent och får därför köras
-// varje gång. Mot MEMORY_PATH svarar SQLite 'memory' i stället för 'wal' utan
-// att kasta — körd på Node v24.19.0: {"journal_mode":"memory"}.
-const PRAGMA_SQL = `
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
-`;
+const DATE_CHECK = "~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'";
+const MONTH_CHECK = "~ '^[0-9]{4}-[0-9]{2}$'";
 
-// Schemat står ordagrant som i ARKITEKTUR.md under "Datamodell: SQLite-schemat
-// (bindande)", med IF NOT EXISTS tillagt på varje CREATE så att anropet är
-// ofarligt att göra om. Kolumnen interval behöver inga citationstecken: körd
-// mot new DatabaseSync(':memory:') på Node v24.19.0 går CREATE TABLE igenom och
-// ett INSERT ger {"id":"t1","interval":"monthly","amount_ore":100}.
 const SCHEMA_SQL = `
--- Ett konto. Skapas vid första begäran om en inloggningskod; ingen separat
--- registrering finns.
-CREATE TABLE IF NOT EXISTS users (
-  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
-  email       TEXT NOT NULL UNIQUE,
-  created_at  TEXT NOT NULL,
-  plan        TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'))
+CREATE TABLE IF NOT EXISTS schema_version (
+  version INTEGER NOT NULL
 );
 
--- En utskickad engångskod. Koden lagras ALDRIG i klartext: kolumnen bär
--- scryptSync(kod, salt, 64) som hex, och saltet står i code_salt.
-CREATE TABLE IF NOT EXISTS login_codes (
+-- Ett konto. Skapas vid registrering. Lösenordet lagras aldrig i klartext:
+-- password_hash bär scrypt(lösenord, salt, 64) som hex, och saltet står i
+-- password_salt.
+CREATE TABLE IF NOT EXISTS users (
   id             TEXT PRIMARY KEY,
-  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  code_hash      TEXT NOT NULL,
-  code_salt      TEXT NOT NULL,
-  created_at     TEXT NOT NULL,
-  expires_at     TEXT NOT NULL,
-  consumed_at    TEXT,            -- NULL = inte använd ännu
-  superseded_at  TEXT,            -- NULL = inte ersatt av en nyare kod
-  attempts       INTEGER NOT NULL DEFAULT 0,
-  request_ip     TEXT NOT NULL
+  email          TEXT NOT NULL UNIQUE,
+  password_hash  TEXT NOT NULL,
+  password_salt  TEXT NOT NULL,
+  created_at     TEXT COLLATE "C" NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes (user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_login_codes_ip ON login_codes (request_ip, created_at);
+
+-- Ett försök att logga in, lyckat eller inte. Används för att begränsa antalet
+-- försök per e-postadress och per IP-adress.
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id          TEXT PRIMARY KEY,
+  email       TEXT NOT NULL,
+  request_ip  TEXT NOT NULL,
+  created_at  TEXT COLLATE "C" NOT NULL,
+  succeeded   SMALLINT NOT NULL CHECK (succeeded IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts (email, created_at);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts (request_ip, created_at);
+
+-- En begäran om nytt lösenord. Tokenet finns bara i länken i mejlet; tabellen
+-- bär sha256(token) som hex.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TEXT COLLATE "C" NOT NULL,
+  expires_at  TEXT COLLATE "C" NOT NULL,
+  used_at     TEXT,
+  request_ip  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_password_resets_ip ON password_resets (request_ip, created_at);
 
 -- En inloggad session. Tokenet finns bara i användarens cookie; tabellen bär
 -- sha256(token) som hex.
 CREATE TABLE IF NOT EXISTS sessions (
-  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,
-  created_at  TEXT NOT NULL,
-  expires_at  TEXT NOT NULL,
-  revoked_at  TEXT                -- NULL = giltig; sätts vid utloggning
+  created_at  TEXT COLLATE "C" NOT NULL,
+  expires_at  TEXT COLLATE "C" NOT NULL,
+  revoked_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
 
@@ -112,415 +83,424 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
 -- med to_month; to_month = NULL betyder "gäller framåt utan slut". Alla
 -- versioner av samma post delar series_id.
 CREATE TABLE IF NOT EXISTS templates (
-  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  series_id   TEXT NOT NULL,      -- första versionens id
+  series_id   TEXT NOT NULL,
   kind        TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'saving')),
   name        TEXT NOT NULL,
   amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
   category    TEXT NOT NULL,
   interval    TEXT NOT NULL CHECK (interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
-  start_date  TEXT NOT NULL CHECK (start_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-  from_month  TEXT NOT NULL CHECK (from_month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
-  to_month    TEXT CHECK (to_month IS NULL OR to_month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
-  created_at  TEXT NOT NULL,
+  start_date  TEXT COLLATE "C" NOT NULL CHECK (start_date ${DATE_CHECK}),
+  from_month  TEXT COLLATE "C" NOT NULL CHECK (from_month ${MONTH_CHECK}),
+  to_month    TEXT COLLATE "C" CHECK (to_month IS NULL OR to_month ${MONTH_CHECK}),
+  created_at  TEXT COLLATE "C" NOT NULL,
   CHECK (to_month IS NULL OR to_month >= from_month)
 );
 CREATE INDEX IF NOT EXISTS idx_templates_user_period ON templates (user_id, from_month, to_month);
 CREATE INDEX IF NOT EXISTS idx_templates_series ON templates (user_id, series_id, from_month);
 
--- En engångspost: gäller exakt en månad och har inget intervall och ingen dag.
 CREATE TABLE IF NOT EXISTS month_items (
-  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  month       TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  month       TEXT COLLATE "C" NOT NULL CHECK (month ${MONTH_CHECK}),
   kind        TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'saving')),
   name        TEXT NOT NULL,
   amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
   category    TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  -- Dagen utgiften gjordes, NULL när användaren inte anger den [steg 2]. Den är
-  -- inte dueDate: dueDate räknas fram ur en malls interval och start_date och
-  -- står inte i någon kolumn, occurred_on är en dag användaren skriver in. En
-  -- post kan ha båda, och de två namnen hålls isär överallt.
-  occurred_on TEXT CHECK (occurred_on IS NULL OR occurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-  -- Fritext, högst 200 tecken. Längden står inte som ett CHECK här: SQLite:s
-  -- length() räknar tecken i en annan mening än [...note].length, och kärnan
-  -- äger regeln (checkNote i src/core/entry.js).
+  created_at  TEXT COLLATE "C" NOT NULL,
+  occurred_on TEXT COLLATE "C" CHECK (occurred_on IS NULL OR occurred_on ${DATE_CHECK}),
   note        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_month_items_user_month ON month_items (user_id, month);
 
--- En avvikelse för en enskild månad av en mall: antingen ett annat belopp den
--- månaden, eller att posten hoppas över den månaden. Aldrig båda, aldrig
--- ingenting.
 CREATE TABLE IF NOT EXISTS overrides (
-  id           TEXT PRIMARY KEY,  -- crypto.randomUUID()
+  id           TEXT PRIMARY KEY,
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   template_id  TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
-  month        TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  month        TEXT COLLATE "C" NOT NULL CHECK (month ${MONTH_CHECK}),
   amount_ore   INTEGER CHECK (amount_ore IS NULL OR amount_ore > 0),
-  skipped      INTEGER NOT NULL DEFAULT 0 CHECK (skipped IN (0, 1)),
-  created_at   TEXT NOT NULL,
+  skipped      SMALLINT NOT NULL DEFAULT 0 CHECK (skipped IN (0, 1)),
+  created_at   TEXT COLLATE "C" NOT NULL,
   CHECK ((skipped = 1 AND amount_ore IS NULL) OR (skipped = 0 AND amount_ore IS NOT NULL)),
   UNIQUE (template_id, month)
 );
 CREATE INDEX IF NOT EXISTS idx_overrides_user_month ON overrides (user_id, month);
 
--- Ett tak för en kategori och en månad [steg 2]. UNIQUE hindrar två tak för
--- samma kategori och månad, och gör PUT till en enda operation: ON CONFLICT
--- ersätter i stället för att falla.
---
--- category har inget CHECK. Kategorilistan ägs av CATEGORIES i src/core/entry.js
--- och prövas av checkCategory där; ett CHECK här hade blivit en andra kopia som
--- kan glida isär (ARKITEKTUR.md under "Tabellen").
---
--- Ingen egen idx_-rad: UNIQUE (user_id, month, category) ger ett index med
--- user_id och month som sina första kolumner, alltså just det uppslag
--- readMonth gör.
 CREATE TABLE IF NOT EXISTS budgets (
-  id          TEXT PRIMARY KEY,   -- crypto.randomUUID()
+  id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  month       TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
+  month       TEXT COLLATE "C" NOT NULL CHECK (month ${MONTH_CHECK}),
   category    TEXT NOT NULL,
   amount_ore  INTEGER NOT NULL CHECK (amount_ore > 0),
-  created_at  TEXT NOT NULL,
+  created_at  TEXT COLLATE "C" NOT NULL,
   UNIQUE (user_id, month, category)
 );
 
--- En räkning: något som ska betalas, och när [steg 3]. En egen tabell och inte
--- ett fält till på month_items: en månadspost svarar på "vad kostade den här
--- månaden?" och bär occurred_on, en räkning svarar på "vad ska betalas, och
--- när?" och bär due_date plus ett tillstånd (ARKITEKTUR.md, tabellen under "En
--- räkning är inte en månadspost").
---
--- interval är NULL för en engångsräkning. Därav IS NULL i CHECK:en: värdelistan
--- gäller bara när ett värde står där. Listan skrivs för hand i SQL och härleds
--- inte ur INTERVALS i src/core/entry.js, av samma skäl som plan-kolumnens lista
--- inte härleds ur PLANS: ett CHECK är text SQLite tolkar. Kopplingen hålls av
--- (R9) i tests/bills.test.js, som läser villkoret ur sqlite_master.
---
--- remind_days är hur många dagar innan förfallodagen påminnelsen visas; 0
--- betyder på dagen. Gränsen står både här och i kärnan (REMIND_DAYS_MIN och
--- REMIND_DAYS_MAX i src/core/bill.js) — samma två spärrar i två språk som för
--- kind och interval: kärnan ger användaren en svensk text och ett 400, schemat
--- är sista utposten mot ett programmeringsmisstag.
---
--- paid_at är tidpunkten räkningen markerades betald, NULL när den är obetald. En
--- återkommande räkning som betalas får den nollställd igen och ett nytt due_date:
--- raden är alltså alltid den nästa obetalda, och historiken över betalda
--- räkningar lagras inte (PLAN.md beslut 4).
---
--- anchor_date är intervallets fas: den ursprungliga förfallodagen, som styr
--- vilken dag i månaden serien återkommer på. Samma roll som templates.start_date
--- har för en mall. Den sätts till den första förfallodagen när räkningen skapas
--- och ändras aldrig av en betalning — bara när användaren själv ändrar
--- förfallodagen genom PUT. Utan den skulle en klampning bli bestående: en
--- månadsräkning den 31 januari flyttas till den 28 februari, och nästa betalning
--- hade då räknat från den 28:e och gett den 28 mars i stället för den 31
--- (ARKITEKTUR.md, "Klampningen ska inte fastna — en ankardag bevaras").
---
--- Inget eget idx_: ARKITEKTUR.md:s SQL-block är bindande ordagrant och har
--- ingen indexrad, till skillnad från login_codes, sessions och templates ovan.
 CREATE TABLE IF NOT EXISTS bills (
   id            TEXT PRIMARY KEY,
   user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name          TEXT NOT NULL,
   amount_ore    INTEGER NOT NULL CHECK (amount_ore > 0),
-  due_date      TEXT NOT NULL CHECK (due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-  anchor_date   TEXT NOT NULL CHECK (anchor_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  due_date      TEXT COLLATE "C" NOT NULL CHECK (due_date ${DATE_CHECK}),
+  anchor_date   TEXT COLLATE "C" NOT NULL CHECK (anchor_date ${DATE_CHECK}),
   interval      TEXT CHECK (interval IS NULL OR interval IN ('monthly', 'quarterly', 'semiannual', 'yearly')),
   remind_days   INTEGER NOT NULL DEFAULT 3 CHECK (remind_days >= 0 AND remind_days <= 30),
   paid_at       TEXT,
-  created_at    TEXT NOT NULL
+  created_at    TEXT COLLATE "C" NOT NULL
 );
 
--- Ett sparmål [steg 4]. Den första funktionen Bas saknar: sparmålens fem vägar i
--- api.js går genom requireFeature med 'savingsGoals', som står i PLANS.plus och
--- inte i PLANS.bas. Därmed får 403-grenen i requireFeature sin första nåbara
--- indata, och (P8) och (P9) blir byggbara.
---
--- target_date är valfritt. Utan det finns ingen slutmånad att räkna mot, och
--- readGoals svarar null för både monthsLeft och perMonthOre — ett mål utan
--- slutdatum har ingen månadstakt och kan inte vara försenat.
---
--- Mönstret står som ett GLOB, precis som för due_date i bills och occurred_on i
--- month_items. Formatets ägare i kärnan är ISO_DATE_PATTERN i src/core/dates.js;
--- GLOB:en här är samma två spärrar i två språk som för kind och interval —
--- kärnan ger användaren en svensk text och ett 400, schemat är sista utposten
--- mot ett programmeringsmisstag. Ett GLOB avgör bara formen och aldrig att
--- datumet finns i kalendern; den frågan ägs av isValidIsoDate.
---
--- Inget eget idx_: ARKITEKTUR.md:s SQL-block är bindande ordagrant och har ingen
--- indexrad, precis som för bills och budgets.
 CREATE TABLE IF NOT EXISTS goals (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   target_ore  INTEGER NOT NULL CHECK (target_ore > 0),
-  target_date TEXT CHECK (target_date IS NULL OR target_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-  created_at  TEXT NOT NULL
+  target_date TEXT COLLATE "C" CHECK (target_date IS NULL OR target_date ${DATE_CHECK}),
+  created_at  TEXT COLLATE "C" NOT NULL
 );
 
--- En insättning på ett sparmål [steg 4].
---
--- CHECK (amount_ore <> 0) och inte > 0: en insättning kan vara negativ. Den som
--- tar ut pengar ur sitt sparande ska kunna registrera det, annars visar målet
--- mer än som finns. Noll är däremot meningslöst och avvisas — av kärnan med en
--- svensk text, och här som sista utpost. Det är (S9).
---
--- Två främmandenycklar och inte en: goal_id knyter raden till målet, user_id till
--- kontot. Den andra är inte överflödig — varje WHERE i goals.js bär user_id = ?,
--- och utan kolumnen hade en insättning bara gått att knyta till en användare
--- genom en join. ON DELETE CASCADE på goal_id är (S10): ett borttaget mål tar
--- sina insättningar med sig.
 CREATE TABLE IF NOT EXISTS goal_deposits (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   goal_id     TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
   amount_ore  INTEGER NOT NULL CHECK (amount_ore <> 0),
-  made_on     TEXT NOT NULL CHECK (made_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-  created_at  TEXT NOT NULL
+  made_on     TEXT COLLATE "C" NOT NULL CHECK (made_on ${DATE_CHECK}),
+  created_at  TEXT COLLATE "C" NOT NULL
 );
 `;
 
-// Kolumnen users.plan [steg 1 i del 5]. Står ordagrant som i ARKITEKTUR.md under
-// "Kopplingen till schemat", på två ställen med flit: i CREATE TABLE ovan för en
-// databas som skapas nu, och här för en databas som redan finns — CREATE TABLE
-// IF NOT EXISTS lägger inte till en kolumn i en tabell som är skapad.
-//
-// Värdelistan skrivs för hand i SQL och härleds inte ur PLANS i
-// src/core/plans.js: ett CHECK är text som SQLite tolkar, inte ett uttryck som
-// går att bygga av en JavaScript-lista utan att samtidigt öppna för att listan
-// klistras in i SQL. Kopplingen mellan de två hålls av (P6) i tests/db.test.js,
-// som läser villkoret ur sqlite_master och jämför med Object.keys(PLANS) —
-// samma prov som redan binder kind till ITEM_KINDS.
-//
-// Förvalet 'bas' är hela migreringen: varje befintlig rad får 'bas' av SQLite
-// när kolumnen läggs till, så ingen UPDATE behövs och ingen rad skrivs om.
-const ADD_PLAN_COLUMN_SQL =
-  "ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'bas' CHECK (plan IN ('bas', 'plus', 'premium'));";
-
-// De två kolumnerna på month_items [steg 2], av samma skäl och på samma två
-// ställen som plan ovan: i CREATE TABLE för en databas som skapas nu, och här
-// för en databas som redan finns. Villkoret och CHECK-texten står ordagrant som
-// i CREATE TABLE — en avvikelse mellan de två hade gjort att en migrerad databas
-// avvisade en rad en ny databas tar emot.
-//
-// Körd på Node v24.19.0: ALTER TABLE ADD COLUMN tar emot ett CHECK på den nya
-// kolumnen, och ett INSERT med occurred_on '2026-13-99x' faller därefter med
-// errstr 'constraint failed' också i den migrerade databasen. Varje befintlig rad
-// får NULL i båda kolumnerna, så ingen UPDATE behövs och ingen rad skrivs om.
-const ADD_OCCURRED_ON_COLUMN_SQL =
-  "ALTER TABLE month_items ADD COLUMN occurred_on TEXT CHECK (occurred_on IS NULL OR occurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');";
-
-const ADD_NOTE_COLUMN_SQL = 'ALTER TABLE month_items ADD COLUMN note TEXT;';
-
-// Kolumnen bills.anchor_date [rättelsen till steg 3], på samma två ställen och
-// av samma skäl som de tre ovan.
-//
-// Två satser i en exec: SQLite kräver ett DEFAULT som inte är NULL när en
-// NOT NULL-kolumn läggs till, och ett ADD COLUMN skriver inte om befintliga
-// rader. Förvalet '1970-01-01' är därför bara det värde som står i schemat
-// mellan de två satserna; UPDATE-raden sätter anchor_date = due_date för varje
-// befintlig rad direkt efteråt, och det är rätt värde: en räkning som aldrig
-// betalats har sin ursprungliga dag kvar i due_date (ARKITEKTUR.md,
-// "Migreringen"). Steget körs bara när kolumnen saknas, så UPDATE:n kan inte
-// skriva över en anchor_date som redan bär sitt värde.
-//
-// Körd på Node v24.19.0: ALTER TABLE ADD COLUMN tar emot både NOT NULL DEFAULT
-// och CHECK på den nya kolumnen, och ett INSERT med anchor_date 'x' faller
-// därefter med errstr 'constraint failed' också i den migrerade databasen.
-const ADD_ANCHOR_DATE_COLUMN_SQL =
-  `ALTER TABLE bills ADD COLUMN anchor_date TEXT NOT NULL DEFAULT '1970-01-01' CHECK (anchor_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]');
-UPDATE bills SET anchor_date = due_date;`;
-
-// Varje steg körs bara när kolumnen saknas, och villkoret är kolumnen själv och
-// inte PRAGMA user_version: ALTER TABLE ADD COLUMN är ett fel om kolumnen redan
-// finns, och en databas som skapats av CREATE TABLE ovan har den från början.
-// Ett villkor på user_version hade behövt svara på frågan "finns kolumnen?"
-// indirekt, genom ett tal som en äldre körning kan ha satt av ett annat skäl.
-//
-// Listan står som data och inte som tre if-satser: frågan "finns kolumnen?" har
-// då en enda ägande funktion, hasColumn nedan, i stället för en handskriven kopia
-// per kolumn (LARDOMAR.md 2026-09-02).
-const COLUMN_MIGRATIONS = Object.freeze([
-  Object.freeze({ table: 'users', column: 'plan', sql: ADD_PLAN_COLUMN_SQL }),
-  Object.freeze({ table: 'month_items', column: 'occurred_on', sql: ADD_OCCURRED_ON_COLUMN_SQL }),
-  Object.freeze({ table: 'month_items', column: 'note', sql: ADD_NOTE_COLUMN_SQL }),
-  Object.freeze({ table: 'bills', column: 'anchor_date', sql: ADD_ANCHOR_DATE_COLUMN_SQL })
-]);
-
-// PRAGMA table_info ger en rad per kolumn. Läses genom prepare().all(), som
-// db.test.js redan gör för PRAGMA user_version.
-//
-// Tabellnamnet kommer ur COLUMN_MIGRATIONS ovan och aldrig utifrån: PRAGMA tar
-// inga parametrar, så namnet måste stå i SQL-texten, och den enda listan som
-// når hit är den frysta.
-function hasColumn(database, table, column) {
-  return database
-    .prepare(`PRAGMA table_info(${table})`)
-    .all()
-    .some((row) => row.name === column);
+const INT8_OID = 20;
+const NUMERIC_OID = 1700;
+function parseNumber(value) {
+  return value === null ? null : Number(value);
 }
 
-// Varje node:sqlite-fraga i projektet gar genom en av de tva funktionerna nedan,
-// och ingen av dem slapper ut ett engelskt fel. Lasning ger rad 2 i feltabellen,
-// skrivning rad 3, och ett brutet CHECK eller UNIQUE rad 4 - errstr ar
-// node:sqlites eget falt och inte en lasning av den engelska texten.
-//
-// De tre funktionerna skrevs forst modullokalt i src/server/auth.js [etapp 2].
-// De flyttades hit i etapp 3, nar src/server/months.js blev en andra anropare:
-// en andra handskriven kopia av samma omslutning ar just det agarregeln forbjuder
-// (LARDOMAR.md 2026-09-02). Agaren till de svenska texterna, DATABASE_MESSAGES,
-// bor redan i den har filen, sa omslutningen hor hit.
+export function toPositional(sql) {
+  let n = 0;
+  return sql.replace(/\?/g, () => {
+    n += 1;
+    return `$${n}`;
+  });
+}
+
+function isConstraintError(error) {
+  return typeof error?.code === 'string' && error.code.startsWith('23');
+}
+
 function asDatabaseError(error, fallbackMessage) {
-  const message = error?.errstr === 'constraint failed'
-    ? DATABASE_MESSAGES.constraintFailed
-    : fallbackMessage;
+  if (error instanceof DatabaseError) {
+    return error;
+  }
+  const message = isConstraintError(error) ? DATABASE_MESSAGES.constraintFailed : fallbackMessage;
   return new DatabaseError(message, { cause: error });
 }
 
-export function readRows(db, sql, params) {
+const activeTransaction = new AsyncLocalStorage();
+
+class Mutex {
+  constructor() {
+    this.tail = Promise.resolve();
+  }
+
+  run(job) {
+    const result = this.tail.then(job, job);
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+}
+
+class Database {
+  constructor(engine) {
+    this.engine = engine;
+    this.closed = false;
+  }
+
+  async run(sql, params) {
+    if (this.closed) {
+      throw new DatabaseError(DATABASE_MESSAGES.readFailed, { cause: new Error('databasen är stängd') });
+    }
+    const tx = activeTransaction.getStore();
+    const query = tx !== undefined && tx.db === this ? tx.query : this.engine.query;
+    return query(toPositional(sql), params);
+  }
+
+  async transaction(work) {
+    const tx = activeTransaction.getStore();
+    if (tx !== undefined && tx.db === this) {
+      return work();
+    }
+    let workFailed = false;
+    const tracked = async () => {
+      try {
+        return await work();
+      } catch (error) {
+        workFailed = true;
+        throw error;
+      }
+    };
+    try {
+      return await this.engine.transaction((query) => activeTransaction.run({ db: this, query }, tracked));
+    } catch (error) {
+      if (workFailed) {
+        throw error;
+      }
+      throw asDatabaseError(error, DATABASE_MESSAGES.writeFailed);
+    }
+  }
+
+  async close() {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    await this.engine.close();
+  }
+}
+
+async function migrate(engine) {
+  await engine.exec(SCHEMA_SQL);
+  const rows = (await engine.query('SELECT version FROM schema_version', [])).rows;
+  if (rows.length === 0) {
+    await engine.query('INSERT INTO schema_version (version) VALUES ($1)', [SCHEMA_VERSION]);
+  } else if (rows[0].version !== SCHEMA_VERSION) {
+    await engine.query('UPDATE schema_version SET version = $1', [SCHEMA_VERSION]);
+  }
+}
+
+async function openPostgres(connectionString) {
+  const { default: pg } = await import('pg');
+  pg.types.setTypeParser(INT8_OID, parseNumber);
+  pg.types.setTypeParser(NUMERIC_OID, parseNumber);
+  const local = /@(localhost|127\.0\.0\.1)(:|\/)/.test(connectionString);
+  const pool = new pg.Pool({
+    connectionString,
+    max: 5,
+    ssl: local ? false : { rejectUnauthorized: true }
+  });
+  pool.on('error', () => {});
+  const engine = {
+    query: async (sql, params) => {
+      const result = await pool.query(sql, params);
+      return { rows: result.rows, rowCount: result.rowCount ?? 0 };
+    },
+    exec: async (sql) => {
+      await pool.query(sql);
+    },
+    transaction: async (work) => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const query = async (sql, params) => {
+          const result = await client.query(sql, params);
+          return { rows: result.rows, rowCount: result.rowCount ?? 0 };
+        };
+        const value = await work(query);
+        await client.query('COMMIT');
+        return value;
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    close: () => pool.end()
+  };
+  return engine;
+}
+
+async function createPglite(dataDir) {
+  const { PGlite } = await import('@electric-sql/pglite');
+  return PGlite.create(dataDir, { parsers: { [INT8_OID]: parseNumber, [NUMERIC_OID]: parseNumber } });
+}
+
+function pgliteEngine(pglite, { prefix = '', onClose = () => pglite.close() } = {}) {
+  const mutex = new Mutex();
+  const raw = async (sql, params) => {
+    if (prefix !== '') {
+      await pglite.exec(prefix);
+    }
+    const result = await pglite.query(sql, params);
+    return { rows: result.rows, rowCount: result.affectedRows ?? 0 };
+  };
+  return {
+    query: (sql, params) => mutex.run(() => raw(sql, params)),
+    exec: (sql) =>
+      mutex.run(async () => {
+        await pglite.exec(`${prefix}${sql}`);
+      }),
+    transaction: (work) =>
+      mutex.run(async () => {
+        await pglite.exec(`${prefix}BEGIN;`);
+        try {
+          const value = await work(raw);
+          await pglite.exec('COMMIT;');
+          return value;
+        } catch (error) {
+          try {
+            await pglite.exec('ROLLBACK;');
+          } catch {
+          }
+          throw error;
+        }
+      }),
+    close: onClose
+  };
+}
+
+let sharedMemory = null;
+let memoryCounter = 0;
+
+async function openMemory() {
+  if (sharedMemory === null) {
+    sharedMemory = createPglite(undefined).then((pglite) => ({ pglite, mutex: new Mutex() }));
+  }
+  const { pglite, mutex } = await sharedMemory;
+  memoryCounter += 1;
+  const schema = `test_${process.pid}_${memoryCounter}`;
+  const prefix = `SET search_path TO ${schema};`;
+  const raw = async (sql, params) => {
+    await pglite.exec(prefix);
+    const result = await pglite.query(sql, params);
+    return { rows: result.rows, rowCount: result.affectedRows ?? 0 };
+  };
+  await mutex.run(() => pglite.exec(`CREATE SCHEMA ${schema};`));
+  return {
+    query: (sql, params) => mutex.run(() => raw(sql, params)),
+    exec: (sql) => mutex.run(() => pglite.exec(`${prefix}${sql}`)),
+    transaction: (work) =>
+      mutex.run(async () => {
+        await pglite.exec(`${prefix}BEGIN;`);
+        try {
+          const value = await work(raw);
+          await pglite.exec('COMMIT;');
+          return value;
+        } catch (error) {
+          try {
+            await pglite.exec('ROLLBACK;');
+          } catch {
+          }
+          throw error;
+        }
+      }),
+    close: () => mutex.run(() => pglite.exec(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`))
+  };
+}
+
+async function openPgliteDirectory(dataDir) {
   try {
-    return db.prepare(sql).all(...params);
+    fs.mkdirSync(dataDir, { recursive: true });
+  } catch (error) {
+    throw new DatabaseError(DATABASE_MESSAGES.openFailed, { cause: error });
+  }
+  const pglite = await createPglite(dataDir);
+  return pgliteEngine(pglite);
+}
+
+export async function openDatabase(target) {
+  if (typeof target !== 'string' || target === '') {
+    throw new TypeError('openDatabase kräver en sökväg som en icke-tom sträng.');
+  }
+  let engine;
+  try {
+    if (target === MEMORY_PATH) {
+      engine = await openMemory();
+    } else if (/^postgres(ql)?:\/\//.test(target)) {
+      engine = await openPostgres(target);
+    } else {
+      engine = await openPgliteDirectory(target);
+    }
+    await migrate(engine);
+  } catch (error) {
+    if (engine !== undefined) {
+      try {
+        await engine.close();
+      } catch {
+      }
+    }
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+    throw new DatabaseError(DATABASE_MESSAGES.openFailed, { cause: error });
+  }
+  return new Database(engine);
+}
+
+export async function readRows(db, sql, params = []) {
+  try {
+    const database = await db;
+    return (await database.run(sql, params)).rows;
   } catch (error) {
     throw asDatabaseError(error, DATABASE_MESSAGES.readFailed);
   }
 }
 
-// Satser utan parametrar och utan svar: BEGIN, COMMIT och schemastegen. Samma
-// omslutning som write, och skrivningens rad i feltabellen - en sats som korts
-// utan att lyckas ar en skrivning som inte blev av.
-export function exec(db, sql) {
+export async function exec(db, sql) {
   try {
-    db.exec(sql);
+    const database = await db;
+    await database.run(sql, []);
   } catch (error) {
     throw asDatabaseError(error, DATABASE_MESSAGES.writeFailed);
   }
 }
 
-export function write(db, sql, params) {
+export async function write(db, sql, params = []) {
   try {
-    return db.prepare(sql).run(...params);
+    const database = await db;
+    const result = await database.run(sql, params);
+    return { changes: result.rowCount };
   } catch (error) {
     throw asDatabaseError(error, DATABASE_MESSAGES.writeFailed);
   }
 }
 
-// Flera skrivningar som ska lyckas tillsammans eller inte alls. BEGIN, COMMIT
-// och ROLLBACK går genom exec ovan, så ett fel från någon av de tre blir en
-// DatabaseError med svensk text precis som varje annan fråga i projektet.
-//
-// Omslutningen bor här och inte hos anroparen av samma skäl som readRows, exec
-// och write flyttades hit i etapp 3: en andra handskriven kopia av samma
-// omslutning är just det ägarregeln förbjuder (LARDOMAR.md 2026-09-02).
-//
-// ROLLBACK har ingen egen felhantering. Faller den är anslutningen obrukbar, och
-// ett svalt fel där hade gjort det osynligt; ett try/catch runt raden vore
-// dessutom en gren som ingen indata når (LARDOMAR.md 2026-09-04). De två grenar
-// funktionen har nås båda: den lyckade av varje anrop, den fallerande av
-// (M19) i tests/months.test.js.
-//
-// SQLite har inga nästlade transaktioner: ett BEGIN inuti en pågående
-// transaktion är ett fel. Ingen anropare i src/ anropar därför transaction
-// inuti en annan transaction.
-export function transaction(db, work) {
-  exec(db, 'BEGIN');
-  let result;
-  try {
-    result = work();
-  } catch (error) {
-    exec(db, 'ROLLBACK');
-    throw error;
-  }
-  exec(db, 'COMMIT');
-  return result;
+export async function transaction(db, work) {
+  const database = await db;
+  return database.transaction(work);
 }
 
-// Den anslutning getDatabase() delar ut. null betyder "ingen öppen anslutning".
-// En anslutning per process: SQLite äger samtidigheten inuti filen, och
-// src/server/lock.js hindrar en andra process på samma maskin.
+export function resolveDatabaseTarget(env = process.env) {
+  const url = env.DATABASE_URL;
+  if (typeof url === 'string' && url.trim() !== '') {
+    return url.trim();
+  }
+  return getDatabaseFilePath();
+}
+
 let sharedDatabase = null;
 
-// Öppnar en anslutning, sätter pragman, skapar schemat om det inte finns och
-// sätter PRAGMA user_version. Anropas av getDatabase() för appens databas och
-// direkt av testerna, som vill ha en egen databas per testfall.
-export function openDatabase(filePath) {
-  if (typeof filePath !== 'string' || filePath === '') {
-    throw new TypeError('openDatabase kräver en sökväg som en icke-tom sträng.');
-  }
-  // Katalogen räknas med i "går inte att öppna eller skapa": misslyckas den kan
-  // databasen inte skapas, och node:fs-felet bär både engelsk text och sökvägen.
-  if (filePath !== MEMORY_PATH) {
-    try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    } catch (error) {
-      throw new DatabaseError(DATABASE_MESSAGES.openFailed, { cause: error });
-    }
-  }
-
-  // Varje node:sqlite-anrop i funktionen ligger innanför det här try:t. De fyra
-  // stegen är tillsammans "öppna eller skapa databasen" och har därför samma
-  // rad i feltabellen: en anropare som får svaret kan inte använda anslutningen
-  // vare sig pragman, schemat eller versionen föll.
-  let database = null;
-  try {
-    database = new DatabaseSync(filePath);
-    database.exec(PRAGMA_SQL);
-    database.exec(SCHEMA_SQL);
-    // Samma rad i feltabellen som de tre stegen ovan: en databas vars kolumn
-    // inte gick att lägga till kan inte användas, och svaret är därför
-    // openFailed och inte en egen text.
-    for (const migration of COLUMN_MIGRATIONS) {
-      if (!hasColumn(database, migration.table, migration.column)) {
-        database.exec(migration.sql);
-      }
-    }
-    database.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
-  } catch (error) {
-    // Öppnades anslutningen men föll ett senare steg ligger handtaget kvar och
-    // håller filen låst — körd på Node v24.19.0 mot en fil som inte är en
-    // databas ("file is not a database"): utan stängningen ger fs.rmSync av
-    // filen EPERM. Städningen sväljer sitt eget fel, precis som writeToDisk i
-    // storage.js: den får inte ersätta det verkliga felet.
-    if (database !== null) {
-      try {
-        database.close();
-      } catch {
-        // Med flit tom.
-      }
-    }
-    throw new DatabaseError(DATABASE_MESSAGES.openFailed, { cause: error });
-  }
-  return database;
-}
-
-// Appens databas. Sökvägen läses genom getDatabaseFilePath() vid det första
-// anropet; därefter delas samma anslutning ut. Byter ett test miljövariabeln
-// måste det anropa closeDatabase() först.
 export function getDatabase() {
   if (sharedDatabase === null) {
-    sharedDatabase = openDatabase(getDatabaseFilePath());
+    const opening = openDatabase(resolveDatabaseTarget());
+    opening.catch(() => {
+      if (sharedDatabase === opening) {
+        sharedDatabase = null;
+      }
+    });
+    sharedDatabase = opening;
   }
   return sharedDatabase;
 }
 
-// Stänger den delade anslutningen om det finns en. Ofarlig att anropa när ingen
-// är öppen, så ett test kan städa utan att först fråga.
-export function closeDatabase() {
+export async function closeDatabase() {
   if (sharedDatabase !== null) {
-    const database = sharedDatabase;
-    // Nollställs före close(): faller stängningen ska nästa getDatabase() öppna
-    // en ny anslutning i stället för att dela ut en som redan är på väg bort.
+    const opening = sharedDatabase;
     sharedDatabase = null;
+    let database;
     try {
-      database.close();
+      database = await opening;
+    } catch {
+      return;
+    }
+    try {
+      await database.close();
     } catch (error) {
-      // En stängning som misslyckas betyder att WAL-innehållet kanske inte nådde
-      // filen, så svaret är skrivningens rad i feltabellen. Tabellen har ingen
-      // egen rad för en stängning; se paketets redovisning.
       throw new DatabaseError(DATABASE_MESSAGES.writeFailed, { cause: error });
     }
   }
 }
+
+export const INTERNAL = Object.freeze({ SCHEMA_SQL });

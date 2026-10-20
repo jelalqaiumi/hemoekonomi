@@ -19,9 +19,6 @@ import {
   isValidEntryId,
   validateEntryDraft
 } from '../src/core/entry.js';
-// Ägaren till beloppets visningsform. Rundgångstestet nedan matar appens egen
-// utdata tillbaka in i valideringen, och strängen hämtas därför härifrån i
-// stället för att skrivas av.
 import { formatSek, sekToOre } from '../src/core/money.js';
 
 function validDraft(overrides = {}) {
@@ -67,8 +64,6 @@ test('konstanterna följer datamodellen', () => {
 });
 
 test('de exporterade konstanterna är frysta och går inte att mutera', () => {
-  // ESM kör alltid i strict mode, så ett muteringsförsök kastar TypeError i
-  // stället för att tyst ignoreras.
   assert.throws(() => ENTRY_FIELDS.push('x'), TypeError);
   assert.deepEqual(ENTRY_FIELDS, ['amountSek', 'category', 'id', 'interval', 'name', 'startDate']);
 
@@ -158,9 +153,6 @@ test('createEntry skapar ingen post när utkastet är ogiltigt', () => {
 });
 
 test('createEntry ger ett internt fel när makeId inte ger en icke-tom sträng', () => {
-  // 42, '' och '   ' är alla tre obligatoriska enligt ARKITEKTUR.md
-  // ("Interna fel i createEntry"). Blanktecken-fallet är det enda värde där ett
-  // handskrivet id.length > 0 och isValidEntryId ger olika svar.
   for (const badId of [42, '', '   ', null, undefined, {}, ['id'], true]) {
     const result = createEntry(validDraft(), () => badId);
     assert.equal(result.ok, false, `id: ${String(badId)}`);
@@ -189,8 +181,6 @@ test('createEntry och isEntry använder samma id-villkor som isValidEntryId', ()
     startDate: '2026-01-31',
     category: 'subscription'
   };
-  // Samma värden genom båda vägarna. Går de isär har villkoret skrivits av för
-  // hand på något av ställena.
   for (const id of ['abc', ' a ', '   ', '', 42, null, undefined, {}, true]) {
     const expected = isValidEntryId(id);
     assert.equal(createEntry(validDraft(), () => id).ok, expected, `createEntry, id: ${String(id)}`);
@@ -199,14 +189,11 @@ test('createEntry och isEntry använder samma id-villkor som isValidEntryId', ()
 });
 
 test('det interna id-felet blandas inte in bland formulärfelen', () => {
-  // field: 'id' är maskinläsbar härkomst, inte en etikett åt användaren, och
-  // meddelandet nämner varken "id" eller något annat tekniskt nyckelord.
   const result = createEntry(validDraft(), () => 42);
   assert.equal(result.ok, false);
   assert.equal(result.errors.length, 1, 'inga formulärfel ska följa med');
   assert.equal(result.errors[0].field, 'id');
   assert.equal(/\bid\b/i.test(result.errors[0].message), false);
-  // Ett ogiltigt utkast når aldrig id-kontrollen: formulärfelen kommer först.
   const invalid = createEntry(validDraft({ name: '' }), () => 42);
   assert.equal(invalid.ok, false);
   assert.deepEqual(invalid.errors, [{ field: 'name', message: 'Namnet får inte vara tomt.' }]);
@@ -220,9 +207,6 @@ test('invariant: allt createEntry returnerar med ok true godkänns av isEntry', 
     validDraft({ name: '🎵'.repeat(60), amountSek: 9999999.99, startDate: '1970-01-01', category: 'loan' }),
     validDraft({ amountSek: 0.01, startDate: '2099-12-31', category: 'other' })
   ];
-  // Gränsvärden kring decimalregelns tolerans. De ska avvisas, men invarianten
-  // måste hålla oavsett vilken sida av gränsen ett värde hamnar på — det var
-  // exakt här den brast: ok: true med amountSek 0, som isEntry underkände.
   const boundary = [
     1e-9, '0,000000001', 9.9e-9, '0,0000000099', 1e-8, '0,00000001',
     0.001, '0,001', 0.005, '0,005', 0.01, '0,01'
@@ -240,16 +224,12 @@ test('invariant: allt createEntry returnerar med ok true godkänns av isEntry', 
     }
   }
 
-  // De typiska posterna måste dessutom faktiskt vara giltiga, annars skulle
-  // testet ovan kunna passera med enbart avvisade utkast.
   for (const draft of alwaysValid) {
     assert.equal(createEntry(draft, () => 'id-x').ok, true, JSON.stringify(draft));
   }
 });
 
 test('belopp som avrundas till noll öre avvisas i stället för att lagras som 0', () => {
-  // Under decimalregelns tolerans (v * 100 < 1e-6) passerar värdet regel 3 och
-  // fångas i stället av omprövningen av regel 1 på det lagrade värdet.
   for (const amountSek of [1e-9, '0,000000001', 9.9e-9, '0,0000000099', 1e-15, '0,000000000000001']) {
     assert.deepEqual(
       messagesFor(validateEntryDraft(validDraft({ amountSek })), 'amountSek'),
@@ -260,7 +240,6 @@ test('belopp som avrundas till noll öre avvisas i stället för att lagras som 
 });
 
 test('på andra sidan toleransgränsen vinner decimalregeln', () => {
-  // 1e-8 * 100 = 1e-6, alltså precis på toleransen: decimalfelet, inte nollfelet.
   for (const amountSek of [1e-8, '0,00000001', 0.001, '0,001', 0.005, '0,005']) {
     assert.deepEqual(
       messagesFor(validateEntryDraft(validDraft({ amountSek })), 'amountSek'),
@@ -268,7 +247,6 @@ test('på andra sidan toleransgränsen vinner decimalregeln', () => {
       `amountSek: ${JSON.stringify(amountSek)}`
     );
   }
-  // Minsta godtagbara belopp är ett öre, och det lagras som 0.01.
   for (const amountSek of [0.01, '0,01']) {
     const result = validateEntryDraft(validDraft({ amountSek }));
     assert.equal(result.ok, true, String(amountSek));
@@ -300,30 +278,21 @@ test('för långt namn avvisas', () => {
 });
 
 test('namnlängden mäts i tecken, även för tecken utanför BMP', () => {
-  // Varje emoji är två UTF-16-kodenheter. 60 tecken ska godtas, 61 avvisas.
   const emoji = '🎵';
   assert.equal(emoji.length, 2, 'testfallet förutsätter ett tecken utanför BMP');
   assert.equal(validateEntryDraft(validDraft({ name: emoji.repeat(60) })).ok, true);
   assert.deepEqual(messagesFor(validateEntryDraft(validDraft({ name: emoji.repeat(61) })), 'name'), [
     'Namnet får vara högst 60 tecken.'
   ]);
-  // 31 emoji ger .length 62 men är bara 31 tecken och ska passera.
   assert.equal(validateEntryDraft(validDraft({ name: emoji.repeat(31) })).ok, true);
 });
 
 test('namnlängden avvisas billigt utan att hela indatan materialiseras', () => {
-  // Lärdomen 2026-08-23: [...trimmed].length byggde en array med ett element per
-  // tecken i hela strängen fast svaret var avgjort efter 61 tecken. Snabbvägen
-  // trimmed.length > 2 * NAME_MAX_LENGTH svarar utan det. Ingen assertion på
-  // körtid här - teststrategin förbjuder det, tiden redovisas som mätning.
   assert.deepEqual(
     messagesFor(validateEntryDraft(validDraft({ name: 'a'.repeat(1000000) })), 'name'),
     ['Namnet får vara högst 60 tecken.']
   );
 
-  // 60 emoji är exakt 120 kodenheter, alltså inte fler än 2 * NAME_MAX_LENGTH.
-  // Namnet måste därför nå teckenräkningen och godkännas där. Detta är den enda
-  // indata som skiljer snabbvägens > från ett felaktigt >=.
   const emoji = '🎵';
   assert.equal(emoji.repeat(60).length, 2 * NAME_MAX_LENGTH);
   assert.equal(validateEntryDraft(validDraft({ name: emoji.repeat(60) })).ok, true);
@@ -331,14 +300,8 @@ test('namnlängden avvisas billigt utan att hela indatan materialiseras', () => 
 
 test('belopp som inte är ett tal avvisas', () => {
   const notNumbers = [
-    // Strängar som varken matchar AMOUNT_PATTERN eller AMOUNT_HINT_PATTERN. De
-    // strängar som ser ut som ett skrivet belopp — '12 kr', ',5', '1 234,50',
-    // '1,2,3' och siffersträngar längre än 15 tecken — får sedan paket 8 den
-    // vägledande texten i stället och prövas av AMOUNT_HINT_CASES nedan.
     'abc', '', '   ', '1e3', '-', 'kr',
-    // Alla andra typer än number och string.
     undefined, null, true, false, {}, [], [199],
-    // Tal som inte är finita.
     NaN, Infinity, -Infinity
   ];
   for (const amountSek of notNumbers) {
@@ -373,15 +336,8 @@ test('för stort belopp avvisas', () => {
   assert.equal(validateEntryDraft(validDraft({ amountSek: 9999999.99 })).ok, true);
 });
 
-// Facittabellen i ARKITEKTUR.md ("samma värde, samma fel i båda ingångstyperna").
-// Varje rad körs både som sträng och som tal och ska ge identiskt utfall.
 const AMOUNT_REJECTED_CASES = [
   ['abc', NaN, 'Beloppet måste vara ett tal.'],
-  // Strängen på den här raden var '50 kr' till och med paket 7. Sedan paket 8
-  // ger den den vägledande texten (ARKITEKTUR.md, facittabellen under "Den
-  // vägledande texten för ett skrivet belopp"), och paret hade då inte längre
-  // samma message. '1e3' står i samma tabell med standardtexten och är därför
-  // det par Infinity behåller; '50 kr' prövas i AMOUNT_HINT_CASES nedan.
   ['1e3', Infinity, 'Beloppet måste vara ett tal.'],
   ['', null, 'Beloppet måste vara ett tal.'],
   ['0', 0, 'Beloppet måste vara större än 0 kr.'],
@@ -429,27 +385,10 @@ test('facit: godkända belopp ger samma normaliserade värde som sträng och som
   }
 });
 
-// ---------------------------- paket 8: den vägledande texten för ett belopp
-
-// Facittabellen i ARKITEKTUR.md under "Den vägledande texten för ett skrivet
-// belopp". Avvisningen står kvar — AMOUNT_PATTERN är orörd — men en sträng som
-// ser ut som ett skrivet belopp får en text som säger hur det ska skrivas i
-// stället för bara att det inte är ett tal.
-//
-// Texten skrivs tecken för tecken som ägaren i src/core/entry.js skriver den,
-// så att en sökning på hela strängen hittar varje ställe den prövas
-// (LARDOMAR.md 2026-09-14). Varje tecken i den är ASCII.
 const AMOUNT_HINT_MESSAGE =
   'Skriv beloppet med siffror, utan mellanslag och utan kr. Till exempel 12000 eller 139,50.';
 
-// Raderna nedan bär båda blanktecknen, och de skrivs olika av ett skäl:
-// U+0020 står som tecknet självt, eftersom det syns i en genomläsning, medan
-// U+00A0 står som escapen \u00a0 — ett tecken som inte syns skrivs alltid
-// som escape (LARDOMAR.md 2026-09-11). Ägaren src/core/entry.js har samma
-// mening om sitt mönster, och där står båda som escaper: i en teckenklass
-// syns inte heller mellanslaget.
 const AMOUNT_HINT_CASES = [
-  // U+0020, det tangentbordet ger.
   '12 000',
   '12\u00a0000',
   '1\u00a0234,50\u00a0kr',
@@ -462,9 +401,6 @@ const AMOUNT_HINT_CASES = [
   '-12 000',
   '1234567890123456',
   '-1234567890123456',
-  // Nedre sidan av AMOUNT_HINT_MAX_LENGTH. Raden är obligatorisk tillsammans
-  // med '1'.repeat(41) nedan: utan paret går gränsen att flytta utan att något
-  // faller.
   '1'.repeat(40)
 ];
 
@@ -490,13 +426,6 @@ test('en sträng som inte ser ut som ett belopp ger standardtexten', () => {
   }
 });
 
-// Rundgången formatSek -> validateEntryDraft. Den prövades av inget testfall i
-// projektet, och det är därför felet kunde stå kvar i sju paket: testerna matar
-// in belopp de själva skrivit och jämför utdata, aldrig det omvända varvet.
-// Varje utdata ur formatSek slutar med \u00a0kr, så ok: true får aldrig
-// förekomma — men texten ska säga hur beloppet skrivs, aldrig bara att det inte
-// är ett tal. Beloppen och strängarna kommer från sina ägare i src/core/, inga
-// strängar skrivs av för hand.
 test('appens egen beloppsutdata matad tillbaka ger den vägledande texten', () => {
   for (const [, asNumber] of AMOUNT_ACCEPTED_CASES) {
     const visat = formatSek(sekToOre(asNumber));
@@ -615,9 +544,6 @@ test('isEntry känner igen en färdig post och avvisar ofullständiga', () => {
 });
 
 test('isEntry avvisar belopp som avrundas till noll öre i datafilen', () => {
-  // Andra halvan av lärdomen 2026-08-19: isEntry är enda spärren när storage.js
-  // läser filen från disk, och ett belopp under decimalregelns tolerans slapp
-  // förbi där precis som i createEntry. Båda sidor om gränsen testas.
   const entry = {
     id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
     name: 'Spotify Family',
@@ -629,7 +555,6 @@ test('isEntry avvisar belopp som avrundas till noll öre i datafilen', () => {
   for (const amountSek of [1e-15, 1e-9, 9.9e-9, 1e-8, 0.005, 0, -0, -50]) {
     assert.equal(isEntry({ ...entry, amountSek }), false, `amountSek: ${amountSek}`);
   }
-  // Minsta belopp som får finnas i datafilen är ett öre.
   assert.equal(isEntry({ ...entry, amountSek: 0.01 }), true);
 });
 
@@ -643,15 +568,12 @@ test('isEntry avvisar poster med okända fält', () => {
     category: 'subscription'
   };
   assert.equal(isEntry(entry), true);
-  // Fält för bortvalda funktioner (PLAN.md beslut 1-4) får inte slinka igenom.
   assert.equal(isEntry({ ...entry, income: 5000, history: [], nextDueDate: '2026-02-28' }), false);
   assert.equal(isEntry({ ...entry, income: 5000 }), false);
   assert.equal(isEntry({ ...entry, history: [] }), false);
   assert.equal(isEntry({ ...entry, nextDueDate: '2026-02-28' }), false);
   assert.equal(isEntry({ ...entry, accountId: 'abc' }), false);
   assert.equal(isEntry({ ...entry, currency: 'SEK' }), false);
-  // Ett saknat fält avvisas också. Vilket villkor som fäller det påstås inte här
-  // - lärdomen 2026-08-23 gällde just en kommentar som namngav fel kodväg.
   for (const field of ['id', 'name', 'amountSek', 'interval', 'startDate', 'category']) {
     const incomplete = { ...entry };
     delete incomplete[field];
@@ -660,11 +582,6 @@ test('isEntry avvisar poster med okända fält', () => {
 });
 
 test('isEntry avvisar belopp som inte redan är sin kanoniska lagringsform', () => {
-  // Lärdomen 2026-08-23: regel 3 är en toleransjämförelse, så 199.999999999
-  // passerade regelkedjan medan skrivvägen för samma värde lagrar 200. En
-  // datafil kunde alltså innehålla ett belopp som appen därefter räknar med som
-  // ett annat tal. Kedjan frågar "är detta godtagbart som indata", isEntry
-  // frågar "är detta den form skrivvägen producerar".
   const entry = {
     id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
     name: 'Spotify Family',
@@ -682,10 +599,6 @@ test('isEntry avvisar belopp som inte redan är sin kanoniska lagringsform', () 
 });
 
 test('canonicalAmountSek är en fixpunkt på sin egen utdata', () => {
-  // Invarianten "allt som createEntry returnerar med ok: true godkänns av
-  // isEntry" vilar på detta: skrivvägen returnerar canonicalAmountSek(v) och
-  // isEntry frågar om värdet är lika med canonicalAmountSek av sig självt.
-  // Håller likheten inte för något lagringsbart belopp faller invarianten.
   const avvikande = [];
   for (let ore = 1; ore <= 200000; ore += 1) {
     const kronor = ore / 100;
@@ -695,7 +608,6 @@ test('canonicalAmountSek är en fixpunkt på sin egen utdata', () => {
   }
   assert.deepEqual(avvikande, [], 'ore-värden där fixpunkten inte håller');
 
-  // Facittabellens giltiga värden, inklusive maxbeloppet.
   for (const ore of [19900, 19950, 100, 1, 999999999]) {
     const kronor = ore / 100;
     assert.equal(canonicalAmountSek(kronor), kronor, `ore: ${ore}`);
@@ -703,7 +615,6 @@ test('canonicalAmountSek är en fixpunkt på sin egen utdata', () => {
 });
 
 test('allt som createEntry godkänner godkänns av isEntry, även vid gränserna', () => {
-  // Invarianttestet körs med värden från gränserna, inte bara typiska belopp.
   const makeId = () => '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234';
   for (const amountSek of ['0,01', '9999999,99', '199,999999999', 199.999999999, '1,005', 0.01]) {
     const result = createEntry({
@@ -720,11 +631,6 @@ test('allt som createEntry godkänner godkänns av isEntry, även vid gränserna
 });
 
 test('isEntry avvisar amountSek av en typ som kanoniseringen inte kan räkna på', () => {
-  // Mutationsprövning av delvillkoret `typeof value.amountSek !== 'number'`:
-  // utan det anropas canonicalAmountSek med värdet, och för BigInt och Symbol
-  // kastar Math.round(v * 100) TypeError i stället för att isEntry svarar false.
-  // Likhetskontrollen ensam räcker alltså inte - den kraschar först. Detta är
-  // det enda testfall som bara det delvillkoret kan få att fälla avgörandet.
   const entry = {
     id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',
     name: 'Spotify Family',
@@ -738,10 +644,6 @@ test('isEntry avvisar amountSek av en typ som kanoniseringen inte kan räkna på
   }
 });
 
-// isPlainObject äger villkoret "är det här ett vanligt objekt" och anropas av
-// både isEntry här och yearlyOre i cost.js. Ett Date är ett vanligt objekt; en
-// array är det inte, och det är just arrayen den tidigare kopian i cost.js
-// släppte igenom.
 test('isPlainObject godkänner vanliga objekt och avvisar arrayer och primitiver', () => {
   for (const value of [{}, new Date()]) {
     assert.equal(isPlainObject(value), true, String(value));
@@ -752,10 +654,6 @@ test('isPlainObject godkänner vanliga objekt och avvisar arrayer och primitiver
   }
 });
 
-// entry.js importerar konstanten ORE_PER_SEK från money.js men aldrig sekToOre:
-// sekToOre kastar RangeError för ett tal som inte är finit, medan
-// canonicalAmountSek måste svara med ett tal så att isEntry kan returnera false
-// för en datafil med amountSek: NaN i stället för att krascha inläsningen.
 test('canonicalAmountSek(NaN) ger NaN och isEntry svarar false utan att kasta', () => {
   assert.equal(Number.isNaN(canonicalAmountSek(NaN)), true);
   assert.equal(Number.isNaN(canonicalAmountSek(Infinity)), false);
@@ -771,10 +669,6 @@ test('canonicalAmountSek(NaN) ger NaN och isEntry svarar false utan att kasta', 
   assert.equal(isEntry(entry), false);
 });
 
-// --- -0 i entry.js
-// Beslutet "-0 normaliseras till 0" ändrar inte valideringen: -0 är noll skrivet
-// med tecken, och regel 1 (v <= 0) är sann för det. Ingen ny felsträng infördes.
-
 test('-0 avvisas av regel 1 i alla tre skrivsätten', () => {
   for (const amountSek of [-0, '-0', '-0,00']) {
     assert.deepEqual(
@@ -785,21 +679,14 @@ test('-0 avvisas av regel 1 i alla tre skrivsätten', () => {
   }
 });
 
-// canonicalAmountSek anropar normalizeZero, som äger villkoret "detta är -0".
-// Utan anropet lagras -0 och formatSek visar minustecknet U+2212 för användaren.
-// Object.is, inte ===: -0 === 0 är true och kan aldrig falla.
 test('canonicalAmountSek ger 0 och aldrig -0', () => {
   assert.equal(Object.is(canonicalAmountSek(-0), 0), true);
   assert.equal(Object.is(canonicalAmountSek(-1e-9), 0), true);
   assert.equal(Object.is(canonicalAmountSek(-0.001), 0), true);
   assert.equal(Object.is(canonicalAmountSek(-0.004), 0), true);
-  // Ett verkligt negativt belopp normaliseras inte bort.
   assert.equal(canonicalAmountSek(-0.01), -0.01);
 });
 
-// isEntry avvisar -0 i steg 6, genom regelkedjans regel 1 — inte i steg 5:
-// canonicalAmountSek(-0) är 0 och -0 === 0 är true, så likhetsjämförelsen
-// passerar. isEntry får aldrig kasta för värdet.
 test('isEntry svarar false för amountSek: -0 utan att kasta', () => {
   const entry = {
     id: '6f1c0f3a-6b8f-4a9f-9a1a-0e2b5c7d1234',

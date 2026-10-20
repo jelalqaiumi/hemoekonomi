@@ -1,14 +1,17 @@
-# Hemochekonomi
+# Hem och Ekonomi
 
-En webbapp för hushållets ekonomi som du kör på din egen dator. Du loggar in med
-en engångskod och för sedan in månadens inkomster, utgifter och sparande. Appen
+En gratis webbapp för hushållets ekonomi. Du skapar ett konto med e-postadress
+och lösenord och för sedan in månadens inkomster, utgifter och sparande. Appen
 visar vad som blir kvar att leva på, hur mycket som återstår av budgeten per
-kategori, vilka räkningar som snart förfaller, hur dina sparmål går och, för
-planerna Plus och Premium, en rapport över flera månader som går att ladda ned
-som CSV.
+kategori, vilka räkningar som snart förfaller, hur dina sparmål går och en
+rapport över flera månader som går att ladda ned som CSV.
 
-Servern lyssnar bara på `127.0.0.1`, så appen går inte att nå från andra datorer
-i nätverket.
+Allt är gratis och alla funktioner ingår. Det finns inga planer och ingen
+betalning. Dina uppgifter sparas på ditt konto i en databas, så ingenting
+försvinner när du loggar ut eller när servern startas om.
+
+Du kan köra appen på din egen dator eller lägga ut den på nätet så att andra kan
+använda den, se [Lägga ut appen på nätet](#lägga-ut-appen-på-nätet).
 
 ---
 
@@ -18,8 +21,8 @@ i nätverket.
 - [Installera](#installera)
 - [Starta](#starta)
 - [Testa](#testa)
-- [Logga in](#logga-in)
-- [Planer och vad de låser upp](#planer-och-vad-de-låser-upp)
+- [Skapa konto och logga in](#skapa-konto-och-logga-in)
+- [Mitt konto](#mitt-konto)
 - [Månadsvyn](#månadsvyn)
 - [Återkommande poster](#återkommande-poster)
 - [Budget per kategori](#budget-per-kategori)
@@ -30,8 +33,7 @@ i nätverket.
 - [Så skriver du ett belopp](#så-skriver-du-ett-belopp)
 - [Var dina uppgifter sparas](#var-dina-uppgifter-sparas)
 - [Miljövariabler](#miljövariabler)
-- [Bara en instans i taget](#bara-en-instans-i-taget)
-- [Demoläget](#demoläget)
+- [Lägga ut appen på nätet](#lägga-ut-appen-på-nätet)
 - [Bra att veta](#bra-att-veta)
 - [Inte byggt](#inte-byggt)
 - [Projektets filer](#projektets-filer)
@@ -40,17 +42,12 @@ i nätverket.
 
 ## Vad du behöver
 
-- **Node.js 24.** Kontrollera med `node --version`. Projektet är kört och
-  verifierat på Node v24.19.0, och det är den enda version dokumentationen
-  gäller för.
-  `package.json` anger `>=22.5.0` som lägsta version, eftersom lagringen
-  använder den inbyggda modulen `node:sqlite`, som inte finns i Node 20. I äldre
-  versioner av Node 22 kan `node:sqlite` kräva en experimentflagga som
-  `npm start` inte skickar med, så använd Node 24.
+- **Node.js 22 eller senare.** Kontrollera med `node --version`.
 - En webbläsare.
 
-Ingenting annat. Projektet har **noll beroenden**: inga paket hämtas från
-internet, och SQLite följer med Node.
+Du behöver **ingen databasserver** för att köra appen på din egen dator. Utan
+`DATABASE_URL` använder appen PGlite, en PostgreSQL som körs inuti Node och
+sparar i en katalog på disken. På nätet används en riktig PostgreSQL hos Neon.
 
 ---
 
@@ -60,9 +57,9 @@ internet, och SQLite följer med Node.
 npm install
 ```
 
-Kommandot hämtar inga beroenden, eftersom projektet inte har några. Det skapar
-bara `package-lock.json`. **Du kan hoppa över det** och gå direkt till
-`npm start`.
+Kommandot hämtar projektets två beroenden: `pg` (anslutningen till PostgreSQL)
+och `@electric-sql/pglite` (den lokala databasen). Kör det en gång, och igen när
+`package.json` har ändrats.
 
 ---
 
@@ -75,18 +72,19 @@ npm start
 Servern skriver en rad i terminalen:
 
 ```
-Hemochekonomi kör på http://127.0.0.1:3000
+Hem och Ekonomi kör på http://127.0.0.1:3000
 ```
 
 **Öppna adressen själv i webbläsaren.** Appen öppnar inget fönster åt dig.
 
-- `http://127.0.0.1:3000/` är landningssidan med funktioner, priser och vanliga
-  frågor. Knapparna **Logga in**, **Registrera** och **Kom igång** leder till
-  appen.
+- `http://127.0.0.1:3000/` är landningssidan med funktioner och vanliga frågor.
+  Knapparna **Logga in**, **Registrera**, **Skapa konto** och **Kom igång**
+  leder till appen.
 - `http://127.0.0.1:3000/app` är själva appen.
 
-**Låt terminalen vara öppen.** Inloggningskoden skrivs ut där (se
-[Logga in](#logga-in)). Stäng appen med `Ctrl+C` i terminalen.
+**Låt terminalen vara öppen.** Lokalt skickas inga mejl, så länken för nytt
+lösenord skrivs ut där (se [Glömt lösenord](#glömt-lösenord)). Stäng appen med
+`Ctrl+C` i terminalen.
 
 Vill du använda en annan port sätter du miljövariabeln `PORT` innan du startar.
 
@@ -102,9 +100,9 @@ Bash:
 PORT=3100 npm start
 ```
 
-Är porten upptagen av ett annat program startar appen inte. Den skriver i
-stället ett svenskt besked som börjar `Port <port> är upptagen.` och talar om att
-du kan stänga det andra programmet eller sätta `PORT` till ett annat portnummer.
+Är porten upptagen startar appen inte. Den skriver i stället ett svenskt besked
+som börjar `Port <port> är upptagen.` och talar om att du kan stänga det andra
+programmet eller sätta `PORT` till ett annat portnummer.
 
 ---
 
@@ -125,83 +123,49 @@ matchar något, och kommandot avslutas med `Cannot find module`. Använd
 
 ---
 
-## Logga in
+## Skapa konto och logga in
 
-Det finns inga lösenord. Du loggar in med en sexsiffrig kod som skickas till din
-e-postadress. Första gången du loggar in med en adress skapas kontot, så
-registrering och inloggning är samma sak.
+1. Gå till `http://127.0.0.1:3000/app` och klicka **Skapa konto**.
+2. Skriv din e-postadress och ett lösenord på **minst 10 tecken**. En mening med
+   flera ord är lätt att minnas och svår att gissa.
+3. Klicka **Skapa konto**. Du är inloggad direkt.
 
-1. Gå till `http://127.0.0.1:3000/app`.
-2. Skriv din e-postadress och klicka **Skicka kod**. Sidan svarar
-   `En kod är skickad till <e-post>. Den gäller i tio minuter.`
-3. **Hämta koden i terminalen där `npm start` körs.** Vid lokal körning skickas
-   inget mejl. Servern skriver i stället en rad av den här formen:
+Nästa gång klickar du **Logga in** och skriver samma adress och lösenord.
 
-   ```
-   Inloggningskod till anna@exempel.se: 123456 (gäller i tio minuter)
-   ```
+- Du förblir inloggad i 30 dygn i samma webbläsare. **Logga ut** finns i
+  sidomenyn.
+- Är adressen eller lösenordet fel står `Fel e-postadress eller lösenord.`
+- Efter tio felaktiga försök med samma adress inom en kvart får du vänta en
+  stund innan du kan försöka igen.
 
-4. Skriv koden i fältet **Kod** och klicka **Logga in**.
+### Glömt lösenord
 
-Koden mejlas på riktigt bara om miljövariabeln `RESEND_API_KEY` är satt (se
-[Miljövariabler](#miljövariabler)). Utan den skrivs koden alltid i terminalen.
+Klicka **Glömt lösenordet?**, skriv din adress och klicka **Skicka länk**. Sidan
+svarar alltid
+`Om adressen har ett konto har vi skickat en länk dit. Den gäller i en timme. Titta också i skräpposten.`
 
-Regler för koden:
+Länken öppnar **Välj ett nytt lösenord**. När du har sparat det nya lösenordet
+loggas du ut överallt annars och in i den webbläsare du står i.
 
-- Den gäller i tio minuter och kan bara användas en gång.
-- Begär du en ny kod slutar den gamla att gälla.
-- Efter fem felaktiga försök på samma kod måste du begära en ny.
-- Högst fem koder per e-postadress och högst tjugo koder per anslutning inom en
-  timme.
+**Lokalt skickas inget mejl.** Länken skrivs i terminalen där `npm start` körs:
 
-Vanliga svar när något är fel:
+```
+Länk för nytt lösenord till anna@exempel.se: http://127.0.0.1:3000/app?aterstall=…
+```
 
-| Svar | Betyder |
-|---|---|
-| `Koden stämmer inte. Begär en ny kod och försök igen.` | Fel kod. Samma text visas om adressen inte har någon kod. |
-| `Koden har gått ut. Begär en ny kod.` | Mer än tio minuter har gått. |
-| `En nyare kod har skickats. Använd den senaste koden.` | Du använde en äldre kod. |
-| `För många försök på den här koden. Begär en ny kod.` | Fem felaktiga försök. |
-
-Knappen **Använd en annan adress** tar dig tillbaka till steget med
-e-postadressen.
-
-Du förblir inloggad i 30 dygn i samma webbläsare. **Logga ut** finns i
-sidomenyn, bredvid adressen du är inloggad med.
+På nätet mejlas länken via Resend, se [Miljövariabler](#miljövariabler).
 
 ---
 
-## Planer och vad de låser upp
+## Mitt konto
 
-Varje konto har en plan. **Ett nytt konto får planen Bas.** Du byter plan under
-**Min plan** i sidomenyn genom att klicka **Välj Bas**, **Välj Plus** eller
-**Välj Premium**. Bytet gäller direkt.
+Knappen **Mitt konto** i sidomenyn visar vilken adress du är inloggad med och
+två saker du alltid kan göra med dina uppgifter:
 
-**Ingen betalning sker.** Efter ett byte står texten
-`Demo: ingen betalning genomförs.` Priserna på landningssidan (99, 149 och 179 kr
-i månaden) visas bara, och knapparna **Välj ...** på landningssidan leder till
-appen utan att välja någon plan.
-
-| Funktion | Bas | Plus | Premium |
-|---|---|---|---|
-| Månadsvyn med inkomster, utgifter och sparande | ja | ja | ja |
-| Budget per kategori | ja | ja | ja |
-| Räkningar och påminnelser | ja | ja | ja |
-| Översikt över tolv månader | ja | ja | ja |
-| Sparmål | nej | ja | ja |
-| Rapport och CSV-export | nej | ja | ja |
-
-Plus och Premium har i dag samma funktioner i appen. Det Premium lägger till på
-prissidan, *Mina funktioner* och *Prioriterad support*, är inte byggt. Det är
-inte heller *Delat hushåll*, som står på Plus.
-
-**Med Bas** syns en låsrad i stället för korten Sparmål och Rapport, till
-exempel `Sparmål ingår i Plus.` med knappen **Se planer**, som öppnar
-Min plan. Spärren sitter på servern: varje anrop till sparmålens och rapportens
-vägar avvisas för Bas.
-
-**En nedgradering raderar ingenting.** Sparmål du skapat på Plus blir dolda när
-du går ned till Bas och syns igen när du går upp.
+- **Ladda ner mina uppgifter** ger en JSON-fil med allt du har sparat: poster,
+  tak, räkningar och sparmål.
+- **Ta bort kontot** tar bort kontot och allt som hör till det för gott. Du
+  bekräftar med ditt lösenord. Det går inte att ångra.
 
 ---
 
@@ -332,8 +296,6 @@ Appen sparar ingen historik över betalda räkningar.
 
 ## Sparmål
 
-*Kräver Plus eller Premium.*
-
 Klicka **+ Nytt sparmål** och fyll i **Namn**, **Målbelopp (kr)** och
 **Slutdatum (valfritt)**. Varje mål visar hur mycket som är sparat av målet, en
 stapel med procent och hur mycket som återstår. Har målet ett slutdatum står
@@ -349,8 +311,6 @@ det nåtts visar `Slutdatumet har passerat`.
 ---
 
 ## Rapport och CSV-export
-
-*Kräver Plus eller Premium.*
 
 Kortet **Rapport** i månadsvyn visar vart pengarna gick över flera månader.
 
@@ -441,101 +401,105 @@ Appen visar belopp med ett hårt blanksteg (U+00A0) som tusentalsavgränsare och
 
 ## Var dina uppgifter sparas
 
-Konton, poster, tak, räkningar och sparmål ligger i en SQLite-databas:
+**På din egen dator** ligger konton, poster, tak, räkningar och sparmål i en
+lokal databaskatalog:
 
 ```
-%APPDATA%\hemochekonomi\hemochekonomi.sqlite
+%APPDATA%\hemochekonomi\databas
 ```
 
-Filen och katalogen skapas automatiskt första gången appen behöver dem. Vill du
-lägga databasen någon annanstans, till exempel för att prova med ett tomt konto,
-sätter du `HEMOCHEKONOMI_DB_FILE` till en full sökväg innan du startar.
+Katalogen skapas automatiskt första gången appen startar. Vill du lägga
+databasen någon annanstans, till exempel för att prova med ett tomt konto,
+sätter du `HEMOCHEKONOMI_DB_FILE` till en katalogsökväg innan du startar.
 
 PowerShell:
 
 ```
-$env:HEMOCHEKONOMI_DB_FILE = "C:\temp\prov.sqlite"; npm start
+$env:HEMOCHEKONOMI_DB_FILE = "C:\temp\prov"; npm start
 ```
 
 Bash:
 
 ```
-HEMOCHEKONOMI_DB_FILE=/tmp/prov.sqlite npm start
+HEMOCHEKONOMI_DB_FILE=/tmp/prov npm start
 ```
 
-Med standardsökvägarna ligger låsfilen `entries.json.lock` i samma katalog
-(se [Bara en instans i taget](#bara-en-instans-i-taget)). Låsfilen följer
-`HEMOCHEKONOMI_DATA_FILE` och inte `HEMOCHEKONOMI_DB_FILE`. Flyttar du bara
-databasen ligger låsfilen kvar i `%APPDATA%\hemochekonomi\`. Sätter du
-`HEMOCHEKONOMI_DATA_FILE` hamnar den bredvid den filen, med `.lock` efter
-namnet. Hade du en `entries.json`
-från appens första version visas den inte i den nuvarande appen. Den flyttas
-inte över automatiskt.
+**På nätet** ligger allt i PostgreSQL-databasen som `DATABASE_URL` pekar på.
+Varje rad hör till ett konto, och den som är inloggad ser bara sina egna
+uppgifter.
+
+En gammal `hemochekonomi.sqlite` eller `entries.json` från tidigare versioner
+av appen läses inte och flyttas inte över.
 
 ---
 
 ## Miljövariabler
 
-Ingen av dem behöver sättas för att köra appen lokalt.
+Ingen av dem behöver sättas för att köra appen lokalt. Appen läser ingen
+`.env`-fil; `.env.example` är bara en mall som visar vad som ska sättas i drift.
 
 | Variabel | Vad den gör |
 |---|---|
-| `PORT` | Porten servern lyssnar på. Förval `3000`. |
-| `HEMOCHEKONOMI_DB_FILE` | Sökväg till databasfilen. |
-| `HEMOCHEKONOMI_DATA_FILE` | Sökväg till den gamla datafilen. Avgör var låsfilen hamnar: låsfilen är datafilens sökväg med `.lock` efter. |
-| `RESEND_API_KEY` | Satt: koden mejlas via Resend i stället för att skrivas i terminalen. |
-| `RESEND_FROM` | Avsändaradress för mejlet. Krävs när `RESEND_API_KEY` är satt, annars misslyckas utskicket med `Det gick inte att skicka koden. Försök igen.` |
-| `NODE_ENV` | `production` sätter `Secure` på inloggningscookien. **Sätt den inte lokalt**: över `http://127.0.0.1` skickar webbläsaren då aldrig tillbaka cookien, och du kan inte logga in. |
-| `TRUST_PROXY` | `1` bara när appen kör bakom en proxy som sätter `X-Forwarded-For`. Ska inte vara satt lokalt. |
-
-Appen läser ingen `.env`-fil. Sätt variablerna i terminalen innan `npm start`.
-
----
-
-## Bara en instans i taget
-
-Startar du `npm start` en gång till medan den första kör, vägrar den andra starta
-och skriver ett svenskt besked som börjar
-`Hemochekonomi kör redan i en annan process (pid <pid>) mot samma datafil:`
-följt av sökvägen.
-
-Vill du verkligen köra två samtidigt måste **både** porten och datafilen vara
-olika, eftersom låset sitter på datafilen och inte på porten. Sätt också en egen
-databasfil, annars använder båda instanserna samma konton och poster:
-
-```
-$env:PORT = "3100"; $env:HEMOCHEKONOMI_DATA_FILE = "C:\temp\andra.json"; $env:HEMOCHEKONOMI_DB_FILE = "C:\temp\andra.sqlite"; npm start
-```
-
-### Låsfilen som ligger kvar
-
-**Låsfilen `entries.json.lock` ligger kvar efter `Ctrl+C` och efter en krasch.
-Det är normalt.** Nästa start läser filen, ser att processen som skrev den är
-borta och tar över låset. Du behöver inte göra något.
-
-I ett ovanligt fall räcker det inte: om operativsystemet har återanvänt
-process-id:t i låsfilen till ett annat program tror appen att den redan kör och
-vägrar starta med beskedet ovan. **Botemedel:** kontrollera att ingen terminal
-med Hemochekonomi är igång och ta sedan bort `entries.json.lock` för hand. Den
-ligger som förval i `%APPDATA%\hemochekonomi\`.
+| `PORT` | Porten servern lyssnar på. Förval `3000`. Render sätter den själv. |
+| `DATABASE_URL` | Anslutningssträngen till PostgreSQL (Neon). Satt: appen sparar där. Inte satt: appen sparar lokalt. |
+| `HEMOCHEKONOMI_DB_FILE` | Katalog för den lokala databasen när `DATABASE_URL` inte är satt. |
+| `APP_URL` | Adressen appen nås på, till exempel `https://din-doman.se`. Används i länken för nytt lösenord och **krävs i drift**. |
+| `RESEND_API_KEY` | Satt: länken för nytt lösenord mejlas via Resend. Inte satt: lokalt skrivs länken i terminalen, och i drift går Glömt lösenord inte att använda. |
+| `RESEND_FROM` | Avsändaren för mejlet, till exempel `Hem och Ekonomi <noreply@din-doman.se>`. Krävs tillsammans med `RESEND_API_KEY`. |
+| `NODE_ENV` | `production` i drift: sätter `Secure` på inloggningscookien och låter servern lyssna på alla nätverkskort. **Sätt den inte lokalt**: över `http://127.0.0.1` skickar webbläsaren då aldrig tillbaka cookien, och du kan inte logga in. |
+| `TRUST_PROXY` | `1` när appen kör bakom en proxy som sätter `X-Forwarded-For`, som på Render. Ska inte vara satt lokalt. |
 
 ---
 
-## Demoläget
+## Lägga ut appen på nätet
 
-Appen har ett demoläge där webbläsaren visar påhittad data utan att anropa
-appens API eller databas. **Det är avstängt.** Det styrs av raden
+Allt nedan går att göra gratis. Du behöver ett GitHub-konto med projektet
+uppladdat, och om du vill ha en egen adress en domän (den kostar oftast runt
+100–200 kr om året hos en domänregistrar).
 
-```js
-export const DEMO = false;
-```
+### 1. Databasen hos Neon
 
-i `src/web/demo/demolage.js`. Med `false` gör demofilerna ingenting och appen
-beter sig som beskrivet ovan. Med `true` visas en banner överst med texten
-`Demoversion - ingen riktig data eller betalning.`, inloggningsvyn får knappen
-**Logga in som demoanvändare**, och ändringar sparas i webbläsarens
-`localStorage`. Knappen **Återställ demo** i bannern tar tillbaka
-utgångsdatan.
+1. Skapa ett konto på [neon.tech](https://neon.tech) och ett nytt projekt.
+   Välj regionen **AWS Europe Central 1 (Frankfurt)**, så att uppgifterna ligger
+   inom EU.
+2. Öppna **Connect** och kopiera anslutningssträngen. Den börjar med
+   `postgresql://` och slutar med `?sslmode=require`. Det är din
+   `DATABASE_URL`.
+
+Tabellerna skapas automatiskt första gången appen startar.
+
+### 2. Webbtjänsten hos Render
+
+1. Skapa ett konto på [render.com](https://render.com) och logga in med GitHub.
+2. Välj **New → Blueprint** och peka på ditt repo. Render läser `render.yaml` i
+   projektroten och skapar en gratis webbtjänst som kör `npm ci` och `npm start`.
+3. Render frågar efter de hemliga värdena. Fyll i `DATABASE_URL` från Neon och
+   `APP_URL` med adressen tjänsten får, till exempel
+   `https://hemochekonomi.onrender.com` (byt till din egen domän i steg 4).
+   `NODE_ENV=production` och `TRUST_PROXY=1` är redan satta av `render.yaml`.
+4. När driftsättningen är klar svarar `https://<din-tjänst>.onrender.com/healthz`
+   med `ok`.
+
+Gratistjänsten somnar efter en stund utan besökare och vaknar vid nästa
+besök, vilket kan ta en halv minut. Dina uppgifter påverkas inte, eftersom de
+ligger hos Neon.
+
+### 3. Mejl för Glömt lösenord via Resend
+
+1. Skapa ett konto på [resend.com](https://resend.com) och lägg till din domän
+   under **Domains**. Resend visar några DNS-poster som du lägger in hos din
+   domänregistrar.
+2. Skapa en API-nyckel och lägg in den som `RESEND_API_KEY` hos Render, och
+   sätt `RESEND_FROM`, till exempel `Hem och Ekonomi <noreply@din-doman.se>`.
+
+Utan de två fungerar allt utom Glömt lösenord.
+
+### 4. Egen domän
+
+1. Välj **Settings → Custom Domains** i Render och lägg till din domän.
+2. Lägg in de DNS-poster Render visar hos din domänregistrar. Render ordnar
+   HTTPS-certifikatet själv.
+3. Ändra `APP_URL` till `https://din-doman.se`.
 
 ---
 
@@ -558,7 +522,7 @@ Kontrollera adressen. En okänd väg under `/api/` svarar i stället `404` med
 `{"error":"Okänd adress."}`.
 
 **Når sidan inte servern** står `Det gick inte att nå appens server. Försök igen.`
-Kontrollera att terminalen med `npm start` fortfarande kör.
+Lokalt: kontrollera att terminalen med `npm start` fortfarande kör.
 
 **Beloppen räknas i hela ören.** Inga kronor hanteras som flyttal.
 
@@ -566,14 +530,13 @@ Kontrollera att terminalen med `npm start` fortfarande kör.
 
 ## Inte byggt
 
-- **Betalning.** Planbytet är gratis och sker direkt.
-- **Delat hushåll, Mina funktioner och Prioriterad support.** De står på
-  prissidan men finns inte i appen.
-- **Påminnelser utanför appen.** Inga notiser och inga mejl utom
-  inloggningskoden. Påminnelsen är markeringen i kortet Räkningar.
+- **Delat hushåll.** Varje konto är en person.
+- **Påminnelser utanför appen.** Inga notiser och inga mejl utom länken för nytt
+  lösenord. Påminnelsen är markeringen i kortet Räkningar.
 - **Historik över betalda räkningar.** En återkommande räkning flyttas fram när
   den betalas, och den betalda förfallodagen sparas inte.
-- **Flytt av poster från appens första version** (`entries.json`).
+- **Byte av e-postadress.** Vill du byta adress: ladda ner dina uppgifter, ta
+  bort kontot och skapa ett nytt.
 - **Andra valutor än SEK.**
 
 ---
@@ -582,8 +545,8 @@ Kontrollera att terminalen med `npm start` fortfarande kör.
 
 ```
 src/core/      Beräkningar och regler. Körs både i Node och i webbläsaren.
-src/server/    HTTP-server, API, inloggning, databas och låset.
-src/web/       Det webbläsaren får: landningssidan, appen och demoläget.
+src/server/    HTTP-server, API, inloggning och databas.
+src/web/       Det webbläsaren får: landningssidan, appen och integritetspolicyn.
 tests/         Testsviten som npm test kör.
 ```
 
@@ -591,5 +554,7 @@ tests/         Testsviten som npm test kör.
 |---|---|
 | `ARKITEKTUR.md` | Bindande beslut: datamodell, felmeddelanden, avrundnings- och datumregler. |
 | `PLAN.md` | Arbetspaketen för appens första version. |
+| `render.yaml` | Uppsättningen av webbtjänsten hos Render. |
+| `.env.example` | Mall för miljövariablerna i drift. |
 | `LARDOMAR.md` | Projektets minne: varje fel som gjorts och regeln som ska hindra att det görs om. |
 | `CLAUDE.md` | Projektreglerna för den som bygger vidare. |

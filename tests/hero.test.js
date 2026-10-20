@@ -1,7 +1,3 @@
-// Hero-bilden på landningssidan (ARKITEKTUR.md del 7, kravlista [hero-bild]). Ingen server:
-// filen läser filer från disk. Punkterna som kräver en server står i
-// tests/server.test.js.
-
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { test } from 'node:test';
@@ -29,11 +25,6 @@ const MIN_CONTRAST = 4.5;
 const MIN_NON_TEXT_CONTRAST = 3;
 const HERO_YTA_TOLERANS = 8;
 
-// --- (H10) --------------------------------------------------------------
-
-// Bara format, mått och byte-gräns: bilden ska kunna bytas utan att testet
-// ändras (användarens beslut, ARKITEKTUR.md del 7), så inget krav gäller
-// innehållet, färgerna eller en hash.
 test('(H10) hero-bilden är en PNG på 1920 x 1080 och högst 400 000 byte', async () => {
   const buffer = await fs.readFile(IMAGE_PATH);
   assert.ok(
@@ -59,8 +50,6 @@ test('(H10) hero-bilden är en PNG på 1920 x 1080 och högst 400 000 byte', asy
   );
 });
 
-// --- (H11) --------------------------------------------------------------
-
 const HERO_TOKENS = [
   '--hero-fokus',
   '--hero-hover',
@@ -76,7 +65,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
   const css = await fs.readFile(TEMA_PATH, 'utf8');
   const { lightTokens, darkTokens, darkOwn } = readThemes(css);
 
-  // (a)
   const lightHero = [...lightTokens.keys()].filter((name) => name.startsWith('--hero-')).sort();
   assert.deepEqual(lightHero, HERO_TOKENS, `ljust läge: --hero-tokenerna är ${lightHero.join(', ')}`);
   const darkHero = [...darkOwn.keys()].filter((name) => name.startsWith('--hero-'));
@@ -97,8 +85,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
       assert.equal(parsed.hasAlpha, false, `${mode}: ${name} ska vara ogenomskinlig`);
       return parsed;
     };
-    // Kräver att fg har lägre (darker = true) eller högre luminans än ytan
-    // och minst min i kvot.
     const check = (fgName, fg, surface, surfaceName, min, darker) => {
       if (darker) {
         assert.ok(
@@ -119,7 +105,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
       );
     };
 
-    // (b)
     const y = color('--hero-yta');
     assert.equal(y.hasAlpha, false, `${mode}: --hero-yta ska ha 6 siffror`);
     const surfaces = [
@@ -129,7 +114,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
     ];
     const tolerance = surfaces.slice(1);
 
-    // (c)
     for (const name of ['--hero-text', '--hero-text-accent']) {
       const fg = opaque(name);
       for (const [surfaceName, surface] of surfaces) {
@@ -137,7 +121,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
       }
     }
 
-    // (d)
     const hover = color('--hero-hover');
     assert.equal(hover.hasAlpha, true, `${mode}: --hero-hover ska ha 8 siffror`);
     const text = opaque('--hero-text');
@@ -145,7 +128,6 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
       check('--hero-text', text, over(hover, surface), `--hero-hover över ${surfaceName}`, MIN_CONTRAST, true);
     }
 
-    // (e)
     const fokus = color('--hero-fokus');
     for (const [surfaceName, surface] of tolerance) {
       const ratio = Math.max(contrast(fokus, surface), contrast(surface, fokus));
@@ -156,14 +138,12 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
       );
     }
 
-    // (f)
     const knappYta = opaque('--hero-knapp-yta');
     const knappHover = opaque('--hero-knapp-yta-hover');
     const knappText = opaque('--hero-knapp-text');
     check('--hero-knapp-text', knappText, knappYta, '--hero-knapp-yta', MIN_CONTRAST, false);
     check('--hero-knapp-text', knappText, knappHover, '--hero-knapp-yta-hover', MIN_CONTRAST, false);
 
-    // (g)
     for (const [name, fg] of [
       ['--hero-knapp-yta', knappYta],
       ['--hero-knapp-yta-hover', knappHover]
@@ -175,21 +155,10 @@ test('(H11) den mörka texten når 4,5:1, och fokusramen och den fyllda knappens
   }
 });
 
-// --- (H12) --------------------------------------------------------------
-
 function collapse(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-// Varje regel { … } i css (redan utan kommentarer), i filens ordning.
-// context är '' för en regel utanför varje at-regel och annars huvudena på de
-// omslutande at-reglerna, ihopslagna med collapse och åtskilda av ett
-// mellanslag, till exempel '@media (min-width: 960px)'. selector och body är
-// ihopslagna med collapse.
-// En at-sats som slutar med ';' före sin '{' (till exempel @import "x.css";)
-// hoppas över. En '{' inuti en regels kropp, en '}' utan motsvarande '{', och
-// en text som tar slut med en öppen regel eller at-regel kastar Error med
-// texten 'ruleList: obalanserade klamrar' följd av radnumret.
 function ruleList(css) {
   const list = [];
   const contexts = [];
@@ -242,10 +211,6 @@ function ruleList(css) {
   return list;
 }
 
-// Kroppen delad på ';'. Tomma delar tas bort. name är texten före det första
-// ':' i delen, trimmad och med gemener. text är delen trimmad och följd av
-// ';', så att den kan jämföras med en krävd deklaration som
-// 'background-size: 100% auto;'.
 function declarations(body) {
   return body
     .split(';')
@@ -254,11 +219,6 @@ function declarations(body) {
     .map((part) => ({ name: part.split(':')[0].trim().toLowerCase(), text: `${part};` }));
 }
 
-// Kräver i den här ordningen, med file i varje meddelande:
-//   1. exakt en regel i list med just context och selector;
-//   2. att inget name förekommer mer än en gång i regelns declarations;
-//   3. att varje sträng i required är text för någon av regelns declarations.
-// Returnerar regeln.
 function assertSingleRule(list, context, selector, required, file) {
   const where = context || 'ingen at-regel';
   const found = list.filter((rule) => rule.context === context && rule.selector === selector);
@@ -293,15 +253,11 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   const landningRaw = await fs.readFile(LANDNING_CSS_PATH, 'utf8');
   const temaRaw = await fs.readFile(TEMA_PATH, 'utf8');
   const html = await fs.readFile(LANDNING_HTML_PATH, 'utf8');
-  // Kommentarerna tas bort innan något deklarationskrav prövas, så att en
-  // kommentar aldrig kan uppfylla ett krav.
   const landning = stripComments(landningRaw);
   const tema = stripComments(temaRaw);
   const list = ruleList(landning);
   const WIDE = '@media (min-width: 960px)';
 
-  // (a) Exakt en .hero utan at-regel, ingen egenskap två gånger
-  // (kaskadspärrens led 1).
   const top = assertSingleRule(
     list,
     '',
@@ -317,8 +273,6 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   );
   assert.equal(/gradient/i.test(top.body), false, '.hero innehåller en gradient');
 
-  // (b) Utfyllnaden, bildens läge på smal skärm, background-origin och
-  // min-height prövas av (H13)(b), eftersom vågen ändrade deras värden.
   assertSingleRule(
     list,
     WIDE,
@@ -328,14 +282,11 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   );
   assertSingleRule(list, WIDE, '.hero-text', ['max-width: min(46rem, 48%);'], 'landning.css');
 
-  // (c)
   assertSingleRule(list, '', '.hero-ingress', ['color: var(--hero-text-accent);'], 'landning.css');
   assertSingleRule(list, '', '.hero-under', ['color: var(--hero-text);'], 'landning.css');
 
-  // (d)
   assertSingleRule(list, '', '.hero :focus-visible', ['outline-color: var(--hero-fokus);'], 'landning.css');
 
-  // (e)
   assertSingleRule(
     list,
     '',
@@ -345,7 +296,6 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   );
   assertSingleRule(list, '', '.knapp-kontur-hero:hover', ['background: var(--hero-hover);'], 'landning.css');
 
-  // (f)
   const used = new Set([...landning.matchAll(/var\((--hero-[a-z0-9-]+)\)/g)].map((match) => match[1]));
   const declared = new Set([...tema.matchAll(/(--hero-[a-z0-9-]+)\s*:/g)].map((match) => match[1]));
   for (const name of used) {
@@ -355,7 +305,6 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
     assert.ok(used.has(name), `tema.css deklarerar ${name}, som landning.css inte använder`);
   }
 
-  // (g) Den råa texten, med kommentarerna kvar.
   for (const [file, text] of [
     ['landning.css', landningRaw],
     ['tema.css', temaRaw],
@@ -366,7 +315,6 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
     }
   }
 
-  // (h)
   const sectionStart = html.indexOf('<section class="hero">');
   assert.notEqual(sectionStart, -1, 'landning.html har ingen <section class="hero">');
   const sectionEnd = html.indexOf('</section>', sectionStart);
@@ -376,7 +324,6 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   assert.ok(section.includes('class="knapp knapp-kontur-hero"'), 'hero saknar class="knapp knapp-kontur-hero"');
   assert.equal(section.includes('knapp-guld'), false, 'hero innehåller knapp-guld');
 
-  // (i)
   assertSingleRule(
     list,
     '',
@@ -400,13 +347,8 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
     'landning.css'
   );
 
-  // (j) Kaskadspärrens led 3: inga vägar runt HERO_RULES i de filer som
-  // laddas. Mönstren är okänsliga för skiftläge och tål blanktecken där CSS
-  // och HTML tillåter dem (ARKITEKTUR.md "Stavningarna i led 3 och (H9)").
   const htmlUtanKommentarer = html.replace(/<!--[\s\S]*?-->/g, '');
 
-  // Krav 1: stilmallarna. Varje <link> har rel icon eller stylesheet, och
-  // stilmallarnas href är exakt /tema.css och /landning.css, i den ordningen.
   const stylesheets = [];
   for (const [tag] of htmlUtanKommentarer.matchAll(/<link\b[^>]*>/gi)) {
     const attributes = attributeMap(tag);
@@ -425,11 +367,9 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
     `landning.html, led 3 krav 1: stilmallarna är ${JSON.stringify(stylesheets)}, inte ["/tema.css","/landning.css"]`
   );
 
-  // Krav 2: landning.css.
   assert.equal(/!\s*important/i.test(landning), false, 'landning.css, led 3 krav 2: innehåller !important');
   assert.equal(/@import\b/i.test(landning), false, 'landning.css, led 3 krav 2: innehåller @import');
 
-  // Krav 3: tema.css.
   assert.equal(/@import\b/i.test(tema), false, 'tema.css, led 3 krav 3: innehåller @import');
   const temaHero = ruleList(tema)
     .filter((rule) => rule.selector.includes('hero') || rule.context.includes('hero'))
@@ -440,11 +380,9 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
     `tema.css, led 3 krav 3: har regler med hero i selektorn eller kontexten: ${temaHero.join(' | ')}`
   );
 
-  // Krav 4: inga escape-sekvenser i CSS.
   assert.equal(landning.includes('\\'), false, 'landning.css, led 3 krav 4: innehåller \\');
   assert.equal(tema.includes('\\'), false, 'tema.css, led 3 krav 4: innehåller \\');
 
-  // Krav 5: landning.html.
   assert.equal(/<style\b/i.test(htmlUtanKommentarer), false, 'landning.html, led 3 krav 5: innehåller <style');
   assert.equal(
     /[\s"'\/]style\s*=/i.test(htmlUtanKommentarer),
@@ -453,18 +391,11 @@ test('(H12) landning.css har bilden utan slöja, och texten kan inte hamna på b
   );
 });
 
-// --- (H13) --------------------------------------------------------------
-
-// Vågens markering ur ARKITEKTUR.md del 7, "Vågen i hero", "HTML, bindande
-// ordagrant", med blanktecknen ihopslagna som av collapse.
 const VAG_SVG =
   '<svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"> ' +
   '<path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" /> ' +
   '</svg>';
 
-// Varje regel i landning.css vars selektor eller kontext innehåller hero, i filens
-// ordning, som [context, selector, body] (ARKITEKTUR.md "Kaskadspärren [hero-kaskad]",
-// HERO_RULES, bindande ordagrant). Kontexten '' betyder ingen at-regel.
 const HERO_RULES = [
   ['', '.knapp-kontur-hero', 'background: transparent; border-color: var(--hero-text); color: var(--hero-text);'],
   ['', '.knapp-kontur-hero:hover', 'background: var(--hero-hover); color: var(--hero-text);'],
@@ -518,12 +449,9 @@ test('(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena oc
   const htmlRaw = await fs.readFile(LANDNING_HTML_PATH, 'utf8');
   const landningRaw = await fs.readFile(LANDNING_CSS_PATH, 'utf8');
   const temaRaw = await fs.readFile(TEMA_PATH, 'utf8');
-  // Kommentarerna tas bort innan något krav prövas, så att en bortkommenterad
-  // våg eller regel aldrig räknas.
   const html = htmlRaw.replace(/<!--[\s\S]*?-->/g, '');
   const landning = stripComments(landningRaw);
 
-  // (a)
   const sectionStart = html.indexOf('<section class="hero">');
   assert.notEqual(sectionStart, -1, 'landning.html har ingen <section class="hero">');
   const sectionEnd = html.indexOf('</section>', sectionStart);
@@ -533,8 +461,6 @@ test('(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena oc
   const vagCount = html.split('hero-vag').length - 1;
   assert.equal(vagCount, 2, `landning.html innehåller hero-vag ${vagCount} gånger, inte 2`);
 
-  // (b) Exakt en regel per kontext och ingen egenskap två gånger
-  // (kaskadspärrens led 1).
   const allRules = ruleList(landning);
   const narrowHero = assertSingleRule(
     allRules,
@@ -572,7 +498,6 @@ test('(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena oc
   assert.equal(vagDeclarations, 2, `landning.css deklarerar --vag-hojd ${vagDeclarations} gånger, inte 2`);
   assert.equal(temaRaw.includes('--vag-hojd'), false, 'tema.css innehåller --vag-hojd');
 
-  // (c)
   const vagRules = allRules.filter((r) => r.selector === '.hero-vag');
   assert.equal(vagRules.length, 1, `landning.css har ${vagRules.length} regler .hero-vag, inte 1`);
   assert.equal(
@@ -583,9 +508,6 @@ test('(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena oc
   const ytaRules = allRules.filter((r) => r.selector === '.hero-vag-yta');
   assert.equal(ytaRules.length, 1, `landning.css har ${ytaRules.length} regler .hero-vag-yta, inte 1`);
   assert.equal(ytaRules[0].body, 'fill: var(--bakgrund);', '.hero-vag-yta har inte den bindande kroppen');
-  // Kaskadspärrens led 2: hela den ordnade listan över hero-regler, jämförd
-  // som en lista och utan sortering. Längden först, sedan det första index som
-  // skiljer sig, sist hela listan (lärdomen 2026-09-07 om assert.deepEqual).
   const heroRules = allRules
     .filter((r) => r.selector.includes('hero') || r.context.includes('hero'))
     .map((r) => [r.context, r.selector, r.body]);
@@ -608,7 +530,6 @@ test('(H13) vågen i hero finns, har nästa sektions bakgrund i båda lägena oc
   const svgSelectors = [...new Set(allRules.map((r) => r.selector).filter((s) => /\b(svg|path)\b/.test(s)))];
   assert.deepEqual(svgSelectors, ['img, svg'], `selektorerna med svg eller path är ${svgSelectors.join(' | ')}`);
 
-  // (d)
   const afterHero = html.slice(sectionEnd);
   const next = /<section class="([^"]*)"/.exec(afterHero);
   assert.ok(next, 'ingen <section class="…"> efter hero');

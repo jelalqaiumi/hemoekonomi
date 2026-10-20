@@ -20,9 +20,6 @@ test('ORE_PER_SEK är 100', () => {
   assert.equal(ORE_PER_SEK, 100);
 });
 
-// --- divideRoundHalfUp: kontrollvärdena ur ARKITEKTUR.md, avsnittet
-// "Avrundningsregel". Tabellen är facit och ändras inte här.
-
 test('divideRoundHalfUp ger kontrollvärdena i avrundningsavsnittet', () => {
   const cases = [
     { label: '100 kr/mån → månad', numerator: 120000, denominator: 12, expected: 10000 },
@@ -58,9 +55,6 @@ test('divideRoundHalfUp kastar RangeError för en täljare som inte är heltal',
   assert.throws(() => divideRoundHalfUp(-Infinity, 12), RangeError);
 });
 
-// BigInt och Symbol är de två typer där aritmetik kastar TypeError i stället för
-// att ge NaN. Utan kontrollen på täljaren blir felet ett TypeError, inte ett
-// RangeError, och assert.throws(..., RangeError) faller.
 test('divideRoundHalfUp kastar RangeError för täljare av typ BigInt eller Symbol', () => {
   assert.throws(() => divideRoundHalfUp(12n, 12), RangeError);
   assert.throws(() => divideRoundHalfUp(Symbol('12'), 12), RangeError);
@@ -96,8 +90,6 @@ test('divideRoundHalfUp kastar RangeError för nämnare som inte är större än
   assert.throws(() => divideRoundHalfUp(120000, -12), RangeError);
 });
 
-// --- sekToOre
-
 test('sekToOre ger heltal öre för typiska belopp', () => {
   assert.equal(sekToOre(0), 0);
   assert.equal(sekToOre(0.01), 1);
@@ -123,14 +115,10 @@ test('sekToOre kastar RangeError för värden som inte är finita tal', () => {
   assert.throws(() => sekToOre({}), RangeError);
 });
 
-// Utan kontrollen kastar Math.round(amountSek * ORE_PER_SEK) ett TypeError för
-// dessa två typer i stället för det utlovade RangeError.
 test('sekToOre kastar RangeError för BigInt och Symbol', () => {
   assert.throws(() => sekToOre(100n), RangeError);
   assert.throws(() => sekToOre(Symbol('100')), RangeError);
 });
-
-// --- oreToSek
 
 test('oreToSek räknar tillbaka öre till kronor', () => {
   assert.equal(oreToSek(0), 0);
@@ -146,10 +134,6 @@ test('oreToSek är inversen av sekToOre för kanoniska belopp', () => {
   }
 });
 
-// --- formatSek
-// Utdatan nedan är avläst ur en körning på Node v24.19.0: sv-SE använder
-// U+00A0 (hårt blanksteg) både som tusentalsavgränsare och före "kr".
-
 test('formatSek ger svenskt kronformat med två decimaler', () => {
   assert.equal(formatSek(123450), '1\u00a0234,50\u00a0kr');
   assert.equal(formatSek(0), '0,00\u00a0kr');
@@ -164,13 +148,6 @@ test('formatSek visar alltid två decimaler', () => {
     assert.match(formatSek(ore), /,\d{2}\u00a0kr$/, `${ore}`);
   }
 });
-
-// --- divideRoundHalfUp: regel 4, giltighetsområdet
-// Utanför området ska funktionen kasta i stället för att svara fel. Värdena är
-// körda mot Number((2n * BigInt(t) + 12n) / 24n) och redovisade i paketet:
-// 4503599627370489 är den sista täljaren som passerar med nämnare 12
-// (2 * t + 12 = 9007199254740990) och 4503599627370490 den första som avvisas
-// (2 * t + 12 = 9007199254740992, alltså 2 ** 53).
 
 test('divideRoundHalfUp kastar RangeError när 2 * täljaren + nämnaren inte är ett säkert heltal', () => {
   for (const numerator of [
@@ -205,8 +182,6 @@ test('divideRoundHalfUp kastar också när nämnaren ensam för summan utanför 
   });
 });
 
-// Regel 4 står sist i kedjan. Körd före regel 1–3 skulle en sträng få
-// summameddelandet och en BigInt kasta TypeError från aritmetiken.
 test('divideRoundHalfUp ger orsaksmeddelandet för argumentet, inte för summan', () => {
   assert.throws(() => divideRoundHalfUp('120000', 12), {
     name: 'RangeError',
@@ -234,10 +209,6 @@ test('divideRoundHalfUp ger orsaksmeddelandet för argumentet, inte för summan'
   });
 });
 
-// --- oreToSek: visningsvägens ingångsspärr
-// Villkoret !Number.isSafeInteger(ore) ägs av oreToSek. formatSek skriver inte
-// av det utan ärver det genom att anropa oreToSek.
-
 const ORE_TO_SEK_ERROR = {
   name: 'RangeError',
   message: 'oreToSek kräver ett säkert heltal öre.'
@@ -249,7 +220,6 @@ test('oreToSek kastar RangeError för öre som inte är ett säkert heltal', () 
   }
 });
 
-// BigInt och Symbol kastade tidigare TypeError i stället för modulens RangeError.
 test('oreToSek kastar RangeError för BigInt och Symbol', () => {
   assert.throws(() => oreToSek(1n), ORE_TO_SEK_ERROR);
   assert.throws(() => oreToSek(Symbol('x')), ORE_TO_SEK_ERROR);
@@ -260,10 +230,6 @@ test('oreToSek godkänner hela det säkra heltalsområdet', () => {
   assert.equal(oreToSek(-1), -0.01);
   assert.throws(() => oreToSek(Number.MAX_SAFE_INTEGER + 2), ORE_TO_SEK_ERROR);
 });
-
-// --- formatSek: ärver spärren från oreToSek
-// Utan spärren ger dessa "NaN kr", "∞ kr", en sträng på 313 tecken eller ett
-// TypeError — engelsk felutdata rakt in i ett gränssnitt där all text är svensk.
 
 test('formatSek kastar RangeError i stället för att visa NaN, ∞ eller 1e300', () => {
   for (const ore of [NaN, Infinity, -Infinity, 1.5, 1e300, 'abc', null, undefined, {}]) {
@@ -276,19 +242,11 @@ test('formatSek kastar RangeError för BigInt och Symbol', () => {
   assert.throws(() => formatSek(Symbol('x')), ORE_TO_SEK_ERROR);
 });
 
-// --- normalizeZero: ägaren till villkoret "detta är -0"
-// -0 asserteras alltid med Object.is. assert.equal(resultat, 0) är sant också
-// för -0 och kan därför aldrig falla.
-
 test('normalizeZero gör -0 till 0', () => {
   assert.equal(Object.is(normalizeZero(-0), 0), true);
   assert.equal(Object.is(normalizeZero(-0), -0), false);
 });
 
-// Medvetet ingen ingångsspärr: funktionen avgör en identitet, inte ett värde,
-// och Object.is kastar för ingen indata. Kastade den för icke-finit indata
-// kunde canonicalAmountSek i entry.js inte anropa den, och isEntry får inte
-// kasta.
 test('normalizeZero kastar inte och lämnar allt utom -0 oförändrat', () => {
   const unchanged = [0, 1, -1, Infinity, -Infinity, 1n, 'abc', '', null, undefined, true];
   for (const value of unchanged) {
@@ -303,9 +261,6 @@ test('normalizeZero kastar inte och lämnar allt utom -0 oförändrat', () => {
   assert.equal(normalizeZero(object), object);
 });
 
-// --- -0 genom modulens tre anropsställen
-// Facitlistan under "-0 normaliseras till 0" i ARKITEKTUR.md, en rad per fall.
-
 test('sekToOre ger 0 och aldrig -0 för belopp som avrundas till noll öre', () => {
   for (const amountSek of [-0, -0.001, -0.004, -1e-9]) {
     const result = sekToOre(amountSek);
@@ -317,18 +272,11 @@ test('oreToSek ger 0 och aldrig -0 för -0 öre', () => {
   assert.equal(Object.is(oreToSek(-0), 0), true);
 });
 
-// canonicalAmountSek äger den kanoniska formen och anropar samma normalizeZero.
-// Utan anropet lagras -0 i datafilen och formatSek visar minustecknet.
 test('canonicalAmountSek ger 0 och aldrig -0', () => {
   assert.equal(Object.is(canonicalAmountSek(-0), 0), true);
   assert.equal(Object.is(canonicalAmountSek(-1e-9), 0), true);
 });
 
-// formatSek har inget eget anrop till normalizeZero: den går genom oreToSek och
-// ärver normaliseringen. Kodpunktsföljden nedan är avläst ur en körning på
-// Node v24.19.0: U+0030 U+002C U+0030 U+0030 U+00A0 U+006B U+0072 för både
-// formatSek(-0) och formatSek(0). Jämförelsen skrivs med escapen \u00a0,
-// aldrig med ett vanligt mellanslag.
 test('formatSek(-0) ger exakt samma sträng som formatSek(0)', () => {
   assert.equal(formatSek(-0), formatSek(0));
   assert.equal(formatSek(-0), '0,00\u00a0kr');
@@ -336,12 +284,6 @@ test('formatSek(-0) ger exakt samma sträng som formatSek(0)', () => {
     0x0030, 0x002c, 0x0030, 0x0030, 0x00a0, 0x006b, 0x0072
   ]);
 });
-
-// --- Invarianten: ingen exporterad funktion i src/core/ får returnera -0
-// Bindande för alla paket. Testet går igenom varje exporterad funktion i de
-// fyra kärnmodulerna med argument som är kända för att kunna ge -0, och kräver
-// att inget returvärde är -0 — varken direkt eller som ett fält i ett returnerat
-// objekt. Ett kast räknas som godkänt: invarianten gäller det som returneras.
 
 const CORE_MODULES = [
   ['money', moneyModule],
@@ -398,11 +340,6 @@ test('ingen exporterad funktion i src/core/ returnerar -0', () => {
             continue;
           }
           calls += 1;
-          // Ett returvärde som är identiskt med ett av argumenten är indata
-          // tillbaka, inte något funktionen räknat fram: normalizeZero är per
-          // definition identitet för allt utom -0 och ger tillbaka samma objekt.
-          // Talet -0 självt fångas ändå, eftersom Object.is prövas på
-          // returvärdet innan den här undantagsregeln kan gälla ett objekt.
           if (typeof result === 'object' && result !== null
             && (result === first || result === second)) {
             continue;
@@ -415,6 +352,5 @@ test('ingen exporterad funktion i src/core/ returnerar -0', () => {
       }
     }
   }
-  // Utan anrop hade testet passerat tomt.
   assert.equal(calls > 100, true, `bara ${calls} anrop gick igenom`);
 });

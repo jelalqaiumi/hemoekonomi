@@ -1,22 +1,3 @@
-// Kärnans layoutmodul för rapportens CSV-fil, src/core/report-csv.js [steg 5].
-// Prövar modulens egen export direkt: varje fil under src/core/ ska ha en
-// tests/<modul>.test.js som gör det, i samma paket som filen skapas
-// (LARDOMAR.md 2026-08-18).
-//
-// Kravlistan är (RA24) till (RA30) i ARKITEKTUR.md under "Kravlista för
-// tests/report-csv.test.js [steg 5]". Utöver dem prövas spärrtabellen
-// "Ingångsspärrar i src/core/report-csv.js" rad för rad, alla sex raderna. De
-// fallen bär inget (RA)-nummer, därför att tabellen är deras facit och ett nummer
-// utan en punkt i kravlistan ser ut som en hänvisning utan att vara en
-// (LARDOMAR.md 2026-09-14). Samma val som tests/csv.test.js och
-// tests/report.test.js gjorde i del 1 och del 2 av steget.
-//
-// Varje assert.throws asserterar hela message, aldrig bara feltypen: en feltyp
-// delas av varje spärr i modulen, och en assertion på enbart RangeError kan
-// därför inte skilja rad 5 från rad 6 (LARDOMAR.md 2026-09-16).
-//
-// Ingen klocka läses: modulen har ingen, och ingen testdata bygger på dagens
-// datum. En rapport är historik.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -27,20 +8,11 @@ import { toCsv } from '../src/core/csv.js';
 import { reportRows } from '../src/core/report.js';
 import { reportCsvRows, reportFileName } from '../src/core/report-csv.js';
 
-// U+FEFF BYTE ORDER MARK och U+000D U+000A, skrivna som escaper. Ett rått tecken
-// här går inte att se i en genomläsning (LARDOMAR.md 2026-09-14).
 const BOM = '\uFEFF';
 const CRLF = '\r\n';
 
-// Rubrikraden, ordagrant som i ARKITEKTUR.md under "CSV-filens innehåll
-// (bindande)". Skriven tecken för tecken som ägaren skriver den, så att en
-// sökning på hela strängen hittar varje ställe den prövas (LARDOMAR.md
-// 2026-09-14).
 const RUBRIK = ['Slag', 'Kategori', 'Månad', 'Belopp', 'Tak', 'Över tak'];
 
-// En rapportrad på den form reportRows svarar med. Fälten totalOre, averageOre
-// och overBudgetMonths står med fast layouten inte läser dem: indatan ska vara
-// den form servern verkligen skickar, inte en bantad variant.
 function rad(kind, category, perMonthOre, budgetPerMonthOre = perMonthOre.map(() => null)) {
   return { kind, category, perMonthOre, totalOre: 0, averageOre: 0, budgetPerMonthOre, overBudgetMonths: 0 };
 }
@@ -49,21 +21,10 @@ function rapport(months, rows) {
   return { months, rows, largest: null };
 }
 
-// Varje värde som inte är ett vanligt objekt och som därför ska nå rad 1
-// respektive rad 4. [] och [1] står med därför att isPlainObject avvisar en
-// array, till skillnad från ett handskrivet typeof x === 'object'
-// (LARDOMAR.md 2026-09-02). -0, NaN, 1n och Symbol('x') står med därför att de
-// är de värden som kastar eller tvingas fram i aritmetik och interpolation
-// (LARDOMAR.md 2026-08-24 och 2026-09-02). new Date() står INTE här: ägaren
-// isPlainObject godkänner ett Date, så värdet når nästa rad i tabellen, och det
-// har egna testfall.
 const ICKE_OBJEKT = [null, undefined, 'abc', '', 42, 0, -0, NaN, true, [], [1], 1n, Symbol('x')];
 
-// Varje värde som inte är en lista och som därför ska nå rad 2, 3, 5 och 6.
 const ICKE_LISTOR = [null, undefined, 'abc', '', 42, -0, NaN, true, {}, { length: 1, 0: 1 }, new Date(), 1n, Symbol('x')];
 
-// Etikett för ett värde i ett assertionsmeddelande. String() och inte en
-// interpolation: `${Symbol('x')}` kastar TypeError.
 const namn = (value) => (Array.isArray(value) ? `[${String(value)}]` : String(value));
 
 const TEXTER = Object.freeze({
@@ -79,10 +40,6 @@ function kastar(fn, message, etikett) {
   assert.throws(fn, (error) => error instanceof RangeError && error.message === message, etikett);
 }
 
-// Läser en CSV-fil från toCsv tillbaka till rader av fältsträngar. Filen i de
-// här testfallen har ingen cell som kräver citering — ingen svensk etikett och
-// ingen månad bär semikolon, citattecken eller radbrott — så en delning räcker.
-// Att det stämmer prövas, inte antas: ett citattecken i filen fäller testet.
 function läsTillbaka(fil) {
   assert.equal(fil.startsWith(BOM), true, 'filen börjar inte med BOM');
   assert.equal(fil.includes('"'), false, 'filen innehåller en citerad cell, och delningen nedan räcker då inte');
@@ -90,10 +47,6 @@ function läsTillbaka(fil) {
   assert.equal(kropp.endsWith(CRLF), true, 'filen slutar inte med CR LF');
   return kropp.slice(0, -CRLF.length).split(CRLF).map((rad) => rad.split(';'));
 }
-
-// ---------------------------------------------------------------------------
-// Spärrtabellen "Ingångsspärrar i src/core/report-csv.js", rad för rad.
-// ---------------------------------------------------------------------------
 
 test('rad 1: en rapport som inte är ett vanligt objekt ger rad 1:s text', () => {
   for (const value of ICKE_OBJEKT) {
@@ -106,8 +59,6 @@ test('rad 1: utan argument ger rad 1:s text', () => {
 });
 
 test('rad 1 släpper igenom ett Date, som då når rad 2', () => {
-  // isPlainObject i entry.js äger begreppet och godkänner ett Date. Ett Date har
-  // ingen months, så värdet fälls av nästa rad — aldrig av ett TypeError.
   kastar(() => reportCsvRows(new Date()), TEXTER.rad2);
 });
 
@@ -146,8 +97,6 @@ test('rad 4 släpper igenom ett Date, som då når rad 5', () => {
 });
 
 test('rad 4 vinner över rad 5 också när rad 5:s fel står på ett tidigare index', () => {
-  // Den körda konsekvensen i modulens egen kommentar: tabellen säger "första
-  // träff vinner" om RADERNA, och en varvad loop hade svarat med rad 5 om index 0.
   kastar(
     () => reportCsvRows(rapport(['2026-01'], [rad('expense', 'housing', [], [null]), null])),
     TEXTER.rad4(1)
@@ -174,8 +123,6 @@ test('rad 5: perMonthOre med fel längd ger rad 5:s text med radens index', () =
 });
 
 test('rad 5: perMonthOre som inte är en lista ger rad 5:s text och aldrig ett TypeError', () => {
-  // Array.isArray före längden: undefined.length kastar TypeError, och ett objekt
-  // med en length som råkar stämma hade annars passerat.
   for (const value of ICKE_LISTOR) {
     kastar(
       () => reportCsvRows(rapport(['2026-01'], [{ kind: 'expense', category: 'housing', perMonthOre: value, budgetPerMonthOre: [null] }])),
@@ -234,14 +181,9 @@ test('rad 5 vinner över rad 6 också när rad 6:s fel står på ett tidigare in
   );
 });
 
-// ---------------------------------------------------------------------------
-// Kravlistan (RA24) till (RA30).
-// ---------------------------------------------------------------------------
-
 test('(RA24) rubrikraden är sex textceller i ordningen Slag, Kategori, Månad, Belopp, Tak, Över tak', () => {
   const rader = reportCsvRows(rapport(['2026-01'], [rad('expense', 'housing', [100])]));
   assert.deepEqual(rader[0], RUBRIK.map((text) => ({ text })));
-  // Sex kolumner, alltid sex: också varje datarad.
   for (const rad of rader) {
     assert.equal(rad.length, 6);
   }
@@ -289,15 +231,12 @@ test('(RA26) ett saknat tak ger en tom textcell och aldrig ett belopp på noll',
     assert.deepEqual(r[4], { text: '' });
     assert.notDeepEqual(r[4], { amountOre: 0 });
   }
-  // I filen blir det två tomma fält sist på raden, inte 0,00.
   const fil = läsTillbaka(toCsv(rader));
   assert.deepEqual(fil[1], ['Utgift', 'Boende', '2026-01', '0,00', '', '']);
   assert.deepEqual(fil[2], ['Utgift', 'Boende', '2026-02', '5,00', '', '']);
 });
 
 test('(RA26) ett tak på noll kronor är ett tak och skrivs som ett belopp, inte som en tom cell', () => {
-  // Jämförelsen i modulen är === null och inte en sanningsprövning: 0 ören är
-  // något annat än inget tak.
   const rader = reportCsvRows(rapport(['2026-01'], [rad('expense', 'housing', [0], [0])]));
   assert.deepEqual(rader[1][4], { amountOre: 0 });
   assert.deepEqual(rader[1][5], { text: 'Nej' });
@@ -327,7 +266,6 @@ test('(RA27) Ja, Nej och tom är de enda tre värdena i kolumnen', () => {
 });
 
 test('(RA28) slagets och kategorins svenska namn kommer ur ITEM_KIND_LABELS och CATEGORY_LABELS', () => {
-  // Varje slag med varje kategori, så att varje nyckel slås upp minst en gång.
   const rows = [];
   for (const kind of ITEM_KINDS) {
     for (const category of CATEGORIES) {
@@ -359,9 +297,6 @@ test('(RA29) tom rapport direkt ur reportRows ger bara rubrikraden', () => {
 });
 
 test('(RA30) rundgång genom toCsv: varje beloppscell i filen läses tillbaka till samma antal ören', () => {
-  // Rapporten kommer ur reportRows, så att filen är den servern skriver och inte
-  // en handbyggd variant. -0 som tak normaliseras av reportRows; -0 som
-  // perMonthOre kan inte komma därifrån och prövas i fallet nedan.
   const report = reportRows([
     {
       month: '2026-01',
@@ -393,17 +328,12 @@ test('(RA30) rundgång genom toCsv: varje beloppscell i filen läses tillbaka ti
         continue;
       }
       belopp += 1;
-      // Beloppskedjans steg 1: formatägaren AMOUNT_PATTERN, därefter samma
-      // tolkning som entry.js och sekToOre. Samma ingång och samma skäl som
-      // (RA7) i tests/csv.test.js: frågan är om FORMATET går att läsa tillbaka.
       assert.equal(AMOUNT_PATTERN.test(fält), true, `${fält} underkänns av AMOUNT_PATTERN`);
       const tillbaka = sekToOre(Number(fält.replace(',', '.')));
       assert.equal(tillbaka === cell.amountOre, true, `${fält} lästes tillbaka som ${tillbaka}, väntat ${cell.amountOre}`);
       assert.equal(Object.is(tillbaka, -0), false, `${fält} lästes tillbaka som -0`);
     }
   }
-  // Tre rader gånger tre månader ger nio belopp, plus de två månader där
-  // boendet har ett tak.
   assert.equal(belopp, 11);
 });
 
@@ -419,9 +349,6 @@ test('(RA30) -0 och noll i en beloppscell skrivs 0,00 och läses tillbaka som no
 });
 
 test('(RA30) ett belopp som inte är ett öretal släpps vidare och fälls av csvAmountSek, formatets ägare', () => {
-  // reportCsvRows prövar inte beloppen: spärrtabellen har sex rader och ingen för
-  // värdena, och csvAmountSek i csv.js äger frågan "är det här ett antal ören".
-  // Det som prövas är att ett skadat tal aldrig blir en tyst cell i filen.
   for (const value of [NaN, Infinity, 1.5, '100', null, undefined, 1n, Symbol('x'), [], [1], new Date()]) {
     const celler = reportCsvRows(rapport(['2026-01'], [rad('expense', 'housing', [value], [null])]));
     assert.throws(
@@ -433,15 +360,8 @@ test('(RA30) ett belopp som inte är ett öretal släpps vidare och fälls av cs
 });
 
 test('(RA34) ett skadat tak släpps vidare och fälls av csvAmountSek, aldrig som en tyst tom cell', () => {
-  // Villkoret i modulen är === null och inte == null: bara null betyder "inget
-  // tak". Ett undefined eller ett NaN i budgetPerMonthOre är ett skadat tal och
-  // ska nå csvAmountSek, formatets ägare, och fällas där. Med == null hade
-  // undefined blivit en tom cell i kolumnen Tak och en tom cell i Över tak, och
-  // filen hade påstått att månaden saknade tak (LARDOMAR.md 2026-10-10, tre
-  // delvillkor).
   for (const value of [undefined, NaN]) {
     const celler = reportCsvRows(rapport(['2026-01'], [rad('expense', 'housing', [100], [value])]));
-    // Kolumnen Tak bär värdet som ett belopp, och kolumnen Över tak är inte tom.
     assert.equal(Object.hasOwn(celler[1][4], 'amountOre'), true, namn(value));
     assert.notDeepEqual(celler[1][5], { text: '' }, namn(value));
     assert.throws(
@@ -457,7 +377,6 @@ test('(RA34) bara null i budgetPerMonthOre ger två tomma celler', () => {
   assert.deepEqual(celler[1].slice(4), [{ text: '' }, { text: '' }]);
 });
 
-// (RA36) reportFileName och spärrtabellens rad 7.
 test('(RA36) reportFileName ger hemochekonomi-<ÅÅÅÅ-MM>.csv i rent ASCII', () => {
   for (const month of ['2026-10', '2027-01', '1999-12']) {
     const filnamn = reportFileName(month);

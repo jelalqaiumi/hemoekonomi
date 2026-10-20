@@ -8,30 +8,15 @@
       name="description"
       content="Hem och Ekonomi samlar hushållets inkomster, fasta utgifter och sparande på ett ställe och visar vad som är kvar att leva på varje månad och när räkningarna förfaller."
     />
-    <!-- Faviconen är hem-ekonomi-ikon.svg, användarens egen fil kopierad byte
-         för byte. type följer filen. -->
     <link rel="icon" href="/bilder/hem-ekonomi-ikon.svg" type="image/svg+xml" />
-    <!-- tema.css först: landning.css läser dess tokens och innehåller själv
-         ingen hexkod. -->
     <link rel="stylesheet" href="/tema.css" />
     <link rel="stylesheet" href="/landning.css" />
   </head>
   <body>
     <a class="hoppa" href="#innehall">Hoppa till innehållet</a>
 
-    <!-- ========================================================= 1. Header
-         Fast överst. Loggan till vänster, menyn i mitten, Logga in som kontur
-         och Registrera som fylld till höger. På mobil blir menyn en
-         hamburgare, byggd med details och summary så att den öppnas utan
-         JavaScript. Registrera ligger utanför hamburgaren och syns alltid. -->
     <header class="sidhuvud">
       <div class="sidhuvud-inre">
-        <!-- Loggan är hem-ekonomi-logga.svg, användarens egen fil. width och
-             height står i bildens egen storlek, 428 gånger 104, så att headern
-             inte hoppar medan bilden laddas; visningsstorleken är .markessymbol
-             i landning.css. alt är tomt därför att namnet står som text i länken
-             intill. Texten är visuellt dold, eftersom namnet redan står i
-             loggan, men den är länkens namn för en skärmläsare. -->
         <a class="markeslank" href="/">
           <img
             class="markessymbol"
@@ -44,18 +29,16 @@
           <span class="markesnamn">Hem och Ekonomi</span>
         </a>
 
-        <!-- Den breda menyn. Döljs under 840 bildpunkter. -->
         <nav class="meny-bred" aria-label="Huvudmeny">
           <a href="#funktioner">Funktioner</a>
-          <a href="#priser">Priser</a>
+          <a href="#priser">Pris</a>
           <a href="#faq">FAQ</a>
         </nav>
 
         <div class="sidhuvud-knappar">
           <a class="knapp knapp-kontur knapp-liten doljs-pa-mobil" href="/app">Logga in</a>
-          <a class="knapp knapp-fylld knapp-liten" href="/app">Registrera</a>
+          <a class="knapp knapp-fylld knapp-liten" href="/app?registrera">Registrera</a>
 
-          <!-- Hamburgaren. Syns bara under 840 bildpunkter. -->
           <details class="meny-smal">
             <summary class="meny-knapp" aria-label="Visa menyn">
               <svg class="ikon-meny" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -64,7 +47,7 @@
             </summary>
             <nav class="meny-panel" aria-label="Menyn">
               <a href="#funktioner">Funktioner</a>
-              <a href="#priser">Priser</a>
+              <a href="#priser">Pris</a>
               <a href="#faq">FAQ</a>
               <a href="/app">Logga in</a>
             </nav>
@@ -74,9 +57,6 @@
     </header>
 
     <main id="innehall">
-      <!-- ======================================================== 2. Hero
-           Bild som bakgrund i sina egna färger, se .hero i landning.css.
-           Bilden är dekorativ och ligger därför som CSS-bakgrund utan alt-text. -->
       <section class="hero">
         <div class="hero-inre">
           <div class="hero-text">
@@ -93,16 +73,11 @@
             </div>
           </div>
         </div>
-        <!-- Vågen mot nästa sektion. Dekorativ: aria-hidden och ingen text.
-             Formen och färgen står i ARKITEKTUR.md del 7, "Vågen i hero". -->
         <svg class="hero-vag" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
           <path class="hero-vag-yta" d="M0 42 C120 18 240 4 360 4 C600 4 840 80 1080 80 C1240 80 1360 64 1440 50 V100 H0 Z" />
         </svg>
       </section>
 
-      <!-- ===================================================== 3. Fördelar
-           Punkter med ikon: budget, räkningar, sparmål och översikten över året.
-           Menyns "Funktioner" pekar hit. -->
       <section class="fordelar" id="funktioner">
         <div class="block">
           <h2>Fyra saker appen gör</h2>
@@ -112,7 +87,6 @@
           </p>
           <ul class="fordel-lista">
             <li class="fordel">
-              <!-- Budget: ett cirkeldiagram. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <circle class="sv-linje-bla" cx="16" cy="16" r="11" />
                 <path class="sv-fyll-guld" d="M16 16V5a11 11 0 0 1 11 11z" />
@@ -125,7 +99,6 @@
               </p>
             </li>
             <li class="fordel">
-              <!-- Räkningar: en räkning med sågtandad underkant. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <path
                   class="sv-linje-bla"
@@ -141,7 +114,6 @@
               </p>
             </li>
             <li class="fordel">
-              <!-- Sparmål: en måltavla. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <circle class="sv-linje-grabla" cx="16" cy="16" r="11" />
                 <circle class="sv-linje-grabla" cx="16" cy="16" r="6" />
@@ -150,11 +122,10 @@
               <h3>Sparmål som syns</h3>
               <p>
                 Sätt ett målbelopp och, om du vill, ett slutdatum. Stapeln visar
-                hur långt du har kommit. Ingår från Plus.
+                hur långt du har kommit.
               </p>
             </li>
             <li class="fordel">
-              <!-- Översikten: en kalender med två markerade dagar. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <rect class="sv-linje-bla" x="5" y="7" width="22" height="20" rx="2.5" />
                 <path class="sv-linje-bla" d="M5 13h22M11 4v6M21 4v6" />
@@ -171,15 +142,11 @@
         </div>
       </section>
 
-      <!-- ============================================ 4. Varför Hem och Ekonomi
-           Tre kolumner med ikon, rubrik och kort text. En ljus gråblå ton
-           som bakgrund, så att sidan inte blir genomgående ljus. -->
       <section class="varfor">
         <div class="block">
           <h2>Varför Hem och Ekonomi</h2>
           <ul class="varfor-lista">
             <li class="varfor-kolumn">
-              <!-- Allt på ett ställe: fyra rutor. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <rect class="sv-fyll-grabla" x="4" y="4" width="11" height="11" rx="2.5" />
                 <rect class="sv-fyll-bla" x="17" y="4" width="11" height="11" rx="2.5" />
@@ -193,7 +160,6 @@
               </p>
             </li>
             <li class="varfor-kolumn">
-              <!-- Dina siffror stannar hos dig: en sköld med bock. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <path
                   class="sv-linje-bla"
@@ -201,14 +167,14 @@
                 />
                 <path class="sv-linje-grabla" d="m11 16.2 3.6 3.6L21.4 13" />
               </svg>
-              <h3>Dina siffror stannar hos dig</h3>
+              <h3>Dina siffror är dina</h3>
               <p>
-                Appen kör på din egen dator, och uppgifterna sparas där. Ingen
-                tredje part får se vad hushållet tjänar eller betalar.
+                Uppgifterna sparas krypterat inom EU och säljs eller delas
+                aldrig. Du kan ladda ner allt du sparat, eller ta bort kontot
+                med allt innehåll, när du vill.
               </p>
             </li>
             <li class="varfor-kolumn">
-              <!-- Räknat i öre: stigande staplar. -->
               <svg class="ikon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <path class="sv-linje-bla" d="M4 27.5h24" />
                 <rect class="sv-fyll-bla" x="6.5" y="19" width="5" height="7" rx="1.5" />
@@ -226,9 +192,6 @@
         </div>
       </section>
 
-      <!-- =============================================== 5. Så fungerar det
-           Tre numrerade steg. Numret är en egen ruta i guld, inte ett
-           listnummer: det ska gå att läsa som en bild av ordningen. -->
       <section class="steg" id="sa-fungerar-det">
         <div class="block">
           <h2>Så fungerar det</h2>
@@ -237,8 +200,8 @@
               <span class="steg-nummer" aria-hidden="true">1</span>
               <h3>Registrera</h3>
               <p>
-                Du anger din e-postadress och får en engångskod tillbaka. Inget
-                lösenord att komma ihåg och inget att välja bort.
+                Du anger din e-postadress och väljer ett lösenord. Kontot är
+                gratis, och du behöver inget kort.
               </p>
             </li>
             <li class="steg-kort">
@@ -263,32 +226,30 @@
         </div>
       </section>
 
-      <!-- ====================================================== 6. Priser
-           Tre kort. Mittenkortet är upphöjt och bär guldbadgen Populärast.
-           Knapparna länkar till /app: registreringen har inget planval, och
-           ingen knapp får antyda att en betalning sker. -->
       <section class="priser" id="priser">
         <div class="block">
-          <h2>Priser</h2>
+          <h2>Gratis att använda</h2>
           <p class="block-ingress">
-            Tre planer. Samma app, olika mycket av den.
+            Hela appen, för alla. Inga planer, ingen provperiod och inget kort.
           </p>
-          <!-- Tom i HTML med flit: korten ritas av /priser.js ur PLANS i
-               src/core/plans.js. Priset och innehållet har en enda källa, som
-               servern och appen läser samma rad ur
-               (ARKITEKTUR.md, "Prissidan renderas ur PLANS"). Står texten
-               också här blir den ett andra facit som kan säga något annat än
-               behörigheten. -->
-          <ul class="pris-lista" id="pris-lista"></ul>
-          <p class="pris-not">
-            Detta är en demo - du kan byta plan fritt och ingen betalning dras.
-          </p>
+          <ul class="pris-lista pris-lista-en">
+            <li class="pris-kort pris-kort-upphojd">
+              <p class="pris-badge">Gratis</p>
+              <h3>Hem och Ekonomi</h3>
+              <p class="pris-belopp"><span class="pris-tal">0 kr</span></p>
+              <ul class="pris-punkter">
+                <li>Budget och utgifter, månad för månad</li>
+                <li>Räkningar med påminnelser</li>
+                <li>Sparmål</li>
+                <li>Diagram, översikt och rapporter</li>
+                <li>Export av dina uppgifter</li>
+              </ul>
+              <a class="knapp knapp-guld" href="/app?registrera">Skapa konto</a>
+            </li>
+          </ul>
         </div>
       </section>
 
-      <!-- ========================================================= 7. FAQ
-           Frågorna står i details och summary. Inget JavaScript behövs för att
-           öppna dem, och sidan fungerar även om skript är avstängt. -->
       <section class="faq" id="faq">
         <div class="block block-smal">
           <h2>Vanliga frågor</h2>
@@ -296,28 +257,25 @@
           <details class="fraga">
             <summary>Vad kostar Hem och Ekonomi?</summary>
             <p>
-              Bas kostar 99 kr/mån, Plus 149 kr/mån och Premium 179 kr/mån.
-              Det här är en demoversion och kostar ingenting &ndash; ingen betalning tas ut.
-              Du byter plan under Min plan i appen.
+              Ingenting. Hem och Ekonomi är gratis, och alla funktioner ingår.
+              Du behöver inte lämna något kortnummer.
             </p>
           </details>
 
           <details class="fraga">
             <summary>Var sparas mina uppgifter?</summary>
             <p>
-              På den dator där appen körs: i en databasfil när du kör appen
-              själv, och i webbläsarens lagring i demon. Uppgifterna om din
-              ekonomi skickas aldrig vidare. Det enda som kan lämna datorn är
-              din e-postadress och inloggningskoden, när appen är inställd på
-              att mejla koden.
+              I en databas hos vår leverantör inom EU, krypterat på vägen dit.
+              Uppgifterna om din ekonomi säljs aldrig och delas inte med någon.
+              Läs mer i <a href="/integritet">integritetspolicyn</a>.
             </p>
           </details>
 
           <details class="fraga">
-            <summary>Behöver jag ett lösenord?</summary>
+            <summary>Vad händer om jag glömmer lösenordet?</summary>
             <p>
-              Nej. Du anger din e-postadress och loggar in med en engångskod.
-              Det finns inget lösenord att glömma bort eller återställa.
+              Klicka på Glömt lösenordet? under inloggningen. Du får en länk till
+              din e-postadress och väljer ett nytt lösenord.
             </p>
           </details>
 
@@ -331,28 +289,27 @@
           </details>
 
           <details class="fraga">
+            <summary>Hur kontaktar jag er?</summary>
+            <p>
+              Om du har frågor kan du kontakta oss på
+              <a href="mailto:info@hemochekonomi.se">info@hemochekonomi.se</a>.
+            </p>
+          </details>
+
+          <details class="fraga">
             <summary>Fungerar sidan utan JavaScript?</summary>
             <p>
-              Det mesta av den. Frågorna och menyn öppnas av webbläsaren själv,
-              men priskorten ritas med JavaScript. Inga typsnitt eller skript
-              hämtas från någon tredje part.
+              Ja, den här sidan gör det. Frågorna och menyn öppnas av
+              webbläsaren själv. Själva appen behöver JavaScript. Inga typsnitt
+              eller skript hämtas från någon tredje part.
             </p>
           </details>
         </div>
       </section>
     </main>
 
-    <!-- ====================================================== 8. Footer
-         Bakgrund --bla-marin. Logga, länkar och upphovsrättsrad.
-         Varje länk här går till en sektion som finns på sidan. Kontakt,
-         Villkor och Integritetspolicy stod först som a-element utan href,
-         alltså platshållare, men togs bort: en länk som inte leder någonstans
-         ser oavslutad ut och lovar en sida som inte finns. -->
     <footer class="sidfot">
       <div class="block sidfot-inre">
-        <!-- Sidfoten är marinblå och visar hem-ekonomi-logga-vit.svg, som är
-             ritad för mörk botten, så ingen platta behövs. Namnet intill är
-             visuellt dolt av samma skäl som i headern. -->
         <div class="sidfot-marke">
           <img
             class="markessymbol"
@@ -367,23 +324,18 @@
 
         <nav class="sidfot-lankar" aria-label="Sidfot">
           <a href="#funktioner">Funktioner</a>
-          <a href="#priser">Priser</a>
+          <a href="#priser">Pris</a>
           <a href="#faq">FAQ</a>
+          <a href="/integritet">Integritetspolicy</a>
+          <a href="mailto:info@hemochekonomi.se">Kontakt</a>
         </nav>
 
         <p class="sidfot-rad">
-          &#169; 2026 Hem och Ekonomi. Appen kör lokalt på din egen dator.
+          &#169; 2026 Hem och Ekonomi. Gratis att använda.
         </p>
       </div>
     </footer>
 
-    <!-- Demoläget. Samma fil och samma skäl som i index.html: med DEMO falsk gör
-         den ingenting, och landningssidan fungerar fortfarande utan JavaScript,
-         utom priskorten. Är flaggan sann ritar den bannern högst upp. -->
-    <script type="module" src="/demo/demo-fetch.js"></script>
 
-    <!-- Prissidans tre kort. Ligger sist, som varje annat skript på sidan: det
-         enda den rör är listan i avsnittet Priser. -->
-    <script type="module" src="/priser.js"></script>
   </body>
 </html>
